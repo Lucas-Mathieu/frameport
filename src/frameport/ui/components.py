@@ -399,6 +399,56 @@ def menu_items(actions: list[tuple | None]) -> list[ft.PopupMenuItem]:
     return out
 
 
+def menu_targets(clicked, selected) -> list:
+    """What a right-click acts on: the whole selection when the clicked item is part of a selection of several (as in
+    a file manager), else just that item. `selected` keeps its order."""
+    selected = list(selected)
+    return selected if clicked in selected and len(selected) > 1 else [clicked]
+
+
+class DragSelect:
+    """Click-and-drag multi-select ("paint" selection) for a grid or list, without knowing where items are on screen.
+
+    The area's GestureDetector calls start() on pan start and end() on pan end; each item calls hover(key, inside)
+    from its hover (enter/exit) event, which Flutter also sends while the mouse button is held. A drag selects every
+    item it passes over, or deselects them when it started on a selected item. No Flet in here (tested directly)."""
+
+    def __init__(self, is_selected, set_selected, can_select=lambda key: True, on_start=None):
+        self.is_selected, self.set_selected, self.can_select = is_selected, set_selected, can_select
+        self.on_start = on_start
+        self.under = None      # the item the pointer is over
+        self.active = False
+        self.mode = True       # select (True) or deselect (False) during this drag
+        self.touched: set = set()
+
+    def hover(self, key, inside: bool) -> None:
+        if inside:
+            self.under = key
+            if self.active:
+                self._apply(key)
+        elif self.under == key:
+            self.under = None
+
+    def start(self, e=None) -> None:
+        if self.on_start:
+            self.on_start()
+        under = self.under if self.under is not None and self.can_select(self.under) else None
+        self.mode = not self.is_selected(under) if under is not None else True
+        self.active, self.touched = True, set()
+        if under is not None:
+            self._apply(under)
+
+    def end(self, e=None) -> None:
+        self.active = False
+
+    def _apply(self, key) -> None:
+        if key in self.touched or not self.can_select(key):
+            return
+        self.touched.add(key)
+        if self.is_selected(key) != self.mode:
+            self.set_selected(key, self.mode)
+
+
 def is_media_player(g: dict) -> bool:
     """A video player (360° layers in its recipe or analysis, e.g. 4XVR): its page offers "Add videos" up front."""
     patches = ((g.get("recipe") or {}).get("patches") or {})

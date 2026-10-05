@@ -92,6 +92,14 @@ class ScreenshotsView:
             bgcolor=T.ACCENT_SOFT, visible=False)
         self.grid = ft.Column(spacing=T.S3, scroll=ft.ScrollMode.AUTO, expand=True)
         self.status = C.meta("")
+        # one right-click menu for the grid: filled with the clicked screenshot's actions (or the tab's) when it opens
+        # click and drag across screenshots to select them (C.DragSelect)
+        self.drag = C.DragSelect(lambda p: p in self.selected, self._toggle)
+        self.menu = ft.ContextMenu(content=ft.GestureDetector(
+            content=C.card(self.grid, padding=T.S3, expand=True), expand=True,
+            on_secondary_tap_down=lambda e: self.open_menu(None, e.global_position),
+            on_pan_start=self.drag.start, on_pan_end=self.drag.end),
+            secondary_trigger=None, tertiary_trigger=None, expand=True)
         self.root = None
 
     # ---------------------------------------------------------------- building
@@ -106,8 +114,8 @@ class ScreenshotsView:
                               tr("Screenshots on the Frame can be shown once FramePort is connected to it."),
                               C.primary(tr("Connect"), ft.Icons.LINK_ROUNDED, lambda e: app.go("frame")))], expand=True)
         if self.root is None:
-            self.root = ft.Column([app.top_bar(heading, sub), self.toolbar, self.sel_bar,
-                                   C.card(self.grid, padding=T.S3, expand=True), self.status],
+            # the selection bar below the grid (as in the Library): above it, it pushed the cards down mid-drag
+            self.root = ft.Column([app.top_bar(heading, sub), self.toolbar, self.menu, self.sel_bar, self.status],
                                   spacing=T.S3, expand=True, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
         if package is not None and filter_key(package) != self.filter:
             self.filter = filter_key(package)
@@ -216,13 +224,70 @@ class ScreenshotsView:
                                                           end=ft.Alignment.BOTTOM_CENTER,
                                                           colors=[ft.Colors.TRANSPARENT, T.soft("#000000", 0.8)]),
                                border_radius=ft.BorderRadius(0, 0, T.RADIUS_SM, T.RADIUS_SM))
-        return ft.Container(
+        tile = ft.Container(
             ft.Stack([C.art_fill(self._thumb_url(s), radius=T.RADIUS_SM, placeholder_icon=ft.Icons.IMAGE_OUTLINED,
                                  left=0, right=0, top=0, bottom=0),
                       caption, ft.Container(check, left=0, top=0)]),
             width=T.px(256), height=T.px(144), border_radius=T.RADIUS_SM, ink=True,
             tooltip=f"{s.get('title') or ''} · {day_label(s.get('time'))} {when}",
-            on_click=lambda e, i=i: self.viewer(i))
+            on_click=lambda e, i=i: self.viewer(i),
+            on_hover=lambda e, p=s["path"]: self.drag.hover(p, e.data in (True, "true")))
+        return ft.GestureDetector(content=tile, on_secondary_tap_down=lambda e, s=s: self.open_menu(s,
+                                                                                                  e.global_position))
+
+    # ---------------------------------------------------------------- right-click menu
+    def menu_actions(self, s: dict | None) -> list[tuple | None]:
+        """[(label, icon, handler) | None] for a right-click on screenshot `s` (None = on the grid's empty space). With
+        several screenshots selected and `s` among them, the actions act on the whole selection."""
+        if s is None:
+            if not self.shots:
+                return [(tr("Refresh"), ft.Icons.REFRESH_ROUNDED, lambda e: self.load())]
+            return [(tr("Download all ({n})…").format(n=len(self.shots)), ft.Icons.DOWNLOAD_ROUNDED,
+                     lambda e: self._later(self.download, list(self.shots))),
+                    (tr("Select all"), ft.Icons.SELECT_ALL_ROUNDED, lambda e: self._select_all()),
+                    *([(tr("Clear selection"), ft.Icons.CLOSE_ROUNDED, lambda e: self._clear_selection())]
+                      if self.selected else []),
+                    None, (tr("Refresh"), ft.Icons.REFRESH_ROUNDED, lambda e: self.load())]
+        by_path = {x["path"]: x for x in self.shots}
+        shots = [by_path[p] for p in C.menu_targets(s["path"], [x["path"] for x in self.shots
+                                                                if x["path"] in self.selected])]
+        several = len(shots) > 1
+        out: list[tuple | None] = []
+        if not several:
+            out.append((tr("View"), ft.Icons.OPEN_IN_FULL_ROUNDED, lambda e: self.viewer(self.shots.index(s))))
+        out.append((tr("Download {n} screenshots…").format(n=len(shots)) if several else tr("Download…"),
+                    ft.Icons.DOWNLOAD_ROUNDED, lambda e: self._later(self.download, shots)))
+        key = filter_key(s.get("package") or "")
+        if not several and self.filter == ALL and key in {o.key for o in self.dropdown.options}:
+            out.append((tr("Show only this game's screenshots") if s.get("package")
+                        else tr("Show only screenshots not from a FramePort game"),
+                        ft.Icons.FILTER_ALT_OUTLINED, lambda e: self._filter_to(key)))
+        out.append(None)
+        if several:
+            out.append((tr("Clear selection"), ft.Icons.CLOSE_ROUNDED, lambda e: self._clear_selection()))
+        else:
+            on = s["path"] in self.selected
+            out.append((tr("Deselect") if on else tr("Select"),
+                        ft.Icons.CHECK_BOX_OUTLINE_BLANK_ROUNDED if on else ft.Icons.CHECK_BOX_OUTLINED,
+                        lambda e: self._toggle(s["path"], not on)))
+        out += [None, (tr("Delete {n} screenshots…").format(n=len(shots)) if several else tr("Delete…"),
+                       ft.Icons.DELETE_OUTLINE_ROUNDED, lambda e: self.delete(shots))]
+        return out
+
+    def open_menu(self, s: dict | None, position=None) -> None:
+        self.menu.items = C.menu_items(self.menu_actions(s))
+        C.update(self.menu)
+        self.app.page.run_task(self.menu.open, global_position=position)
+
+    def _later(self, coro_fn, *args) -> None:
+        """Run an async action (it asks for a folder) from a plain click handler: Flet only awaits handlers that
+        are coroutine functions themselves."""
+        self.app.page.run_task(coro_fn, *args)
+
+    def _filter_to(self, key: str) -> None:
+        self.dropdown.value = key
+        C.update(self.dropdown)
+        self.set_filter(key)
 
     # ---------------------------------------------------------------- selection
     def _toggle(self, path: str, on: bool) -> None:
@@ -239,6 +304,14 @@ class ScreenshotsView:
         for check in self.checks.values():
             if check.value != on:
                 check.value = on
+                C.update(check)
+        self._update_selection()
+
+    def _select_all(self) -> None:
+        self.selected = {s["path"] for s in self.shots}
+        for check in self.checks.values():
+            if not check.value:
+                check.value = True
                 C.update(check)
         self._update_selection()
 

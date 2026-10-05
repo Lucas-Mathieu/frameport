@@ -203,7 +203,14 @@ class LibraryView:
         self.filters = ft.Container()
         self.hint = ft.Container(visible=False)
         # one right-click menu for every card: filled with that game's actions when it opens (open_menu)
-        self.menu = ft.ContextMenu(content=self.grid, secondary_trigger=None, tertiary_trigger=None, expand=True)
+        # click and drag across cards to select them (turns on select mode; C.DragSelect)
+        self.drag = C.DragSelect(lambda pkg: pkg in self.selected,
+                                 lambda pkg, on: self.toggle_selected(pkg) if (pkg in self.selected) != on else None,
+                                 can_select=lambda pkg: pkg in self.cards,
+                                 on_start=lambda: None if self.select_mode else self.set_select_mode(True))
+        self.menu = ft.ContextMenu(content=ft.GestureDetector(content=self.grid, expand=True,
+                                                              on_pan_start=self.drag.start, on_pan_end=self.drag.end),
+                                   secondary_trigger=None, tertiary_trigger=None, expand=True)
         self.body = ft.Container(self.menu, expand=True)
         add = ft.PopupMenuButton(
             content=ft.Container(ft.Row([ft.Icon(ft.Icons.ADD_ROUNDED, color=T.ON_ACCENT, size=T.px(18)),
@@ -594,11 +601,13 @@ class LibraryView:
             border_radius=T.RADIUS, bgcolor=T.SURFACE, border=ft.Border.all(1, T.BORDER), expand=True,
             scale=1.0, animate_scale=ft.Animation(140, ft.AnimationCurve.EASE_OUT),
             shadow=card_shadow(),
-            tooltip=ft.Tooltip(message=tr("Click to open · right-click for quick actions"), wait_duration=1500),
+            tooltip=ft.Tooltip(message=tr("Click to open · right-click for quick actions · drag across cards to "
+                                          "select several"), wait_duration=1500),
             on_click=lambda e: self.toggle_selected(pkg) if self.select_mode else app.open_game(pkg))
 
         def hover(e):
             on = e.data in (True, "true")
+            self.drag.hover(pkg, on)
             tile.scale = 1.03 if on else 1.0
             tile.border = ft.Border.all(1, T.ACCENT if on else T.BORDER)
             tile.shadow = card_shadow(on)

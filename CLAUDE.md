@@ -26,7 +26,14 @@ Read `docs/PLAYBOOK.md` (symptom → fix) before debugging a game, and `docs/FRA
     launch.sh logs `start/end <unix>` to `<anchor>/plays.log` (upgrade_launchers adds it; Proton launchers exec → start
     only) and shots are matched by time; thumbnails cached in `<data>/screenshots-cache/<frame>/`, shown by asset URL;
     delete leaves screenshots.vdf alone (Steam rewrites it at exit); game menu → "Screenshots" = `go("screenshots",
-    pkg)`); settings; welcome; activity panel).
+    pkg)`); settings; welcome; activity panel). Files, Screenshots and the Library share right-click menus
+    (one `ft.ContextMenu` per view, filled on right-click; on one of several selected items they act on the whole
+    selection, `C.menu_targets`) and click-and-drag multi-select (`C.DragSelect`: pan start/end on the area + item
+    hover events, which Flutter also sends with the button held; Flet can't report item positions, so no rubber band).
+    Selection bars sit below the list: above it, their appearing shifted the items mid-drag. Async handlers (they
+    await a FilePicker) must be coroutine functions or go through `page.run_task`: Flet doesn't await a lambda's
+    coroutine (the Files row Download button silently did nothing). `ui_smoke.py --fake-frame --gestures` drives real
+    mouse drags/right-clicks.
     User tags live in library entries (`tags`), filters in library setting `ui.library`.
     **Performance rules** (the app froze before): never put image bytes in controls — artwork is served by URL from the
     GUI assets dir (= user data dir; `ft.run(assets_dir=…)`), as thumbnails (`artwork/thumbs.py`, Pillow); the

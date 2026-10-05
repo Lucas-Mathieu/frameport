@@ -107,6 +107,15 @@ class FilesView:
                        C.meta("")], horizontal_alignment=ft.CrossAxisAlignment.CENTER, tight=True),
             left=0, right=0, top=0, bottom=0, alignment=ft.Alignment.CENTER, bgcolor=T.soft("#000000", 0.7),
             border_radius=T.RADIUS, border=ft.Border.all(2, T.ACCENT), visible=False)
+        # click and drag across rows to select them (C.DragSelect)
+        self.drag = C.DragSelect(lambda p: p in self.selected, self._toggle,
+                                 can_select=lambda p: any(x.path == p and self._selectable(x) for x in self.entries))
+        # one right-click menu for the listing: filled with the clicked entry's actions (or the folder's) when it opens
+        self.menu = ft.ContextMenu(content=ft.GestureDetector(
+            content=C.card(self.listing, padding=T.px(4), expand=True), expand=True,
+            on_secondary_tap_down=lambda e: self.open_menu(None, e.global_position),
+            on_pan_start=self.drag.start, on_pan_end=self.drag.end),
+            secondary_trigger=None, tertiary_trigger=None, expand=True)
         self.root = None
 
     # ---------------------------------------------------------------- building
@@ -130,9 +139,10 @@ class FilesView:
                         self.toolbar,
                         ft.Row([self.select_all, ft.Container(self.where, expand=True), self.hidden_switch],
                                vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        self._drop_area(ft.Stack([self.menu, self.drop_hint], expand=True)),
+                        # below the list (as in the Library): above it, its appearing pushed the rows down in the
+                        # middle of a drag-select
                         self.sel_bar,
-                        self._drop_area(ft.Stack([C.card(self.listing, padding=T.px(4), expand=True),
-                                                  self.drop_hint], expand=True)),
                         self.status,
                     ], spacing=T.S2, expand=True),
                 ], spacing=T.S4, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH),
@@ -304,7 +314,7 @@ class FilesView:
         info = (("folder" if e.is_dir else human(e.size)) + (tr(" · link") if e.link else "")
                 + (f" · {when}" if when else ""))
         actions = [C.icon_btn(ft.Icons.DOWNLOAD_ROUNDED, tr("Download to this PC"),
-                              lambda ev, x=e: self.download([x]))]
+                              lambda ev, x=e: self._download_later([x]))]
         if not self._protected(e):
             actions += [C.icon_btn(ft.Icons.DRIVE_FILE_RENAME_OUTLINE_ROUNDED, tr("Rename"),
                                    lambda ev, x=e: self.rename(x)),
@@ -313,14 +323,79 @@ class FilesView:
                             on_change=lambda ev, p=e.path: self._toggle(p, ev.control.value),
                             disabled=self._protected(e))
         self.checks[e.path] = check
-        return ft.Container(
+        row = ft.Container(
             ft.Row([check,
                     ft.Icon(file_icon(e.name, e.is_dir), size=T.px(20), color=T.ACCENT if e.is_dir else T.TEXT_2),
                     ft.Column([C.body(e.name, T.TEXT, weight=ft.FontWeight.W_500, max_lines=1,
                                       overflow=ft.TextOverflow.ELLIPSIS), C.meta(info)], spacing=0, expand=True),
                     *actions], spacing=T.S3),
             padding=ft.Padding(T.S3, T.px(6), T.S2, T.px(6)), border_radius=T.RADIUS_SM, ink=e.is_dir,
-            on_click=(lambda ev, p=e.path: self.cd(p)) if e.is_dir else None)
+            on_click=(lambda ev, p=e.path: self.cd(p)) if e.is_dir else None,
+            on_hover=lambda ev, p=e.path: self.drag.hover(p, ev.data in (True, "true")))
+        return ft.GestureDetector(content=row, on_secondary_tap_down=lambda ev, x=e: self.open_menu(x,
+                                                                                                    ev.global_position))
+
+    # ---------------------------------------------------------------- right-click menu
+    def menu_actions(self, e) -> list[tuple | None]:
+        """[(label, icon, handler) | None] for a right-click on entry `e` (None = on the folder's empty space). With
+        several entries selected and `e` among them, the actions act on the whole selection."""
+        if e is None:
+            return [(tr("Upload files…"), ft.Icons.UPLOAD_FILE_ROUNDED, self.upload_files),
+                    (tr("Upload folder…"), ft.Icons.DRIVE_FOLDER_UPLOAD_ROUNDED, self.upload_folder),
+                    (tr("New folder…"), ft.Icons.CREATE_NEW_FOLDER_OUTLINED, lambda ev: self.new_folder()),
+                    None,
+                    *([(tr("Select all"), ft.Icons.SELECT_ALL_ROUNDED, lambda ev: self._select_all())]
+                      if any(self._selectable(x) for x in self.entries) else []),
+                    (tr("Copy folder path"), ft.Icons.CONTENT_COPY_ROUNDED,
+                     lambda ev: self.app.copy(self._shown_path(self.path))),
+                    (tr("Refresh"), ft.Icons.REFRESH_ROUNDED, lambda ev: self.load())]
+        by_path = {x.path: x for x in self.entries}
+        items = [by_path[p] for p in C.menu_targets(e.path, [x.path for x in self.entries if x.path in self.selected])]
+        several = len(items) > 1
+        deletable = [x for x in items if not self._protected(x)]
+        out: list[tuple | None] = []
+        if not several and e.is_dir:
+            out.append((tr("Open"), ft.Icons.FOLDER_OPEN_ROUNDED, lambda ev: self.cd(e.path)))
+        out.append((tr("Download {n} items to this PC…").format(n=len(items)) if several
+                    else tr("Download to this PC…"), ft.Icons.DOWNLOAD_ROUNDED,
+                    lambda ev: self._download_later(items)))
+        if not several and not self._protected(e):
+            out.append((tr("Rename…"), ft.Icons.DRIVE_FILE_RENAME_OUTLINE_ROUNDED, lambda ev: self.rename(e)))
+        if not several:
+            out.append((tr("Copy path"), ft.Icons.CONTENT_COPY_ROUNDED, lambda ev: self.app.copy(self._shown_path(
+                e.path))))
+        out.append(None)
+        if several:
+            out.append((tr("Clear selection"), ft.Icons.CLOSE_ROUNDED, lambda ev: self._clear_selection()))
+        elif self._selectable(e):
+            on = e.path in self.selected
+            out.append((tr("Deselect") if on else tr("Select"),
+                        ft.Icons.CHECK_BOX_OUTLINE_BLANK_ROUNDED if on else ft.Icons.CHECK_BOX_OUTLINED,
+                        lambda ev: self._toggle(e.path, not on)))
+        if deletable:
+            out += [None, (tr("Delete {n} items…").format(n=len(deletable)) if len(deletable) > 1 else tr("Delete…"),
+                           ft.Icons.DELETE_OUTLINE_ROUNDED, lambda ev: self.delete(deletable))]
+        return out
+
+    def open_menu(self, e, position=None) -> None:
+        if not self.loc:
+            return
+        self.menu.items = C.menu_items(self.menu_actions(e))
+        C.update(self.menu)
+        self.app.page.run_task(self.menu.open, global_position=position)
+
+    def _shown_path(self, path: str) -> str:
+        """The path as games see it (/sdcard/…) where the location has one, else the Frame's own path."""
+        android = (self.loc or {}).get("android")
+        if not android:
+            return path
+        rel = posixpath.relpath(path, self.loc["path"])
+        return android if rel == "." else posixpath.join(android, rel)
+
+    def _download_later(self, items: list) -> None:
+        """Start the (async: it asks for a folder) download from a plain click handler: Flet only awaits handlers
+        that are coroutine functions themselves, not lambdas returning a coroutine."""
+        self.app.page.run_task(self.download, items)
 
     def cd(self, path: str) -> None:
         self.path = path
@@ -341,6 +416,10 @@ class FilesView:
 
     def _clear_selection(self) -> None:
         self.selected.clear()
+        self._render_listing()
+
+    def _select_all(self) -> None:
+        self.selected = {x.path for x in self.entries if self._selectable(x)}
         self._render_listing()
 
     def _selectable(self, e) -> bool:

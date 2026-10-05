@@ -285,6 +285,8 @@ def main() -> int:
     ap.add_argument("--usb-setup", action="store_true", help="click 'Set up with a USB cable' on the connect page "
                     "(a Frame cabled to this PC) and screenshot what follows")
     ap.add_argument("--docs", action="store_true", help="only the screens used in the docs (Library, --game, Frame)")
+    ap.add_argument("--gestures", action="store_true", help="with --fake-frame: real mouse drags (drag-select) and "
+                    "right-clicks (menus) in Files, Screenshots and the Library; prints what got selected")
     ap.add_argument("--linux", action="store_true", help="add two pretend arm64 Linux apps and render their pages")
     args = ap.parse_args()
     if args.linux:
@@ -323,6 +325,51 @@ def main() -> int:
         steps.append(("screenshot-viewer", lambda a: a.screenshots_view.viewer(0)))
         steps.append(("type-on-frame", lambda a: (a.page.pop_dialog(), open_type_dialog(a))))
         steps.append(("power-confirm", lambda a: (a.page.pop_dialog(), a.frame_power("restart"))))
+    mouse: dict[str, callable] = {}  # step name -> mouse actions (Playwright page) after its screenshot
+    if args.gestures:
+        STEP_SECONDS = 14  # the mouse actions run after each step's screenshot, before the next step
+
+        def drag(*points):
+            def run(page):
+                page.mouse.move(*points[0])
+                time.sleep(0.5)
+                page.mouse.down()
+                for pt in points[1:]:
+                    page.mouse.move(*pt, steps=25)
+                    time.sleep(0.4)
+                page.mouse.up()
+            return run
+
+        def right_click(x, y):
+            return lambda page: (page.mouse.move(x, y), time.sleep(0.5), page.mouse.click(x, y, button="right"))
+
+        def report(label, view, extra=""):
+            def run(a):
+                v = getattr(a, view)
+                print(f"GESTURE {label}: selected={sorted(v.selected)} {extra and eval(extra)}", flush=True)
+            return run
+
+        def escape(page):
+            page.keyboard.press("Escape")
+        steps = [("files", lambda a: a.go("files")),
+                 ("files-dragged", report("files drag", "files_view")),
+                 ("files-menu", lambda a: None),
+                 ("files-space-menu", lambda a: None),
+                 ("screenshots", lambda a: a.go("screenshots")),
+                 ("screenshots-dragged", report("screenshots drag", "screenshots_view")),
+                 ("screenshots-menu", lambda a: None),
+                 ("library", lambda a: a.navigate(0)),
+                 ("library-dragged", report("library drag", "library_view", "a.library_view.select_mode")),
+                 ("library-undrag", report("library drag back", "library_view"))]
+        mouse = {"files": drag((900, 268), (900, 320), (900, 372)),          # the folder + 2 files
+                 "files-dragged": right_click(900, 320),                      # a selected one: "… 3 items"
+                 "files-menu": lambda page: (escape(page), time.sleep(0.5), right_click(900, 600)(page)),
+                 "files-space-menu": escape,
+                 "screenshots": drag((680, 280), (950, 280), (950, 430)),     # 3 shots
+                 "screenshots-dragged": right_click(950, 430),
+                 "screenshots-menu": escape,
+                 "library": drag((360, 300), (560, 300), (760, 300)),        # 3 cards, select mode on
+                 "library-dragged": drag((560, 300), (760, 300))}             # from a selected card: deselects 2
     if args.linux:
         def linux_filter(a, value):
             a.navigate(0)
@@ -434,6 +481,11 @@ def main() -> int:
                             time.sleep(1.5)
                         page.screenshot(path=str(args.out / f"{shot:02d}-{name}.png"))
                         shot += 1
+                        if name in mouse:
+                            mouse[name](page)
+                            time.sleep(2)
+                            page.screenshot(path=str(args.out / f"{shot:02d}-{name}-mouse.png"))
+                            shot += 1
                 browser.close()
         except Exception:  # noqa: BLE001
             ERRORS.append("browser: " + traceback.format_exc())

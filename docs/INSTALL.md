@@ -174,8 +174,10 @@ work like for other games.
 
 The **Files** tab manages files on the Frame over the same connection as installs; no other transfer app is needed.
 Pick a location, browse folders, and use **Upload files** / **Upload folder**, **New folder**, or the download, rename
-and delete buttons on each entry. Tick several entries (or the box above the list for all) to download or delete them
-together. In the downloaded app you can also drag files and folders from Explorer / Finder / your file manager onto
+and delete buttons on each entry. Right-click an entry (or the empty space) for the same actions in a menu. Tick
+several entries (or the box above the list for all), or click and drag across them, to download or delete them
+together; a right-click on one of them then acts on all. The **Screenshots** tab and the **Library** work the same
+way: right-click for a menu, drag across cards to select several. In the downloaded app you can also drag files and folders from Explorer / Finder / your file manager onto
 the list to upload them into the open folder. Uploads and downloads run in the Activity panel, resume after an interruption and
 skip files that are already there.
 
