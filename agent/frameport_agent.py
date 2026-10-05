@@ -36,7 +36,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 55
+AGENT_VERSION = 56
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -1135,7 +1135,16 @@ def remove_from_library(user, remove, result):
 
 def update_library(user, packages, result, shortcuts=True):
     """Add/update installed games' shortcuts + grid art in one Steam account (Steam is closed; shortcuts=False: only
-    the grid art of shortcuts that are already right, while Steam runs)."""
+    the grid art of shortcuts that are already right, while Steam runs). A game's devkit entry (the Play fallback)
+    gets the same art: on Frames where Steam ignores shortcuts.vdf it is the one in the library (GitHub #41)."""
+    for pkg in packages:
+        gameid = devkit_gameid(pkg)
+        appid = devkit_appid(gameid) if gameid else None
+        if appid:
+            try:
+                copy_grid_art(pkg, appid, [user])
+            except OSError as exc:
+                result.setdefault("errors", []).append(f"{pkg}: devkit art: {exc}")
     vdf = os.path.join(STEAM, "userdata", user, "config/shortcuts.vdf")
     grid = os.path.join(os.path.dirname(vdf), "grid")
     os.makedirs(grid, exist_ok=True)
@@ -1283,12 +1292,13 @@ def devkit_appid(gameid):
 
 def devkit_appid_from_log(gameid):
     """The appid Steam picked for a devkit game, from its console log ('sanitize shortcut app id "<dir>/<id>/launch.sh":
-    replacing 0 with N'). Steam adds the entry live but may save shortcuts.vdf only later (GitHub #42: a Frame with two
-    Steam accounts never had it on disk), so the log is the fallback. The newest line wins."""
+    replacing 0 with N'). Steam adds the entry live but may never save it (GitHub #41/#42), so the log of the running
+    Steam session is the fallback (console_log.previous.txt is the session before, whose live entries are gone). The
+    newest line wins."""
     exe = os.path.join(DEVKIT_GAMES, gameid, "launch.sh")
     pat = re.compile(r'sanitize shortcut app id "' + re.escape(exe) + r'": replacing \d+ with (\d+)')
     found = None
-    for name in ("console_log.previous.txt", "console_log.txt"):
+    for name in ("console_log.txt",):  # this Steam session only: entries added live are gone after a restart
         try:
             with open(os.path.join(STEAM, "logs", name), errors="replace") as f:
                 for line in f:
@@ -1340,8 +1350,14 @@ def devkit_register(pkg):
         time.sleep(0.5)
     if not appid:
         raise AgentError("Steam added the devkit entry but didn't save it")
+    copy_grid_art(pkg, appid)
+    return appid
+
+
+def copy_grid_art(pkg, appid, users=None):
+    """The game's Steam art (portrait, landscape, hero, logo) as grid/<appid>* in every (or the given) account."""
     anchor = os.path.join(ANCHORS, pkg)
-    for user in steam_users():
+    for user in users if users is not None else steam_users():
         grid = os.path.join(STEAM, "userdata", user, "config/grid")
         os.makedirs(grid, exist_ok=True)
         for kind, suffix in (("portrait", "p"), ("landscape", ""), ("hero", "_hero"), ("logo", "_logo")):
@@ -1351,7 +1367,6 @@ def devkit_register(pkg):
                     if re.match(rf"^{appid}{re.escape(suffix)}\.", os.path.basename(old)):
                         os.remove(old)
                 shutil.copy(img, os.path.join(grid, f"{appid}{suffix}{os.path.splitext(img)[1]}"))
-    return appid
 
 
 def devkit_unregister(pkg, steam_running=True):
@@ -1403,8 +1418,9 @@ def cmd_launch(args):
         raise AgentError(f"{NOT_IN_LIBRARY}: {dep.get('title') or pkg}")
     steam = steam_launch(appid, args.get("wait", 10))
     out = {"package": pkg, "gameid": steam_gameid(appid), "title": dep.get("title"), "via": via, "steam": steam}
-    if via == "shortcut" and steam["result"] == "error" and steam.get("code") == 9 and args.get("fallback", True):
-        # Steam doesn't know the shortcut at all (it tried to license a store app with that id): devkit entry
+    if steam["result"] == "error" and steam.get("code") == 9 and args.get("fallback", True):
+        # Steam doesn't know the shortcut at all (it tried to license a store app with that id): devkit entry. A devkit
+        # entry Steam never saved is gone after a Steam restart (every install restarts it, GitHub #41): add it again
         try:
             appid = devkit_register(pkg)
         except AgentError as exc:

@@ -1329,3 +1329,35 @@ def test_devkit_appid_from_steams_console_log(monkeypatch, tmp_path):
         f'[2026-10-05 15:29:14] sanitize shortcut app id "{exe}": replacing 0 with 3849978642, reason: k_unAppIdInvalid\n')
     assert a.devkit_appid("I_Am_Cat") == 3849978642  # nothing in shortcuts.vdf: the newest log line
     assert a.devkit_appid("Missing") is None
+
+
+def test_devkit_appid_ignores_the_previous_steam_session(monkeypatch, tmp_path):
+    """Live devkit entries die with Steam (GitHub #41): an appid from console_log.previous.txt is stale."""
+    a = load_agent(monkeypatch, tmp_path)
+    logs = Path(a.STEAM) / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    exe = f"{a.DEVKIT_GAMES}/Batman/launch.sh"
+    (logs / "console_log.previous.txt").write_text(f'sanitize shortcut app id "{exe}": replacing 0 with 77, x\n')
+    (logs / "console_log.txt").write_text("Steam started\n")
+    assert a.devkit_appid("Batman") is None
+
+
+def test_launch_registers_a_lost_devkit_entry_again(monkeypatch, tmp_path):
+    """After a Steam restart Steam forgot the (never saved) devkit entry: Play gets AppError_9 and registers it again."""
+    a = load_agent(monkeypatch, tmp_path)
+    monkeypatch.setattr(a, "check_pkg", lambda p: p)
+    monkeypatch.setattr(a, "deployment", lambda p: {"appid": 111, "title": "Batman"})
+    monkeypatch.setattr(a, "run", lambda *x, **k: subprocess.CompletedProcess([], 0, "", ""))
+    monkeypatch.setattr(a, "devkit_gameid", lambda p: "Batman")
+    monkeypatch.setattr(a, "devkit_appid", lambda g: 222)  # the stale entry from before the restart
+    registered = []
+    monkeypatch.setattr(a, "devkit_register", lambda p: registered.append(p) or 333)
+    launches = []
+
+    def launch(appid, wait=10):
+        launches.append(appid)
+        return {"result": "error", "code": 9} if appid == 222 else {"result": "started"}
+    monkeypatch.setattr(a, "steam_launch", launch)
+    out = a.cmd_launch({"package": "com.camouflaj.manta"})
+    assert registered == ["com.camouflaj.manta"] and launches == [222, 333]
+    assert out["via"] == "devkit" and out["steam"]["result"] == "started"
