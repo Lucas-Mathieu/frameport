@@ -123,6 +123,11 @@ SETTINGS = [
      "Vulkan shim (frame.vk_sanitize): on gives every occlusion query room for both eyes. In multiview passes the "
      "Frame's driver writes a zero result for the second eye into the next query, so engines that count on one slot "
      "cull visible objects (models popping in and out, e.g. Into The Radius 2). 0 = off, 1 = on (2 slots)."),
+    ("vk_spec_fixes", "int", 0, "Vulkan shim: depth spec fixes",
+     "Vulkan shim (frame.vk_sanitize): makes two Unreal habits valid Vulkan - depth images get "
+     "VK_IMAGE_USAGE_TRANSFER_DST_BIT (they are cleared with vkCmdClearDepthStencilImage) and Qualcomm shader-resolve "
+     "subpasses lose an invalid depth resolve. Found with the validation layer in Into The Radius 2 (flickering "
+     "models, windows behind models)."),
     ("vk_validation", "int", 0, "Vulkan shim: validation layer",
      "Diagnostics: the Vulkan shim (frame.vk_sanitize) adds Khronos' validation layer to the game's instance; its "
      "findings go to launch.log. The layer library (libVkLayer_khronos_validation.so) must be in the APK."),
@@ -134,7 +139,7 @@ SETTINGS = [
 
 # settings that need a new build, not only new settings files: the Vulkan shim learned vk_shader_fix in 0.6.4 and
 # vk_query_slots in 0.9.2
-REVISIONS = {"vk_shader_fix": 2, "vk_query_slots": 3}
+REVISIONS = {"vk_shader_fix": 2, "vk_query_slots": 3, "vk_spec_fixes": 2}
 
 # How the "Game settings" dialog shows each setting to non-technical users: group, level (common settings are always
 # shown; advanced ones only under "Show advanced settings"), a plain label and one-line help, the control, and the
@@ -155,6 +160,10 @@ UI: dict[str, dict] = {
     "focus_hold_ms": dict(group="screens", level="advanced", label="Ignore focus dips up to", depends="focus_hold",
                           help="Longer for headsets that briefly think they're off your head.",
                           control=("slider", 500.0, 3000.0, 100.0, "{:.0f} ms")),
+    "vk_spec_fixes": dict(group="troubleshooting", level="advanced", label="Fix depth flicker (Unreal Vulkan)",
+                          help="For Unreal games whose models flicker or show through walls and windows on the Frame "
+                               "(e.g. Into The Radius 2). Needs a rebuild.",
+                          control=("switch",)),
     "vk_query_slots": dict(group="troubleshooting", level="advanced", label="Stop objects popping in and out",
                            help="For Vulkan games whose models flicker or vanish while you look at them (e.g. Into "
                                 "The Radius 2). Needs a rebuild.",
@@ -281,6 +290,7 @@ class AdapterSetting(Patch):
             "vk_shader_fix": lambda a: a.engine == "Unreal",  # read by the Vulkan shim, which only Unreal games get
             "vk_query_slots": lambda a: a.engine == "Unreal" and ap.is_vulkan(a),
             "vk_validation": lambda a: a.engine == "Unreal",
+            "vk_spec_fixes": lambda a: a.engine == "Unreal" and ap.is_vulkan(a),
             "controller_models": ap.may_use_render_models,
             **{k: ap.is_gles for k in ("equirect_emul", "equirect_face", "equirect_res", "equirect_flip",
                                        "equirect_fps", "equirect_stereo")},

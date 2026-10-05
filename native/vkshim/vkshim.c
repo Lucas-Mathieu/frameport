@@ -20,6 +20,14 @@
 // (Into The Radius 2, Unreal 5) then have the next object's occlusion query overwritten with "0 samples" and cull it:
 // models pop in and out. With the setting, occlusion pools get N slots per query; query i uses slot N*i, so the extra
 // views land in N*i+1.., and results are read from slot N*i only (view 0's count; Turnip counts every view there).
+//
+// Spec fixes (vk_spec_fixes=1, per game; found with the validation layer in Into The Radius 2, Unreal 5):
+//  * depth/stencil images created without VK_IMAGE_USAGE_TRANSFER_DST_BIT are cleared with vkCmdClearDepthStencilImage
+//    (VUID-vkCmdClearDepthStencilImage-pRanges-02659); Mesa's Turnip picks the image's compression from its usage, so
+//    the flag is added at vkCreateImage.
+//  * subpasses with Qualcomm's shader resolve (VK_SUBPASS_DESCRIPTION_SHADER_RESOLVE_BIT_QCOM) also name a depth
+//    resolve attachment for a single-sampled depth attachment (VUID-VkSubpassDescription2-flags-04908, -03179): the
+//    resolve is dropped (there is nothing to resolve from one sample).
 #define _GNU_SOURCE
 #include <vulkan/vulkan.h>
 #include <android/log.h>
@@ -82,6 +90,7 @@ static void parse_fixes(char *v) {
 }
 
 static int query_slots = 1;  // vk_query_slots: slots per occlusion query (1 = untouched)
+static int spec_fixes;       // vk_spec_fixes: make two Unreal habits valid Vulkan (depth clears, depth resolves)
 #define VALIDATION_LAYER "VK_LAYER_KHRONOS_validation"
 static int validation;       // vk_validation: add Khronos' validation layer (bundled in the APK) to the instance
 
@@ -92,6 +101,7 @@ static void read_settings(const char *path) {
     while (fgets(line, sizeof line, f)) {
         line[strcspn(line, "\r\n")] = 0;
         if (!strncmp(line, "vk_validation=", 14)) validation = atoi(line + 14) != 0;
+        if (!strncmp(line, "vk_spec_fixes=", 14)) spec_fixes = atoi(line + 14) != 0;
         if (!strncmp(line, "vk_query_slots=", 15)) {
             int v = atoi(line + 15);
             query_slots = v == 1 ? 2 : v >= 2 && v <= 4 ? v : 1;  // 1 = on (the settings dialog's switch) = 2 slots
@@ -200,6 +210,8 @@ static void init(void) {
     if (nfixes) LOG("vk shim: %d shader fix(es) configured", nfixes);
     if (query_slots > 1) LOG("vk shim: %d slots per occlusion query", query_slots);
     if (validation) LOG("vk shim: adding %s to the instance", VALIDATION_LAYER);
+    if (spec_fixes) LOG("vk shim: Vulkan spec fixes on (depth images can be cleared, no depth resolve in shader-resolve "
+                        "subpasses)");
     real_vk = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
     if (real_vk) {
         real_gipa = (PFN_vkGetInstanceProcAddr)dlsym(real_vk, "vkGetInstanceProcAddr");
@@ -336,6 +348,8 @@ static const void *clean_chain(Arena *a, const void *head, int *fixes) {
     return first;
 }
 
+static int resolves_logged;
+
 static VkRenderPassCreateInfo2 clean_create_info(Arena *a, const VkRenderPassCreateInfo2 *ci, int *fixes) {
     VkRenderPassCreateInfo2 out = *ci;
     out.pNext = clean_chain(a, ci->pNext, fixes);
@@ -360,6 +374,27 @@ static VkRenderPassCreateInfo2 clean_create_info(Arena *a, const VkRenderPassCre
             out.pSubpasses = sp;
         }
     }
+    if (spec_fixes && out.pSubpasses) {
+        VkSubpassDescription2 *sp = (VkSubpassDescription2 *)out.pSubpasses;
+        for (uint32_t i = 0; i < ci->subpassCount; i++) {
+            if (!(sp[i].flags & 0x8 /* VK_SUBPASS_DESCRIPTION_SHADER_RESOLVE_BIT_QCOM */) || !sp[i].pDepthStencilAttachment)
+                continue;
+            uint32_t att = sp[i].pDepthStencilAttachment->attachment;
+            if (att == VK_ATTACHMENT_UNUSED || att >= ci->attachmentCount || !ci->pAttachments ||
+                ci->pAttachments[att].samples != VK_SAMPLE_COUNT_1_BIT)
+                continue;
+            for (VkBaseOutStructure *n = (VkBaseOutStructure *)sp[i].pNext; n; n = n->pNext) {
+                if (n->sType != VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_DEPTH_STENCIL_RESOLVE) continue;
+                VkSubpassDescriptionDepthStencilResolve *r = (void *)n;
+                if (r->pDepthStencilResolveAttachment &&
+                    r->pDepthStencilResolveAttachment->attachment != VK_ATTACHMENT_UNUSED) {
+                    r->pDepthStencilResolveAttachment = NULL;
+                    (*fixes)++;
+                    if (resolves_logged++ < 5) LOG("vk shim: dropped the depth resolve of shader-resolve subpass %u", i);
+                }
+            }
+        }
+    }
     if (ci->pDependencies && ci->dependencyCount) {
         VkSubpassDependency2 *dep = arena_dup(a, ci->pDependencies, sizeof *dep * ci->dependencyCount);
         if (dep) {
@@ -374,9 +409,9 @@ static VkRenderPassCreateInfo2 clean_create_info(Arena *a, const VkRenderPassCre
 // ---------------------------------------------------------------- entry points
 
 #define MAX_DEVICES 8
-enum { FN_RP2, FN_RP2KHR, FN_CSM, FN_CQP, FN_DQP, FN_BQ, FN_EQ, FN_CRQP, FN_RQP, FN_RQPEXT, FN_GQPR, FN_CCQPR, FN_COUNT };
+enum { FN_RP2, FN_RP2KHR, FN_CSM, FN_CIMG, FN_CQP, FN_DQP, FN_BQ, FN_EQ, FN_CRQP, FN_RQP, FN_RQPEXT, FN_GQPR, FN_CCQPR, FN_COUNT };
 static const char *const FN_NAMES[FN_COUNT] = {
-    "vkCreateRenderPass2", "vkCreateRenderPass2KHR", "vkCreateShaderModule", "vkCreateQueryPool", "vkDestroyQueryPool",
+    "vkCreateRenderPass2", "vkCreateRenderPass2KHR", "vkCreateShaderModule", "vkCreateImage", "vkCreateQueryPool", "vkDestroyQueryPool",
     "vkCmdBeginQuery", "vkCmdEndQuery", "vkCmdResetQueryPool", "vkResetQueryPool", "vkResetQueryPoolEXT",
     "vkGetQueryPoolResults", "vkCmdCopyQueryPoolResults"};
 static struct { VkDevice device; PFN_vkVoidFunction fn[FN_COUNT]; } devices[MAX_DEVICES];
@@ -570,6 +605,37 @@ static VKAPI_ATTR void VKAPI_CALL cmd_copy_query_pool_results(VkCommandBuffer cb
         real(cb, pool, (first + i) * (uint32_t)query_slots, 1, buffer, offset + i * stride, stride, flags);
 }
 
+// ---------------------------------------------------------------- spec fixes: depth images
+
+static int is_depth_format(VkFormat f) {
+    return f == VK_FORMAT_D16_UNORM || f == VK_FORMAT_X8_D24_UNORM_PACK32 || f == VK_FORMAT_D32_SFLOAT ||
+           f == VK_FORMAT_S8_UINT || f == VK_FORMAT_D16_UNORM_S8_UINT || f == VK_FORMAT_D24_UNORM_S8_UINT ||
+           f == VK_FORMAT_D32_SFLOAT_S8_UINT;
+}
+static int images_logged;
+
+static VKAPI_ATTR VkResult VKAPI_CALL create_image(VkDevice device, const VkImageCreateInfo *ci,
+                                                  const VkAllocationCallbacks *alloc, VkImage *image) {
+    PFN_vkCreateImage real = (PFN_vkCreateImage)any_fn(device, FN_CIMG);
+    if (!real) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!spec_fixes || !ci || !is_depth_format(ci->format) || !(ci->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) ||
+        (ci->usage & (VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT)))  // transient: no
+        return real(device, ci, alloc, image);
+    VkImageCreateInfo copy = *ci;
+    copy.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    VkResult r = real(device, &copy, alloc, image);
+    if (images_logged++ < 5) LOG("vk shim: depth image %ux%u format %d can be cleared now: %d", ci->extent.width,
+                                 ci->extent.height, ci->format, r);
+    if (r != VK_SUCCESS) r = real(device, ci, alloc, image);  // the flag isn't allowed here: as the game asked
+    return r;
+}
+
+EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateImage(VkDevice d, const VkImageCreateInfo *ci, const VkAllocationCallbacks *a,
+                                                    VkImage *img) {
+    pthread_once(&once, init);
+    return create_image(d, ci, a, img);
+}
+
 // ---------------------------------------------------------------- validation (diagnostics)
 
 static PFN_vkCreateInstance real_ci;
@@ -646,6 +712,7 @@ static PFN_vkVoidFunction wrap(const char *name) {
     case FN_RP2: return (PFN_vkVoidFunction)vkCreateRenderPass2;
     case FN_RP2KHR: return (PFN_vkVoidFunction)create_render_pass2_khr;
     case FN_CSM: return nfixes ? (PFN_vkVoidFunction)vkCreateShaderModule : NULL;  // nothing to fix: no detour
+    case FN_CIMG: return spec_fixes ? (PFN_vkVoidFunction)create_image : NULL;
     default: break;
     }
     if (query_slots < 2) return NULL;  // no query remapping: no detours
