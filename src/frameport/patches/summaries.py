@@ -38,6 +38,8 @@ SUMMARIES = {
     "frame.adapter": "FramePort's translator between the game and the Steam Frame: fills in what the Frame lacks "
                      "(controllers, room, passthrough). Needed for every converted game.",
     "frame.launcher": "Makes the game start from the Frame's Steam library.",
+    "frame.start_activity": "Opens the app straight in VR, skipping its flat launcher screen (turn off to use the "
+                            "launcher, e.g. to import new content).",
     "frame.nodebug": "Stops strict debugging checks that make some games quit.",
     "frame.meta_permissions": "Declares Meta's permissions some mixed-reality games ask for, so they don't stop.",
     "frame.ovrplatformcompat": "Adds a small piece of Meta's platform library that some games need to start.",

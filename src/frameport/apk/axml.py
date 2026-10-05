@@ -18,6 +18,10 @@ TYPE_INT_BOOLEAN = 0x12
 ANDROID_NS = "http://schemas.android.com/apk/res/android"
 LAUNCHER = "android.intent.category.LAUNCHER"
 INFO = "android.intent.category.INFO"
+MAIN = "android.intent.action.MAIN"
+DEFAULT = "android.intent.category.DEFAULT"
+VR_CATEGORY = "com.oculus.intent.category.VR"
+COMPONENTS = ("activity", "activity-alias", "service", "receiver", "provider")
 
 
 @dataclass
@@ -224,6 +228,81 @@ def fix_launcher(manifest: bytes) -> bytes | None:
     info = names.index(INFO)
     launcher = x.append_string(LAUNCHER)
     return x.bytes() if x.retarget("category", info, launcher) else None
+
+
+def component_filters(manifest: bytes) -> list[tuple[str, str, list[tuple[str, int, int]]]]:
+    """[(element, component name, [(element, attr offset, string index)])] for each component's intent-filter
+    children (action/category), in file order. Children follow their component's start element, so the last
+    component seen owns them."""
+    x = Axml(manifest)
+    names = x.strings()
+    out: list = []
+    for el in x.elements():
+        if el.name in COMPONENTS:
+            out.append((el.name, x.attr_str(el, "name") or "", []))
+        elif el.name in ("action", "category") and out:
+            for a in el.attrs:
+                if a.name < len(names) and names[a.name] == "name":
+                    idx = a.raw if a.raw < len(names) else a.value
+                    out[-1][2].append((el.name, a.offset, idx))
+    return out
+
+
+def vr_activity(manifest: bytes) -> str | None:
+    """The activity with Meta's VR category when it isn't the launcher activity (a 2D launcher that starts the VR
+    part, e.g. WiiCompiled's LauncherActivity -> QuestActivity)."""
+    x = Axml(manifest)
+    names = x.strings()
+    vr = launcher = None
+    for el, name, items in component_filters(manifest):
+        cats = {names[i] for kind, _, i in items if kind == "category" and i < len(names)}
+        if el == "activity" and VR_CATEGORY in cats:
+            vr = vr or name
+        if LAUNCHER in cats:
+            launcher = launcher or name
+    return vr if vr and vr != launcher else None
+
+
+def set_start_activity(manifest: bytes, activity: str) -> bytes | None:
+    """Make `activity` the one Lepton starts: its MAIN intent-filter gets category LAUNCHER (in place of its VR or
+    DEFAULT category), every other component's LAUNCHER category becomes INFO. Only those attribute values change
+    (per element, not every use of the string). None when `activity` has no MAIN filter or already is the only
+    launcher."""
+    filters = component_filters(manifest)
+    x = Axml(manifest)
+    names = x.strings()
+    short = activity.rsplit(".", 1)[-1]
+    target = next((f for f in filters if f[0] in ("activity", "activity-alias")
+                   and (f[1] == activity or f[1].rsplit(".", 1)[-1] == short)), None)
+    if target is None or not any(k == "action" and names[i] == MAIN for k, _, i in target[2] if i < len(names)):
+        return None
+    cats = [(off, names[i]) for k, off, i in target[2] if k == "category" and i < len(names)]
+    others = [off for f in filters if f is not target for k, off, i in f[2]
+              if k == "category" and i < len(names) and names[i] == LAUNCHER]
+    if any(c == LAUNCHER for _, c in cats) and not others:
+        return None
+    pick = next((off for off, c in cats if c == VR_CATEGORY), None) or next(
+        (off for off, c in cats if c == DEFAULT), None) or next((off for off, c in cats if c != LAUNCHER), None)
+    if pick is None and not any(c == LAUNCHER for _, c in cats):
+        return None
+
+    def index(s: str) -> int:
+        i = x.index(s)
+        return i if i is not None else x.append_string(s)
+    launcher, info = index(LAUNCHER), index(INFO)
+    # append_string rebuilds the pool: offsets of attribute records move by the same amount for all of them
+    shift = len(x.data) - len(manifest)
+    for off in others:
+        _set_string_attr(x, off + shift, info)
+    if pick is not None and not any(c == LAUNCHER for _, c in cats):
+        _set_string_attr(x, pick + shift, launcher)
+    return x.bytes()
+
+
+def _set_string_attr(x: Axml, offset: int, index: int) -> None:
+    struct.pack_into("<I", x.data, offset + 8, index)
+    if x.data[offset + 15] == TYPE_STRING:
+        struct.pack_into("<I", x.data, offset + 16, index)
 
 
 def set_bool_attr(manifest: bytes, element: str, attr: str, value: bool) -> bytes | None:

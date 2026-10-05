@@ -39,3 +39,40 @@ def test_edits_compose(quest_manifest):
     m, _ = axml.define_meta_permissions(m)
     assert axml.categories(m) == {axml.LAUNCHER}
     assert axml.Axml(m).get_bool("application", "debuggable") is False
+
+
+def _two_activity_manifest():
+    """WiiCompiled's shape: a 2D LauncherActivity (MAIN+LAUNCHER) and a QuestActivity (MAIN+VR+DEFAULT)."""
+    from conftest import build_axml
+
+    def activity(name, cats):
+        out = [("start", "activity", [("name", "str", name)]), ("start", "intent-filter", []),
+               ("start", "action", [("name", "str", "android.intent.action.MAIN")]), ("end", "action")]
+        for c in cats:
+            out += [("start", "category", [("name", "str", c)]), ("end", "category")]
+        return out + [("end", "intent-filter"), ("end", "activity")]
+    return build_axml([("start", "manifest", [("package", "str", "org.x.game")]), ("start", "application", []),
+                       *activity("org.x.game.launcher.LauncherActivity", [axml.LAUNCHER]),
+                       *activity("org.x.game.QuestActivity", [axml.VR_CATEGORY, axml.DEFAULT]),
+                       ("end", "application"), ("end", "manifest")])
+
+
+def _filters(manifest):
+    x = axml.Axml(manifest)
+    names = x.strings()
+    return {n.rsplit(".", 1)[-1]: sorted(names[i] for k, _, i in items if k == "category")
+            for _, n, items in axml.component_filters(manifest)}
+
+
+def test_start_activity_moves_launcher_to_the_vr_activity():
+    m = _two_activity_manifest()
+    assert axml.vr_activity(m) == "org.x.game.QuestActivity"
+    fixed = axml.set_start_activity(m, "QuestActivity")
+    assert _filters(fixed) == {"LauncherActivity": [axml.INFO],
+                               "QuestActivity": sorted([axml.LAUNCHER, axml.DEFAULT])}
+    assert axml.vr_activity(fixed) is None  # the VR activity is the launcher now
+    assert axml.set_start_activity(fixed, "QuestActivity") is None  # nothing left to do
+    assert axml.set_start_activity(m, "NoSuchActivity") is None
+    # only those two attribute values changed: the rest parses as before
+    assert axml.Axml(fixed).attr_str(next(e for e in axml.Axml(fixed).elements() if e.name == "manifest"),
+                                     "package") == "org.x.game"

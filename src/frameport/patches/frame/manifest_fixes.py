@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ...apk import axml
-from ..base import ApkContext, Patch, Suggestion, register
+from ..base import ApkContext, Param, Patch, Suggestion, register
 
 MANIFEST = "AndroidManifest.xml"
 
@@ -96,6 +96,54 @@ class MetaPermissions(Patch):
         return bool(fixed)
 
 
+class StartActivity(Patch):
+    id = "frame.start_activity"
+    needs_vr = False
+    title = "Start straight in VR (skip the 2D launcher)"
+    description = ("Some apps open a flat Android launcher that then starts a separate VR activity (e.g. WiiCompiled). "
+                   "Shown with Lepton's flat window, that window stays in view after the VR part starts. This makes "
+                   "the VR activity the one Lepton starts (its LAUNCHER category), so the app opens in VR with no "
+                   "flat window. Everything only the launcher does (choosing or importing content) is skipped: turn "
+                   "it off for a run when you need the launcher, and turn off \"Show the app's Android window\".")
+    order = 22
+    params = [Param("activity", "str", "", "Activity to start (empty: the app's VR activity)")]
+
+    def applies(self, a):
+        return bool((a.extra or {}).get("vr_activity"))
+
+    def detect(self, a):
+        vr = (a.extra or {}).get("vr_activity")
+        if not vr:
+            return None
+        return Suggestion(False, f"The app opens a 2D launcher; its VR part is {vr.rsplit('.', 1)[-1]}. Turn on to "
+                                 "start that directly once the app is set up.")
+
+    def apply(self, ctx: ApkContext) -> bool:
+        manifest = ctx.ws.read(MANIFEST)
+        # the original APK's VR activity (analysis): after OVRPort's conversion every MAIN activity has the VR
+        # category, so the converted manifest no longer tells them apart
+        activity = ((ctx.params or {}).get("activity") or (ctx.analysis.extra or {}).get("vr_activity")
+                    or axml.vr_activity(manifest))
+        if not activity:
+            ctx.notes.append("no VR activity found")
+            return False
+        fixed = axml.set_start_activity(manifest, activity)
+        if fixed:
+            ctx.ws.put(MANIFEST, fixed)
+            ctx.notes.append(f"starts {activity}")
+        return bool(fixed)
+
+    def validate(self, ctx):
+        manifest = ctx.ws.read(MANIFEST)
+        names = axml.Axml(manifest).strings()
+        starts = [n for el, n, items in axml.component_filters(manifest) if el in ("activity", "activity-alias")
+                  and any(k == "category" and names[i] == axml.LAUNCHER for k, _, i in items)]
+        wanted = (ctx.params or {}).get("activity") or (ctx.analysis.extra or {}).get("vr_activity") or ""
+        ok = len(starts) == 1 and wanted.rsplit(".", 1)[-1] == starts[0].rsplit(".", 1)[-1]
+        return [("Only the VR activity is a launcher", ok, ", ".join(starts))]
+
+
 register(Launcher)
 register(NoDebuggable)
 register(MetaPermissions)
+register(StartActivity)

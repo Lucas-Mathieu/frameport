@@ -484,3 +484,29 @@ def test_stand_ins_count_only_when_the_loader_links_them(monkeypatch):
     assert detect.missing_ovr_symbols(libs) == {"ovr_Room_GetNextRoomArrayPage"}
     linked[b"loader"] = ["libovrstubs.so"]
     assert detect.missing_ovr_symbols(libs) == set()
+
+
+def test_start_activity_after_overport_conversion(tmp_path):
+    """OVRPort gives every MAIN activity LAUNCHER + VR categories (WiiCompiled: LauncherActivity and QuestActivity),
+    so the VR activity must come from the original APK's analysis; only it may stay a launcher."""
+    from conftest import build_axml
+
+    from frameport.apk import axml
+
+    def activity(name):
+        out = [("start", "activity", [("name", "str", name)]), ("start", "intent-filter", []),
+               ("start", "action", [("name", "str", axml.MAIN)]), ("end", "action")]
+        for c in (axml.LAUNCHER, axml.VR_CATEGORY):
+            out += [("start", "category", [("name", "str", c)]), ("end", "category")]
+        return out + [("end", "intent-filter"), ("end", "activity")]
+    manifest = build_axml([("start", "manifest", [("package", "str", "org.x.game")]),
+                           *activity("org.x.game.launcher.LauncherActivity"), *activity("org.x.game.QuestActivity"),
+                           ("end", "manifest")])
+    assert axml.vr_activity(manifest) is None  # can't be told apart any more
+    a = _analysis()
+    a.extra = {**(a.extra or {}), "vr_activity": "org.x.game.QuestActivity"}
+    patch = base.get("frame.start_activity")
+    with ApkWorkspace(_apk(tmp_path, manifest)) as ws:
+        ctx = base.ApkContext(ws, a, {}, Reporter(), {"frame.start_activity": {}})
+        assert patch.apply(ctx)
+        assert patch.validate(ctx) == [("Only the VR activity is a launcher", True, "org.x.game.QuestActivity")]

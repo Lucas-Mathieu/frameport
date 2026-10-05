@@ -202,6 +202,8 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             "oculus_xr_plugin": bool(il2cpp_meta) and b"\0m_StereoRenderingModeAndroid\0" in il2cpp_meta,
             # Unity's built-in Oculus support checks for Meta's system apps before VR (frame.unity_oculus_check)
             "unity_oculus_check": b"\0com.oculus.systemactivities\0" in lib_bytes.get("libunity.so", b""),
+            # a 2D launcher activity that starts a separate VR activity (frame.start_activity)
+            "vr_activity": axml.vr_activity(manifest),
             "unity_version": unity_version(ggm, lib_bytes.get("libunity.so")) if engine == "Unity" else None,
         },
     )
