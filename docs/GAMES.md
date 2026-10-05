@@ -36,6 +36,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | NOPE CHALLENGE | Quest | ✅ Works |  |
 | Path of the Warrior | Quest | ✅ Works |  |
 | PowerWash Simulator VR | Quest | ✅ Works |  |
+| QuestCraft | Quest | ✅ Works |  |
 | Rick and Morty: Virtual Rick-ality | PC VR | ✅ Works |  |
 | Riven | Quest | ✅ Works |  |
 | Robo Recall | Quest | ✅ Works |  |
@@ -58,7 +59,6 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Lucky's Tale | Quest | ⚠️ Works with issues | Runs out of memory within a few minutes and freezes the Frame until the game is killed. |
 | Myst | Quest | ⚠️ Works with issues | Minor graphical glitches on some objects. |
 | Phantom: Covert Ops | Quest | ⚠️ Works with issues | DLC/store button crashes (no Meta store). |
-| QuestCraft | Quest | ⚠️ Works with issues | Minecraft now starts (Vivecraft takes over VR at 72 fps with music), but the picture stays black. |
 | Silhouette | Quest | ⚠️ Works with issues | Hand-tracking game; the Frame synthesizes hands from controllers, so it is janky. |
 | Time Stall | Quest | ⚠️ Works with issues | Both eyes distort during movement (unresolved). |
 | WiiCompiled VR | Quest | ⚠️ Works with issues | To add a game: in FramePort's Files tab, upload your .wcgame file to this game's storage, folder Android/data/org.wiicompiled.quest/files/WiiCompiledOpenXRVR… |
