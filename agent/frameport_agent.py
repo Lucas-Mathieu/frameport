@@ -34,8 +34,9 @@ import subprocess
 import sys
 import time
 import zlib
+from types import SimpleNamespace
 
-AGENT_VERSION = 49
+AGENT_VERSION = 50
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -2805,6 +2806,58 @@ def cmd_finalize_linux(args):
     with open(os.path.join(anchor, "deployment.json"), "w") as f:
         json.dump(dep, f, indent=2)
     return {"ok": True, "base": base, "appid": appid, "moved_files": moved, "missing_libraries": missing}
+
+
+def cmd_usb_link(args):
+    """What the Frame's USB network link (usb0) looks like, for "connect with a USB cable" (read only): its address
+    and state, the USB gadget functions behind it (ncm/ecm/rndis: decides which PCs need a driver), the USB speed,
+    whether the Frame gives the PC an address (NetworkManager "shared" = DHCP server, dnsmasq) and whether sshd
+    answers on it."""
+    def sh(cmd):  # a missing tool (nmcli, ss) leaves its field empty instead of failing the whole probe
+        try:
+            return run(cmd)
+        except (OSError, subprocess.SubprocessError):
+            return SimpleNamespace(returncode=1, stdout="", stderr="")
+
+    def read(path):
+        try:
+            return open(path).read().strip()
+        except OSError:
+            return None
+    out = {"present": os.path.isdir("/sys/class/net/usb0")}
+    out["operstate"] = read("/sys/class/net/usb0/operstate")
+    out["carrier"] = read("/sys/class/net/usb0/carrier")
+    out["mac"] = read("/sys/class/net/usb0/address")
+    p = sh(["ip", "-j", "addr", "show", "usb0"])
+    try:
+        out["addresses"] = [f"{a['local']}/{a['prefixlen']}" for i in json.loads(p.stdout or "[]")
+                            for a in i.get("addr_info", [])]
+    except ValueError:
+        out["addresses"] = []
+    functions = []
+    for g in glob.glob("/sys/kernel/config/usb_gadget/*"):
+        functions += [f"{os.path.basename(g)}:{os.path.basename(f)}" for f in glob.glob(os.path.join(g, "functions/*"))]
+        out.setdefault("udc", read(os.path.join(g, "UDC")))
+        out.setdefault("gadget_ids", f"{read(os.path.join(g, 'idVendor'))}:{read(os.path.join(g, 'idProduct'))}")
+    out["functions"] = functions
+    out["speed"] = {os.path.basename(u): read(os.path.join(u, "current_speed")) for u in glob.glob("/sys/class/udc/*")}
+    nm = sh(["nmcli", "-t", "-f", "DEVICE,STATE,CONNECTION", "device"])
+    line = next((ln for ln in nm.stdout.splitlines() if ln.startswith("usb0:")), "")
+    out["nm"] = line
+    conn = line.split(":", 2)[2] if line.count(":") >= 2 else ""
+    if conn:
+        out["nm_ipv4_method"] = sh(["nmcli", "-g", "ipv4.method", "connection", "show", conn]).stdout.strip()
+    out["dhcp_servers"] = [ln for ln in sh(["pgrep", "-a", "dnsmasq|udhcpd|kea|dhcpd"]).stdout.splitlines()][:5]
+    out["leases"] = sorted(glob.glob("/var/lib/NetworkManager/dnsmasq-usb0*.leases") +
+                           glob.glob("/var/lib/misc/dnsmasq*.leases"))
+    neigh = sh(["ip", "-j", "neigh", "show", "dev", "usb0"])
+    try:
+        out["neighbours"] = [n.get("dst") for n in json.loads(neigh.stdout or "[]")]
+    except ValueError:
+        out["neighbours"] = []
+    out["sshd_listening"] = ":22 " in sh(["ss", "-ltn"]).stdout
+    out["devkit_mode"] = os.path.exists("/etc/steamos-devkit-enabled")
+    return out
 
 
 POWER_ACTIONS = {"sleep": "suspend", "restart": "reboot", "shutdown": "poweroff"}

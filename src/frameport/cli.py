@@ -493,6 +493,16 @@ def frame_info(frame: Optional[str] = typer.Option(None, help=FRAME_HELP)):
     typer.echo(json.dumps(_target(frame).describe(), indent=1, default=str))
 
 
+@frame_app.command("usb-check")
+def frame_usb_check(frame: Optional[str] = typer.Option(None, help=FRAME_HELP),
+                    no_speed: bool = typer.Option(False, help="skip the upload speed test (2 × 128 MB)")):
+    """Check the USB cable link to the Frame: what the Frame presents, this PC's address on it, SSH over it and its
+    upload speed vs the normal connection (JSON)."""
+    from .frame import usb
+
+    typer.echo(json.dumps(usb.check(_target(frame).connect().frame, measure=not no_speed), indent=1, default=str))
+
+
 @frame_app.command("controller-models")
 def frame_controller_models(frame: Optional[str] = typer.Option(None, help=FRAME_HELP),
                             convert: bool = typer.Option(False, help="also convert them (cached on the Frame)")):
