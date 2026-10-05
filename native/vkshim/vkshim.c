@@ -82,6 +82,8 @@ static void parse_fixes(char *v) {
 }
 
 static int query_slots = 1;  // vk_query_slots: slots per occlusion query (1 = untouched)
+#define VALIDATION_LAYER "VK_LAYER_KHRONOS_validation"
+static int validation;       // vk_validation: add Khronos' validation layer (bundled in the APK) to the instance
 
 static void read_settings(const char *path) {
     FILE *f = fopen(path, "r");
@@ -89,6 +91,7 @@ static void read_settings(const char *path) {
     char line[4096];
     while (fgets(line, sizeof line, f)) {
         line[strcspn(line, "\r\n")] = 0;
+        if (!strncmp(line, "vk_validation=", 14)) validation = atoi(line + 14) != 0;
         if (!strncmp(line, "vk_query_slots=", 15)) {
             int v = atoi(line + 15);
             query_slots = v == 1 ? 2 : v >= 2 && v <= 4 ? v : 1;  // 1 = on (the settings dialog's switch) = 2 slots
@@ -196,6 +199,7 @@ static void init(void) {
     read_all_settings();
     if (nfixes) LOG("vk shim: %d shader fix(es) configured", nfixes);
     if (query_slots > 1) LOG("vk shim: %d slots per occlusion query", query_slots);
+    if (validation) LOG("vk shim: adding %s to the instance", VALIDATION_LAYER);
     real_vk = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
     if (real_vk) {
         real_gipa = (PFN_vkGetInstanceProcAddr)dlsym(real_vk, "vkGetInstanceProcAddr");
@@ -566,6 +570,37 @@ static VKAPI_ATTR void VKAPI_CALL cmd_copy_query_pool_results(VkCommandBuffer cb
         real(cb, pool, (first + i) * (uint32_t)query_slots, 1, buffer, offset + i * stride, stride, flags);
 }
 
+// ---------------------------------------------------------------- validation (diagnostics)
+
+static PFN_vkCreateInstance real_ci;
+
+static VKAPI_ATTR VkResult VKAPI_CALL create_instance(const VkInstanceCreateInfo *ci, const VkAllocationCallbacks *a,
+                                                    VkInstance *inst) {
+    if (!real_ci && real_vk) real_ci = (PFN_vkCreateInstance)dlsym(real_vk, "vkCreateInstance");
+    if (!real_ci) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!validation || !ci) return real_ci(ci, a, inst);
+    for (uint32_t i = 0; i < ci->enabledLayerCount; i++)
+        if (!strcmp(ci->ppEnabledLayerNames[i], VALIDATION_LAYER)) return real_ci(ci, a, inst);
+    const char **names = malloc(sizeof(char *) * (ci->enabledLayerCount + 1));
+    if (!names) return real_ci(ci, a, inst);
+    for (uint32_t i = 0; i < ci->enabledLayerCount; i++) names[i] = ci->ppEnabledLayerNames[i];
+    names[ci->enabledLayerCount] = VALIDATION_LAYER;
+    VkInstanceCreateInfo copy = *ci;
+    copy.enabledLayerCount = ci->enabledLayerCount + 1;
+    copy.ppEnabledLayerNames = names;
+    VkResult r = real_ci(&copy, a, inst);
+    LOG("vk shim: vkCreateInstance with %s: %d", VALIDATION_LAYER, r);
+    if (r == VK_ERROR_LAYER_NOT_PRESENT) r = real_ci(ci, a, inst);  // not bundled: start without it
+    free(names);
+    return r;
+}
+
+EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *ci, const VkAllocationCallbacks *a,
+                                                       VkInstance *inst) {
+    pthread_once(&once, init);
+    return create_instance(ci, a, inst);
+}
+
 // The same entry points for engines that dlsym them from the shim instead of asking vkGet*ProcAddr
 EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateQueryPool(VkDevice d, const VkQueryPoolCreateInfo *ci,
                                                         const VkAllocationCallbacks *a, VkQueryPool *p) {
@@ -655,6 +690,7 @@ EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance
     if (!real_gipa || !name) return NULL;
     if (!strcmp(name, "vkGetDeviceProcAddr")) return (PFN_vkVoidFunction)vkGetDeviceProcAddr;
     if (!strcmp(name, "vkGetInstanceProcAddr")) return (PFN_vkVoidFunction)vkGetInstanceProcAddr;
+    if (!strcmp(name, "vkCreateInstance") && validation) return (PFN_vkVoidFunction)vkCreateInstance;
     PFN_vkVoidFunction fn = real_gipa(instance, name);
     PFN_vkVoidFunction w = fn ? wrap(name) : NULL;
     if (!w) return fn;

@@ -123,6 +123,9 @@ SETTINGS = [
      "Vulkan shim (frame.vk_sanitize): on gives every occlusion query room for both eyes. In multiview passes the "
      "Frame's driver writes a zero result for the second eye into the next query, so engines that count on one slot "
      "cull visible objects (models popping in and out, e.g. Into The Radius 2). 0 = off, 1 = on (2 slots)."),
+    ("vk_validation", "int", 0, "Vulkan shim: validation layer",
+     "Diagnostics: the Vulkan shim (frame.vk_sanitize) adds Khronos' validation layer to the game's instance; its "
+     "findings go to launch.log. The layer library (libVkLayer_khronos_validation.so) must be in the APK."),
     ("gl_hide_multiview", "int", 1, "GL shim: hide multiview",
      "GL shim only: hide GL_OVR_multiview so all passes use single-view shaders. For GLES games whose multiview "
      "shaders fail on single-view render targets (e.g. Path of the Warrior)."),
@@ -220,7 +223,7 @@ UI: dict[str, dict] = {
                             control=("choice", [(0, "As the game sends it"), (2, "Flat")])),
     **{key: dict(group="troubleshooting", level="advanced", control=("switch",)) for key in (
         "foveation_fix", "hide_space_warp", "swapchain_fix", "layer_fix", "gl_hide_multiview", "mutable_fix",
-        "flip_quads", "swap_eyes",
+        "flip_quads", "swap_eyes", "vk_validation",
         "strip_depth", "respace_kick", "layer_debug", "eye_debug", "release_wait")},
 }
 
@@ -277,6 +280,7 @@ class AdapterSetting(Patch):
             "gl_hide_multiview": lambda a: a.direct_vrapi and ap.is_gles(a),
             "vk_shader_fix": lambda a: a.engine == "Unreal",  # read by the Vulkan shim, which only Unreal games get
             "vk_query_slots": lambda a: a.engine == "Unreal" and ap.is_vulkan(a),
+            "vk_validation": lambda a: a.engine == "Unreal",
             "controller_models": ap.may_use_render_models,
             **{k: ap.is_gles for k in ("equirect_emul", "equirect_face", "equirect_res", "equirect_flip",
                                        "equirect_fps", "equirect_stereo")},

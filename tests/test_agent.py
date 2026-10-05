@@ -1305,3 +1305,13 @@ def test_proton_defaults_to_stable(monkeypatch, tmp_path):
     assert a.pick_proton([exp, stable])["name"] == "proton_11-arm64"  # whatever the order
     assert a.pick_proton([stable, exp], "proton-experimental")["name"] == "proton-experimental-arm64"  # by alias
     assert a.pick_proton([exp])["name"] == "proton-experimental-arm64"  # only Experimental offered
+
+
+def test_launch_test_waits_for_a_first_boot(monkeypatch, tmp_path):
+    """The first start after an APK change: Lepton says "is not a running context" while it waits, then boots."""
+    a = load_agent(monkeypatch, tmp_path)
+    first = "Waiting for boot...\nERROR: 'steamlaunch-1' is not a running context, use 'lepton ps'\n"
+    assert not a.not_started(first, 5)  # still within the grace period
+    assert a.not_started(first, 31)  # no boot: the container really failed
+    assert not a.not_started(first + "Boot complete!\nInstalling game.apk...\n", 120)
+    assert not a.not_started("Boot complete!\n", 120)

@@ -36,7 +36,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 53
+AGENT_VERSION = 54
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -3058,7 +3058,7 @@ def cmd_launch_test(args):
         if "Exited!" in text:
             state = "EXITED"
             break
-        if "Early-exit" in text or "is not a running context" in text:
+        if "Early-exit" in text or not_started(text, time.time() - start):
             state = "NEVER_STARTED"
             break
     elapsed = round(time.time() - start)
@@ -3697,6 +3697,14 @@ def dashboard_worker(log, parent, wait_start=240, window=30, poll=0.5, ui_log=No
             print(f"steam ui: {exc}")
             return
         time.sleep(poll)
+
+
+def not_started(text, waited, grace=30):
+    """Lepton's container didn't come up: "is not a running context" with no "Boot complete!" after it for `grace`
+    seconds. The first start after an APK change prints that message while it waits for the boot and then boots
+    normally (installing the new APK): agent 53 and older stopped those starts after a few seconds."""
+    i = text.rfind("is not a running context")
+    return i >= 0 and "Boot complete!" not in text[i:] and waited >= grace
 
 
 COMMANDS = {n[4:]: f for n, f in globals().items() if n.startswith("cmd_")}
