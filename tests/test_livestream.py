@@ -161,12 +161,13 @@ def test_stream_endpoint_sends_init_then_gop():
         live.stop()
 
 
-def test_source_command_scales_only_when_needed():
+def test_source_command_scales_down_only():
     c720 = L.source_command("720p")
-    assert "scale=1280:720" in c720 and "fps=30" in c720 and '"SteamVR"' in c720
+    assert "scale=-2:'min(720,ih)'" in c720 and "fps=30" in c720 and '"SteamVR"' in c720
     assert c720.index("fps=30") < c720.index("scale=")  # drop frames before the expensive scale
-    assert "scale=" not in L.source_command("1080p")
-    assert L.source_command("bogus") == c720
+    for q, (h, _) in L.QUALITY.items():
+        assert ("scale=" in L.source_command(q)) == (h is not None)
+    assert L.source_command("bogus") == L.source_command(L.DEFAULT_QUALITY)
 
 
 @pytest.mark.skipif(not shutil.which("bash"), reason="needs bash")
@@ -194,3 +195,53 @@ def test_source_command_stops_when_stdin_closes(tmp_path):
     assert p.poll() is None  # streaming
     p.stdin.close()
     assert p.wait(timeout=5) is not None
+
+
+def trak(track_id: int, handler: bytes, entry: bytes) -> bytes:
+    tkhd = full("tkhd", 3, b"\0" * 8 + struct.pack(">I", track_id) + b"\0" * 68)
+    hdlr = full("hdlr", 0, b"\0" * 4 + handler + b"\0" * 13)
+    return box("trak", tkhd + box("mdia", hdlr + box("minf", box("stbl", box("stsd", entry)))))
+
+
+def av_init() -> bytes:
+    avc1 = box("avc1", b"\0" * 24 + struct.pack(">HH", 1280, 720) + b"\0" * 50
+               + box("avcC", bytes([1, 0x42, 0xC0, 0x1F]) + b"\0" * 4))
+    return box("ftyp", b"isom\0\0\0\0") + box("moov", trak(2, b"soun", box("mp4a", b"\0" * 28))
+                                                 + trak(1, b"vide", avc1))
+
+
+def av_fragment(video_key: bool, seq: int) -> bytes:
+    """Audio traf first (all sync samples), then the video traf."""
+    def traf(tid, flags):
+        return box("traf", full("tfhd", 0, struct.pack(">I", tid)) + full("trun", 0x4, struct.pack(">II", 1, flags)))
+    return box("moof", box("mfhd", struct.pack(">II", 0, seq)) + traf(2, 0)
+               + traf(1, 0 if video_key else L.SAMPLE_NON_SYNC)) + box("mdat", b"x" * 8)
+
+
+def test_audio_track_codecs_and_video_track():
+    init = av_init()
+    assert L.codec_string(init) == "avc1.42c01f, mp4a.40.2"
+    assert L.video_track_id(init) == 1
+    assert L.video_track_id(init_segment()) is None  # (the minimal helper has no tkhd/hdlr)
+
+
+def test_keyframe_looks_at_video_track_only():
+    assert not L.fragment_is_keyframe(av_fragment(False, 1), 1)  # the audio traf's sync sample doesn't count
+    assert L.fragment_is_keyframe(av_fragment(True, 1), 1)
+    assert not L.fragment_is_keyframe(av_fragment(True, 1), 7)  # no such track
+
+
+def test_relay_with_audio():
+    r = L.Relay()
+    r.feed(av_init() + av_fragment(True, 1) + av_fragment(False, 2) + av_fragment(False, 3))
+    _, gop, _ = r.subscribe()
+    assert len(gop) == 3  # the non-key fragments with audio didn't restart the group
+    st = r.status()
+    assert st["audio"] and st["codec"].endswith("mp4a.40.2")
+
+
+def test_source_command_captures_default_output():
+    cmd = L.source_command()
+    assert "pactl get-default-sink" in cmd and "$sink.monitor" in cmd and "-c:a aac" in cmd
+    assert "-ts mono2abs" in cmd and "-use_wallclock_as_timestamps" not in cmd  # both on pulse's wall clock
+    assert "aresample=async=1" in cmd

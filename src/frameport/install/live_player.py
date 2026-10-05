@@ -29,13 +29,14 @@ PLAYER_HTML = r"""<!doctype html>
 <video id="v" muted autoplay playsinline disablepictureinpicture></video>
 <div id="bar">
   <span id="dot"></span><span id="msg">Connecting to the Frame…</span><span id="info"></span>
+  <button id="snd" hidden title="Browsers start videos muted: click to hear the Frame">Sound on</button>
   <button id="fs" title="Full screen (or double-click the picture)">Full screen</button>
 </div>
 <script>
 "use strict";
 const video = document.getElementById("v"), dot = document.getElementById("dot");
 const msg = document.getElementById("msg"), info = document.getElementById("info");
-const LIVE_EDGE = 0.08, MAX_LAG = 0.5, KEEP = 10;
+const CUSHION = 0.3, CATCH_UP = 0.7, FAR_BEHIND = 2.0, KEEP = 10;  // seconds behind the newest data
 let session = 0, frames = 0, lastFrames = 0, size = "";
 
 function say(text, state) { msg.textContent = text; dot.className = state || ""; }
@@ -59,6 +60,7 @@ async function run() {
   const MS = window.ManagedMediaSource || window.MediaSource;
   if (!MS || !MS.isTypeSupported(type)) { say("This browser can't play H.264 video (" + type + "). Copy this page's address into another browser.", "err"); return; }
   size = st.width ? st.width + "×" + st.height : "";
+  snd.hidden = !st.audio;
   const ms = new MS();
   video.disableRemotePlayback = true;
   video.src = URL.createObjectURL(ms);
@@ -78,7 +80,9 @@ async function run() {
   sb.addEventListener("updateend", () => {
     if (sb.buffered.length) {
       const end = sb.buffered.end(sb.buffered.length - 1);
-      if (end - video.currentTime > MAX_LAG || video.currentTime < sb.buffered.start(0)) video.currentTime = Math.max(end - LIVE_EDGE, 0);
+      const lag = end - video.currentTime;
+      if (lag > FAR_BEHIND || video.currentTime < sb.buffered.start(0)) video.currentTime = Math.max(end - CUSHION, 0);
+      else video.playbackRate = lag > CATCH_UP ? 1.1 : lag < CUSHION ? 1.0 : video.playbackRate;
       if (video.paused) video.play().catch(() => {});
     }
     pump();
@@ -113,6 +117,14 @@ setInterval(() => {
 document.addEventListener("visibilitychange", () => { if (!document.hidden) run(); });
 const toggleFs = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
 document.getElementById("fs").onclick = toggleFs;
+const snd = document.getElementById("snd");
+let wantSound = false;  // the choice survives reconnects (each one makes a new MediaSource)
+snd.onclick = () => {
+  wantSound = !wantSound; video.muted = !wantSound;
+  snd.textContent = wantSound ? "Mute" : "Sound on";
+  if (wantSound) video.play().catch(() => {});
+};
+video.addEventListener("loadedmetadata", () => { video.muted = !wantSound; });
 video.ondblclick = toggleFs;
 let idle;
 document.addEventListener("mousemove", () => {

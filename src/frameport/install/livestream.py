@@ -48,9 +48,10 @@ def _child(data: bytes, start: int, end: int, kind: str):
     return None
 
 
-def fragment_is_keyframe(moof: bytes) -> bool:
-    """Whether a movie fragment starts with a sync sample (trun's first-sample flags, else its per-sample flags,
-    else tfhd's default flags). Unknown → False: a viewer then waits for the next fragment that is one."""
+def fragment_is_keyframe(moof: bytes, track_id: int | None = None) -> bool:
+    """Whether a movie fragment starts with a sync sample in the given track (default: its first track): trun's
+    first-sample flags, else its per-sample flags, else tfhd's default flags. Unknown or no such track → False: a
+    viewer then waits for the next fragment that is one."""
     top = _child(moof, 0, len(moof), "moof")
     if not top:
         return False
@@ -62,6 +63,8 @@ def fragment_is_keyframe(moof: bytes) -> bool:
         if tfhd:
             p = tfhd[0]
             flags = int.from_bytes(moof[p + 1:p + 4], "big")
+            if track_id is not None and struct.unpack_from(">I", moof, p + 4)[0] != track_id:
+                continue
             p += 8  # version/flags + track_ID
             for bit, size in ((0x1, 8), (0x2, 4), (0x8, 4), (0x10, 4)):
                 if flags & bit:
@@ -92,12 +95,32 @@ def fragment_is_keyframe(moof: bytes) -> bool:
 
 
 def codec_string(init: bytes) -> str | None:
-    """The MSE codec string (`avc1.PPCCLL`) from the init segment's avcC box."""
+    """The MSE codecs parameter from the init segment: `avc1.PPCCLL` (from avcC), plus `mp4a.40.2` when it has an AAC
+    track (ffmpeg's aac encoder writes AAC-LC)."""
     i = init.find(b"avcC")
     if i < 0 or i + 8 > len(init):
         return None
     profile, compat, level = init[i + 5], init[i + 6], init[i + 7]
-    return f"avc1.{profile:02x}{compat:02x}{level:02x}"
+    out = f"avc1.{profile:02x}{compat:02x}{level:02x}"
+    if b"mp4a" in init:
+        out += ", mp4a.40.2"
+    return out
+
+
+def video_track_id(init: bytes) -> int | None:
+    """track_ID of the init segment's video track (its trak's hdlr is 'vide')."""
+    moov = _child(init, 0, len(init), "moov")
+    if not moov:
+        return None
+    for kind, s, e in iter_boxes(init, *moov):
+        if kind != "trak":
+            continue
+        tkhd, mdia = _child(init, s, e, "tkhd"), _child(init, s, e, "mdia")
+        hdlr = mdia and _child(init, *mdia, "hdlr")
+        if tkhd and hdlr and init[hdlr[0] + 8:hdlr[0] + 12] == b"vide":
+            version = init[tkhd[0]]
+            return struct.unpack_from(">I", init, tkhd[0] + (20 if version == 1 else 12))[0]
+    return None
 
 
 def video_size(init: bytes) -> tuple[int, int] | None:
@@ -173,6 +196,7 @@ class Relay:
     def __init__(self):
         self._lock = threading.Lock()
         self.init: bytes | None = None
+        self.video_track: int | None = None
         self.gop: list[bytes] = []  # fragments since the last keyframe fragment (incl.)
         self.clients: list[queue.Queue] = []
         self.frames = 0
@@ -187,9 +211,10 @@ class Relay:
                 self.bytes += len(chunk)
                 if kind == "init":
                     self.init = chunk
+                    self.video_track = video_track_id(chunk)
                     continue
                 self.frames += 1
-                if fragment_is_keyframe(chunk):
+                if fragment_is_keyframe(chunk, self.video_track):
                     self.gop = [chunk]
                 elif self.gop:
                     self.gop.append(chunk)
@@ -225,6 +250,7 @@ class Relay:
                    "fragments": self.frames, "bytes": self.bytes, "seconds": round(time.time() - self.started, 1)}
         if init:
             out["codec"] = codec_string(init)
+            out["audio"] = b"mp4a" in init
             size = video_size(init)
             if size:
                 out["width"], out["height"] = size
@@ -321,28 +347,50 @@ class _Server(ThreadingHTTPServer):
 # Frame's Qualcomm encoder (qcom-iris) doesn't work with the stock ffmpeg/GStreamer. So: read the headset view, drop
 # to 30 fps before scaling, x264 at low priority, fragmented MP4 on stdout. Black while the headset sleeps.
 DEVICE_NAME = "SteamVR"
-QUALITY = {  # width, height, bitrate
-    "720p": (1280, 720, "3M"),
-    "1080p": (1920, 1080, "6M"),
+# The headset view's size comes from SteamVR (1920x1080 on SteamOS 0.3.0; v4l2cam follows it, it has no size option),
+# so qualities are heights the picture is scaled *down* to (never up: a 2K/4K setting would only add bytes); "full"
+# sends it at its own size, whatever SteamVR makes it.
+QUALITY = {  # max height (None = the headset view's own), bitrate
+    "360p": (360, "1M"),
+    "480p": (480, "1500k"),
+    "720p": (720, "3M"),
+    "1080p": (1080, "6M"),
+    "full": (None, "10M"),
 }
+DEFAULT_QUALITY = "720p"
 FPS = 30
+# Clocks: pulse stamps audio with the wall clock, v4l2 with CLOCK_MONOTONIC → `-ts mono2abs` puts the picture on the
+# wall clock too. (Forcing -use_wallclock_as_timestamps on the pulse input gave bursts of AAC packets one shared time,
+# a broken audio timeline.) aresample=async=1 keeps the sound continuous across hiccups.
+AUDIO_BITRATE = "128k"  # AAC of the Frame's default output's monitor = what the headset plays (Lepton/Proton games)
 ENCODER_THREADS = 3  # leaves the game most of the CPU
 
 
-def source_command(quality: str = "720p", fps: int = FPS) -> str:
-    """Shell script for the Frame: finds the headset-view device, streams fMP4 H.264 to stdout and stops when the SSH
-    channel closes (stdin reaches EOF). Exit 3 = no headset view device (SteamVR not running)."""
-    w, h, rate = QUALITY.get(quality, QUALITY["720p"])
-    scale = "" if (w, h) == (1920, 1080) else f",scale={w}:{h}:flags=fast_bilinear"
+def source_command(quality: str = DEFAULT_QUALITY, fps: int = FPS) -> str:
+    """Shell script for the Frame: finds the headset-view device, streams fMP4 (H.264, + AAC sound of the
+    default output when there is one) to stdout and stops when the SSH channel closes (stdin reaches EOF).
+    Exit 3 = no headset view device (SteamVR not running)."""
+    h, rate = QUALITY.get(quality, QUALITY[DEFAULT_QUALITY])
+    # width -2 keeps the aspect ratio (even, as yuv420p needs); full size only drops an odd last row/column
+    scale = (",crop=trunc(iw/2)*2:trunc(ih/2)*2" if h is None
+             else f",scale=-2:'min({h},ih)':flags=fast_bilinear")
     return f"""dev=
 for d in /sys/class/video4linux/video*; do
   [ "$(cat "$d/name" 2>/dev/null)" = "{DEVICE_NAME}" ] && dev=/dev/${{d##*/}} && break
 done
 if [ -z "$dev" ]; then echo "no SteamVR headset view device: is SteamVR running?" >&2; exit 3; fi
 exec 3<&0
-nice -n 10 ffmpeg -nostdin -hide_banner -loglevel error -f v4l2 -input_format rgb24 -i "$dev" \\
+export XDG_RUNTIME_DIR=${{XDG_RUNTIME_DIR:-/run/user/$(id -u)}}  # (an SSH session may lack it: PipeWire's socket)
+audio=(-an)
+sink=$(pactl get-default-sink 2>/dev/null)
+if [ -n "$sink" ]; then
+  audio=(-thread_queue_size 1024 -f pulse -fragment_size 3840 -i "$sink.monitor"
+         -map 0:v -map 1:a -af aresample=async=1 -c:a aac -b:a {AUDIO_BITRATE} -ac 2 -ar 48000)
+fi
+nice -n 10 ffmpeg -nostdin -hide_banner -loglevel error \\
+  -thread_queue_size 64 -ts mono2abs -f v4l2 -input_format rgb24 -i "$dev" "${{audio[@]}}" \\
   -vf "fps={fps}{scale},format=yuv420p" -c:v libx264 -preset ultrafast -tune zerolatency -threads {ENCODER_THREADS} \\
-  -g {fps} -b:v {rate} -maxrate {rate} -bufsize {rate} -an \\
+  -g {fps} -b:v {rate} -maxrate {rate} -bufsize {rate} \\
   -f mp4 -movflags empty_moov+default_base_moof -frag_duration 100000 - &
 pid=$!
 ( cat <&3 >/dev/null; kill $pid 2>/dev/null ) >/dev/null 2>&1 &  # (a background job's own stdin is /dev/null)
@@ -386,7 +434,7 @@ class FrameSource:
                 self.chan.close()
 
 
-def start(frame, quality: str = "720p") -> LiveStream:
+def start(frame, quality: str = DEFAULT_QUALITY) -> LiveStream:
     """Start streaming the Frame's headset view; open `.url` in a browser to watch."""
     src = FrameSource(frame, quality)
     return LiveStream(src.open, src.close).start()

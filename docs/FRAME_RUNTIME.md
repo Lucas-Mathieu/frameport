@@ -112,7 +112,13 @@
   writes it to a v4l2loopback webcam named **"SteamVR"** (`/dev/video99`, 1920x1080 RGB24, advertised 30 fps, frames
   arrive at the display rate). Nothing on the Frame reads it by default; idle it costs nothing, read ~0.2 core.
   It shows what the wearer sees (SteamVR home, Steam's panels; a game's layers are expected but not yet seen in it).
-  Black and ~1 fps while the headset sleeps (standby).
+  Black and ~1 fps (one frame per ~1.0 s) while the headset sleeps (standby): a 30 fps stream then repeats each
+  frame in bursts, which looks like a stall in a player. Its size follows SteamVR's headset view (v4l2cam has no size
+  option), so the live view only scales down (360p/480p/720p/1080p) or sends it as is ("full").
+- Sound: `pactl get-default-sink` (`alsa_loopback_device.stereo.alsa_output.platform-sound.HiFi__Speaker__sink`) and its
+  `.monitor` source carry what the headset plays; the Frame's ffmpeg has the `pulse` input and `aac`. Timestamps: pulse
+  uses the wall clock, v4l2 CLOCK_MONOTONIC → `-ts mono2abs` on the v4l2 input. Don't force
+  `-use_wallclock_as_timestamps` on the pulse input: it stamped bursts of AAC packets with one time.
 - Steam's own game recording / Remote Play / broadcast capture the **gamescope** PipeWire node (`CDesktopCapturePipeWire:
   ... node path: gamescope`): with gamescope's `--backend openvr` that's only the flat Steam UI, not VR. Steam's arm64
   `libvideo.so` encodes with x264 (vaapi/nvenc paths don't apply). No cast/spectator feature for the Frame's own VR view
@@ -120,7 +126,8 @@
 - Encoding: the Qualcomm encoder (`/dev/video23` qcom-iris-encoder, V4L2 M2M) doesn't work with the stock tools (ffmpeg
   `h264_v4l2m2m` hangs, gst `v4l2h264enc` not-negotiated). ffmpeg + libx264 works: FramePort's live view
   (`install/livestream.py`: `fps=30` before the scale, ultrafast/zerolatency, 3 threads, nice 10, fragmented MP4 on
-  stdout) measured 0.34 core at 720p / 0.56 at 1080p with a quiet picture; expect ~1-1.4 cores with a busy scene.
+  stdout, + AAC 128k) measured 0.34 core at 720p / 0.56 at 1080p with a quiet picture (video only); expect ~1-1.4
+  cores with a busy scene.
 
 ## Text input
 

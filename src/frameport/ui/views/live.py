@@ -21,7 +21,8 @@ from .files_dialog import human
 if TYPE_CHECKING:
     from ..app import FramePortApp
 
-QUALITIES = [("720p", tr("Smooth (720p)")), ("1080p", tr("Sharp (1080p)"))]
+QUALITIES = [("360p", tr("360p (lightest)")), ("480p", "480p"), ("720p", tr("720p (recommended)")),
+             ("1080p", "1080p"), ("full", tr("Full (headset view size)"))]
 
 
 def status_text(st: dict) -> str:
@@ -40,18 +41,24 @@ def status_text(st: dict) -> str:
     return " · ".join(parts)
 
 
+def default_quality() -> str:
+    from ...install.livestream import DEFAULT_QUALITY
+
+    return DEFAULT_QUALITY
+
+
 class LiveView:
     def __init__(self, app: FramePortApp):
         self.app = app
         self.live = None  # install.livestream.LiveStream while streaming
-        self.quality = QUALITIES[0][0]
+        self.quality = default_quality()
         self._busy = False
         self._ticker: threading.Thread | None = None
         self.root = None
         self.dot = C.dot(T.TEXT_3, 10)
         self.state = C.body(tr("Not streaming"), T.TEXT, weight=ft.FontWeight.W_500)
         self.detail = C.meta("")
-        self.quality_dd = ft.Dropdown(label=tr("Quality"), value=self.quality, width=T.px(220), dense=True,
+        self.quality_dd = ft.Dropdown(label=tr("Quality"), value=self.quality, width=T.px(260), dense=True,
                                       options=[ft.DropdownOption(key=k, text=t) for k, t in QUALITIES],
                                       on_select=self._set_quality)
         self.start_btn = C.primary(tr("Start live view"), ft.Icons.PLAY_ARROW_ROUNDED, self._start, big=True)
@@ -82,8 +89,10 @@ class LiveView:
                     self.url,
                 ], spacing=T.S2)),
                 C.callout(tr("The picture opens in your default web browser, where it plays smoothly and can go "
-                             "full screen. It shows the headset's view whatever is running: "
-                             "Steam's menus, SteamVR or a game. Streaming costs the Frame a little performance; "
+                             "full screen. It shows the headset's view with its sound "
+                             "(click Sound on in the player) whatever is running: Steam's menus, SteamVR or a game; "
+                             "while the headset sleeps the picture is black and updates about once a second. "
+                             "Streaming costs the Frame a little performance; "
                              "stop it when you're done.")),
             ], spacing=T.S4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
         self._refresh(update=False)
@@ -126,7 +135,7 @@ class LiveView:
 
     # ---------------------------------------------------------------- actions
     def _set_quality(self, e) -> None:
-        self.quality = e.control.value or QUALITIES[0][0]
+        self.quality = e.control.value or default_quality()
 
     def _start(self, e=None) -> None:
         if self._busy or (self.live and self.live.running):
