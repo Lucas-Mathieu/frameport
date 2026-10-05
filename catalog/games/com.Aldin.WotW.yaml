@@ -1,0 +1,21 @@
+package: com.Aldin.WotW
+title: 'Waltz of the Wizard: Extended Edition'
+status: works
+notes: From what I tested, it just works. My only complaint is that the haptics go pretty crazy. But I don't remember
+  what it was like when I played it in my Quest. So it could be fine. 100% playable.
+tested_version: 5.0.8.1578
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
+verified:
+  date: '2026-10-05'
+  known_good_sha256: 522cfebf954e1cab6054798479b0b32c5ba9e38cca83dd98db2ac0f7e3c0802a
+  app: 0.9.1
+  overport_cli: 1.2.5
+  frame_build: '20260922.6101926'
+  agent: 48
+  issue: 44
+source_hint: WotW
