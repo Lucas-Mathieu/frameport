@@ -36,7 +36,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 51
+AGENT_VERSION = 52
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -3627,27 +3627,38 @@ def steam_js(expression, timeout=5):
                 return res.get("value")
 
 
-def dashboard_worker(log, parent, wait_start=240, window=25):
-    """Close SteamVR's dashboard once the game's first VR frames are logged (FrameBridge's "pacing:" line), checking
-    for `window` seconds after that (Steam can open it a moment later; at most 3 times). Ends with the launcher."""
+FIRST_FRAME_MARKERS = (b"FrameBridge: new layer:", b"FrameBridge: pacing:")
+
+
+def dashboard_worker(log, parent, wait_start=240, window=30, poll=0.5):
+    """Close SteamVR's dashboard (Steam's "Resume game" frame menu) that opens when the game submits its first VR
+    frame: watch from FrameBridge's first "new layer:" line (the first submitted frame; Steam showed the menu ~0.3 s
+    later with ITR2), checking every `poll` s for `window` s after it (at most 3 hides). Waiting for the first
+    "pacing:" summary (agent 44-51) was ~8 s too late: the owner had pressed Resume by then. Ends with the launcher."""
     def alive():
         try:
             os.kill(int(parent), 0)
             return True
         except (OSError, ValueError):
             return False
-    deadline = time.time() + wait_start
+    deadline, pos, tail = time.time() + wait_start, 0, b""
     while time.time() < deadline and alive():
         try:
             with open(log, "rb") as f:
-                if b"FrameBridge: pacing:" in f.read():
-                    break
+                f.seek(pos)
+                chunk = f.read()
+                pos += len(chunk)
+            text = tail + chunk
+            if any(m in text for m in FIRST_FRAME_MARKERS):
+                break
+            tail = text[-64:]  # a marker split across two reads
         except OSError:
             pass
-        time.sleep(1)
+        time.sleep(poll)
     else:
         print("no VR frames logged; dashboard left as it is")
         return
+    print(f"{time.strftime('%H:%M:%S')} first VR frame")
     hidden, end = 0, time.time() + window
     while time.time() < end and hidden < 3 and alive():
         try:
@@ -3658,7 +3669,7 @@ def dashboard_worker(log, parent, wait_start=240, window=25):
         except Exception as exc:  # noqa: BLE001 (no devtools port, Steam restarting: leave it)
             print(f"steam ui: {exc}")
             return
-        time.sleep(1)
+        time.sleep(poll)
 
 
 COMMANDS = {n[4:]: f for n, f in globals().items() if n.startswith("cmd_")}

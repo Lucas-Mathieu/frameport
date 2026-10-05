@@ -1153,6 +1153,27 @@ def test_dashboard_worker_hides_dashboard_after_first_frames(monkeypatch, tmp_pa
     assert calls.count("SteamClient.OpenVR.VROverlay.HideDashboard()") == 3  # at most three times
 
 
+def test_dashboard_worker_starts_at_the_first_submitted_frame(monkeypatch, tmp_path):
+    """Steam's "Resume game" menu opens at the game's first frame (ITR2: 0.3 s after FrameBridge's "new layer:"); the
+    first "pacing:" summary comes ~8 s later, after the player had pressed Resume. The log grows while it waits."""
+    a = load_agent(monkeypatch, tmp_path)
+    log = tmp_path / "launch.log"
+    log.write_text("Lepton starting\nI FrameBridge: xrCreateSwapchain 2016x1728\nI FrameBridge: new la")
+    pieces = ["yer: type=35 swapchain=0x0\n"]  # the marker split across two reads
+
+    def sleep(s):
+        if pieces:
+            with open(log, "a") as f:
+                f.write(pieces.pop(0))
+    monkeypatch.setattr(a.time, "sleep", sleep)
+    clock = iter(range(0, 10000))
+    monkeypatch.setattr(a.time, "time", lambda: next(clock))
+    calls = []
+    monkeypatch.setattr(a, "steam_js", lambda expr, timeout=5: calls.append(expr) or expr.endswith("Visible()"))
+    a.dashboard_worker(str(log), os.getpid(), wait_start=10, window=4)
+    assert "SteamClient.OpenVR.VROverlay.HideDashboard()" in calls
+
+
 def test_dashboard_worker_waits_for_vr_frames(monkeypatch, tmp_path):
     a = load_agent(monkeypatch, tmp_path)
     monkeypatch.setattr(a.time, "sleep", lambda s: None)
