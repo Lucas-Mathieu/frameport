@@ -3,13 +3,18 @@ title: WiiCompiled VR
 status: issues
 notes: 'To add a game: in FramePort''s Files tab, upload your .wcgame file to this game''s storage, folder
   Android/data/org.wiicompiled.quest/files/WiiCompiledOpenXRVR/Import, then open WiiCompiled (it imports the newest
-  file there; one at a time). The right eye jitters during races.'
+  file there; one at a time). Once your game is imported, turn on "Start straight in VR" (and off "Show the app''s
+  Android window") and update it on the Frame: it then opens in VR without the flat launcher window, which otherwise
+  stays in view (turn it off again to import another game). The right eye jitters during races.'
 details: A native Mario Kart Wii recompilation (needs your own disc as .wcgame files built by the WiiCompiled
   launcher on a computer). Lepton's Android has no document picker, so the launcher's "Import from computer" and
   "select disc image" buttons fail (ActivityNotFoundException for OPEN_DOCUMENT); its Import folder is read when the
   launcher opens instead. The game's libmain.so has its own OpenXR loader and talks to the Frame's runtime directly
   (FrameBridge isn't in its path); the right-eye jitter in races comes from its stereo replay of the race view, so it
-  needs a fix in WiiCompiled itself. The launcher is a flat Android window (shown with lepton-show-flatscreen).
+  needs a fix in WiiCompiled itself. The launcher is a flat Android window (shown with lepton-show-flatscreen) that
+  stays in view after it starts the VR part (QuestActivity, process :game); frame.start_activity makes QuestActivity
+  the start activity (owner-verified 2026-10-05, opens straight in VR), but it skips the launcher's import step, so it
+  stays off by default.
 tested_version: 0.4.0-quest
 engine: Other
 xr: OpenXR
@@ -20,5 +25,5 @@ device:
 - device.text_input_window
 verified:
   date: '2026-10-04'
-updated: '2026-10-04'
+updated: '2026-10-05'
 source_hint: WiiCompiled
