@@ -79,6 +79,9 @@ company = "FramePort"
 path = "src"
 module = "main"
 
+[tool.flet.macos]
+entitlement."com.apple.security.files.user-selected.read-write" = true
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"
