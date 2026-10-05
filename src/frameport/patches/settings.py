@@ -119,14 +119,19 @@ SETTINGS = [
      "e.g. stores that initialize locals a shader reads before writing (an undefined loop counter hung the GPU in "
      "VR4's campaign). Format: <size>:<sha256>:<byte offset>:<word>,<word>,...; several separated by ';'. Comes from "
      "a game's recipe."),
+    ("vk_query_slots", "int", 0, "Vulkan shim: slots per occlusion query",
+     "Vulkan shim (frame.vk_sanitize): 2 gives every occlusion query room for both eyes. In multiview passes the "
+     "Frame's driver writes a zero result for the second eye into the next query, so engines that count on one slot "
+     "cull visible objects (models popping in and out, e.g. Into The Radius 2). 0 = off."),
     ("gl_hide_multiview", "int", 1, "GL shim: hide multiview",
      "GL shim only: hide GL_OVR_multiview so all passes use single-view shaders. For GLES games whose multiview "
      "shaders fail on single-view render targets (e.g. Path of the Warrior)."),
 ]
 
 
-# settings that need a new build, not only new settings files: the Vulkan shim learned vk_shader_fix in 0.6.4
-REVISIONS = {"vk_shader_fix": 2}
+# settings that need a new build, not only new settings files: the Vulkan shim learned vk_shader_fix in 0.6.4 and
+# vk_query_slots in 0.9.2
+REVISIONS = {"vk_shader_fix": 2, "vk_query_slots": 3}
 
 # How the "Game settings" dialog shows each setting to non-technical users: group, level (common settings are always
 # shown; advanced ones only under "Show advanced settings"), a plain label and one-line help, the control, and the

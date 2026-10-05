@@ -1,6 +1,6 @@
 48a3ecad77ec0f3215b29070e994590eb9579e04d3c88a47f37f306f9aeb01d9  ./arm64-v8a/libfp_langpack.so
 a5b03bb7ae5d953d7ded2bf117b0a19c57fae604f16f54310847f8e89593dde6  ./arm64-v8a/libfp_ovrp.so
-6d2b9f8cea2f2cf33b8ff30d29a2f3d9c4d55549260a867168a24e44abada021  ./arm64-v8a/libfp_vk.so
+175f19d5373229f29acf71bc7cfefcf9bd4c8fa30fb8fe65689bd7922ce1dbbb  ./arm64-v8a/libfp_vk.so
 8e00552d1ab90f82749db3caad4f773351fa8a28edcc5ea5cbd1b31c434ff32a  ./arm64-v8a/libframe_xrshim.so
 3dfcb0f2bec47857bcecc7261c58e076d872d4649718c40850f29e10c75477dd  ./arm64-v8a/libglshim.so
 3e05bb8561c7fd8787b3120739b3ce66c68badb5b00571bd50ae7e6c1f159274  ./arm64-v8a/libopenxr_loader_generic.so

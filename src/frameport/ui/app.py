@@ -114,8 +114,8 @@ class FramePortApp:
             ft.Container(expand=True),
             self.updater.card,
             self.activity_card,
-            self.power_row,
             self.conn_card,
+            self.power_row,  # under the Frame card (owner's choice)
         ], spacing=T.S2), width=T.px(236), bgcolor=T.SIDEBAR, padding=T.S4,
             border=ft.Border(right=ft.BorderSide(1, T.BORDER)))
         page.add(ft.Row([sidebar, self.body, self.activity.root], expand=True, spacing=0,

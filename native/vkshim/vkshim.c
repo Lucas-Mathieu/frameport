@@ -13,6 +13,13 @@
 // copied with extra words inserted at a byte offset, e.g. stores that initialize locals a shader reads before writing
 // (an undefined loop counter hung the GPU in VR4's campaign). Every other module passes through unchanged.
 // Format: vk_shader_fix=<size>:<sha256 hex>:<byte offset>:<word>,<word>,...[;<next fix>]
+//
+// Query slots (adapter setting vk_query_slots=2, per game): with multiview, Vulkan counts a query that runs in a
+// multiview render pass as one query per view (N consecutive indices). Mesa's drivers (the Frame's Turnip) write a
+// zero result into the extra views' slots; Meta's Quest driver doesn't. Engines that allocate one slot per query
+// (Into The Radius 2, Unreal 5) then have the next object's occlusion query overwritten with "0 samples" and cull it:
+// models pop in and out. With the setting, occlusion pools get N slots per query; query i uses slot N*i, so the extra
+// views land in N*i+1.., and results are read from slot N*i only (view 0's count; Turnip counts every view there).
 #define _GNU_SOURCE
 #include <vulkan/vulkan.h>
 #include <android/log.h>
@@ -74,12 +81,18 @@ static void parse_fixes(char *v) {
     }
 }
 
+static int query_slots = 1;  // vk_query_slots: slots per occlusion query (1 = untouched)
+
 static void read_settings(const char *path) {
     FILE *f = fopen(path, "r");
     if (!f) return;
     char line[4096];
     while (fgets(line, sizeof line, f)) {
         line[strcspn(line, "\r\n")] = 0;
+        if (!strncmp(line, "vk_query_slots=", 15)) {
+            int v = atoi(line + 15);
+            query_slots = v >= 2 && v <= 4 ? v : 1;
+        }
         if (!strncmp(line, "vk_shader_fix=", 14)) {
             nfixes = 0;  // later sources override earlier ones (as for the adapter's settings)
             parse_fixes(line + 14);
@@ -182,6 +195,7 @@ static uint32_t *fixed_shader(const uint32_t *code, size_t size, size_t *out_siz
 static void init(void) {
     read_all_settings();
     if (nfixes) LOG("vk shim: %d shader fix(es) configured", nfixes);
+    if (query_slots > 1) LOG("vk shim: %d slots per occlusion query", query_slots);
     real_vk = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
     if (real_vk) {
         real_gipa = (PFN_vkGetInstanceProcAddr)dlsym(real_vk, "vkGetInstanceProcAddr");
@@ -356,8 +370,11 @@ static VkRenderPassCreateInfo2 clean_create_info(Arena *a, const VkRenderPassCre
 // ---------------------------------------------------------------- entry points
 
 #define MAX_DEVICES 8
-enum { FN_RP2, FN_RP2KHR, FN_CSM, FN_COUNT };
-static const char *const FN_NAMES[FN_COUNT] = {"vkCreateRenderPass2", "vkCreateRenderPass2KHR", "vkCreateShaderModule"};
+enum { FN_RP2, FN_RP2KHR, FN_CSM, FN_CQP, FN_DQP, FN_BQ, FN_EQ, FN_CRQP, FN_RQP, FN_RQPEXT, FN_GQPR, FN_CCQPR, FN_COUNT };
+static const char *const FN_NAMES[FN_COUNT] = {
+    "vkCreateRenderPass2", "vkCreateRenderPass2KHR", "vkCreateShaderModule", "vkCreateQueryPool", "vkDestroyQueryPool",
+    "vkCmdBeginQuery", "vkCmdEndQuery", "vkCmdResetQueryPool", "vkResetQueryPool", "vkResetQueryPoolEXT",
+    "vkGetQueryPoolResults", "vkCmdCopyQueryPoolResults"};
 static struct { VkDevice device; PFN_vkVoidFunction fn[FN_COUNT]; } devices[MAX_DEVICES];
 static PFN_vkCreateRenderPass2 fallback_rp2khr;  // from vkGetInstanceProcAddr
 static pthread_mutex_t dev_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -428,6 +445,161 @@ EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(VkDevice device, cons
     return r;
 }
 
+// ---------------------------------------------------------------- query slots
+
+// Command buffer functions carry no VkDevice: their next implementation is the one the (single) game device got.
+static PFN_vkVoidFunction cmd_fn[FN_COUNT];
+static PFN_vkVoidFunction any_fn(VkDevice device, int which) {
+    PFN_vkVoidFunction fn = device ? device_fn(device, which) : NULL;
+    if (!fn) fn = cmd_fn[which];
+    if (!fn && real_vk) fn = (PFN_vkVoidFunction)dlsym(real_vk, FN_NAMES[which]);
+    return fn;
+}
+
+#define MAX_POOLS 4096
+static uint64_t occlusion_pools[MAX_POOLS];  // open addressing; 0 = empty, 1 = deleted
+static pthread_mutex_t pool_lock = PTHREAD_MUTEX_INITIALIZER;
+static int pools_logged;
+
+static unsigned pool_hash(uint64_t h) { return (unsigned)((h * 0x9E3779B97F4A7C15ull) >> 52) % MAX_POOLS; }
+
+static void pool_add(VkQueryPool pool) {
+    uint64_t h = (uint64_t)pool;
+    pthread_mutex_lock(&pool_lock);
+    for (unsigned i = pool_hash(h), n = 0; n < MAX_POOLS; i = (i + 1) % MAX_POOLS, n++)
+        if (occlusion_pools[i] <= 1) { occlusion_pools[i] = h; break; }
+    pthread_mutex_unlock(&pool_lock);
+}
+
+static int pool_slot(VkQueryPool pool, int remove) {
+    uint64_t h = (uint64_t)pool;
+    if (h <= 1) return 0;
+    int found = 0;
+    pthread_mutex_lock(&pool_lock);
+    for (unsigned i = pool_hash(h), n = 0; n < MAX_POOLS && occlusion_pools[i]; i = (i + 1) % MAX_POOLS, n++)
+        if (occlusion_pools[i] == h) {
+            found = 1;
+            if (remove) occlusion_pools[i] = 1;
+            break;
+        }
+    pthread_mutex_unlock(&pool_lock);
+    return found;
+}
+
+// the remapped first query of `pool` (unchanged for pools that aren't remapped)
+static uint32_t q(VkQueryPool pool, uint32_t query) { return pool_slot(pool, 0) ? query * (uint32_t)query_slots : query; }
+
+static VKAPI_ATTR VkResult VKAPI_CALL create_query_pool(VkDevice device, const VkQueryPoolCreateInfo *ci,
+                                                       const VkAllocationCallbacks *alloc, VkQueryPool *pool) {
+    PFN_vkCreateQueryPool real = (PFN_vkCreateQueryPool)any_fn(device, FN_CQP);
+    if (!real) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!ci || ci->queryType != VK_QUERY_TYPE_OCCLUSION || query_slots < 2) return real(device, ci, alloc, pool);
+    VkQueryPoolCreateInfo copy = *ci;
+    copy.queryCount = ci->queryCount * (uint32_t)query_slots;
+    VkResult r = real(device, &copy, alloc, pool);
+    if (r == VK_SUCCESS) {
+        pool_add(*pool);
+        if (pools_logged++ < 5)
+            LOG("vk shim: occlusion query pool %u -> %u slots", ci->queryCount, copy.queryCount);
+    }
+    return r;
+}
+
+static VKAPI_ATTR void VKAPI_CALL destroy_query_pool(VkDevice device, VkQueryPool pool, const VkAllocationCallbacks *alloc) {
+    PFN_vkDestroyQueryPool real = (PFN_vkDestroyQueryPool)any_fn(device, FN_DQP);
+    pool_slot(pool, 1);
+    if (real) real(device, pool, alloc);
+}
+
+static VKAPI_ATTR void VKAPI_CALL cmd_begin_query(VkCommandBuffer cb, VkQueryPool pool, uint32_t query,
+                                                 VkQueryControlFlags flags) {
+    PFN_vkCmdBeginQuery real = (PFN_vkCmdBeginQuery)any_fn(NULL, FN_BQ);
+    if (real) real(cb, pool, q(pool, query), flags);
+}
+
+static VKAPI_ATTR void VKAPI_CALL cmd_end_query(VkCommandBuffer cb, VkQueryPool pool, uint32_t query) {
+    PFN_vkCmdEndQuery real = (PFN_vkCmdEndQuery)any_fn(NULL, FN_EQ);
+    if (real) real(cb, pool, q(pool, query));
+}
+
+static uint32_t span(VkQueryPool pool, uint32_t count) { return pool_slot(pool, 0) ? count * (uint32_t)query_slots : count; }
+
+static VKAPI_ATTR void VKAPI_CALL cmd_reset_query_pool(VkCommandBuffer cb, VkQueryPool pool, uint32_t first, uint32_t count) {
+    PFN_vkCmdResetQueryPool real = (PFN_vkCmdResetQueryPool)any_fn(NULL, FN_CRQP);
+    if (real) real(cb, pool, q(pool, first), span(pool, count));
+}
+
+static void reset_query_pool(VkDevice device, VkQueryPool pool, uint32_t first, uint32_t count, int ext) {
+    PFN_vkResetQueryPool real = (PFN_vkResetQueryPool)any_fn(device, ext ? FN_RQPEXT : FN_RQP);
+    if (real) real(device, pool, q(pool, first), span(pool, count));
+}
+static VKAPI_ATTR void VKAPI_CALL host_reset_query_pool(VkDevice d, VkQueryPool p, uint32_t f, uint32_t c) { reset_query_pool(d, p, f, c, 0); }
+static VKAPI_ATTR void VKAPI_CALL host_reset_query_pool_ext(VkDevice d, VkQueryPool p, uint32_t f, uint32_t c) { reset_query_pool(d, p, f, c, 1); }
+
+// Results come from slot N*i of each query, one query at a time: the extra slots are only written in multiview passes,
+// so reading them (with VK_QUERY_RESULT_WAIT_BIT) could wait forever.
+static VKAPI_ATTR VkResult VKAPI_CALL get_query_pool_results(VkDevice device, VkQueryPool pool, uint32_t first, uint32_t count,
+                                                            size_t size, void *data, VkDeviceSize stride,
+                                                            VkQueryResultFlags flags) {
+    PFN_vkGetQueryPoolResults real = (PFN_vkGetQueryPoolResults)any_fn(device, FN_GQPR);
+    if (!real) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!pool_slot(pool, 0) || !count) return real(device, pool, first, count, size, data, stride, flags);
+    VkResult result = VK_SUCCESS;
+    for (uint32_t i = 0; i < count; i++) {
+        size_t offset = (size_t)(i * stride);
+        if (offset >= size) break;
+        VkResult r = real(device, pool, (first + i) * (uint32_t)query_slots, 1, size - offset, (uint8_t *)data + offset,
+                          stride, flags);
+        if (r < 0) return r;
+        if (r == VK_NOT_READY) result = VK_NOT_READY;
+    }
+    return result;
+}
+
+static VKAPI_ATTR void VKAPI_CALL cmd_copy_query_pool_results(VkCommandBuffer cb, VkQueryPool pool, uint32_t first,
+                                                             uint32_t count, VkBuffer buffer, VkDeviceSize offset,
+                                                             VkDeviceSize stride, VkQueryResultFlags flags) {
+    PFN_vkCmdCopyQueryPoolResults real = (PFN_vkCmdCopyQueryPoolResults)any_fn(NULL, FN_CCQPR);
+    if (!real) return;
+    if (!pool_slot(pool, 0)) { real(cb, pool, first, count, buffer, offset, stride, flags); return; }
+    for (uint32_t i = 0; i < count; i++)
+        real(cb, pool, (first + i) * (uint32_t)query_slots, 1, buffer, offset + i * stride, stride, flags);
+}
+
+// The same entry points for engines that dlsym them from the shim instead of asking vkGet*ProcAddr
+EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateQueryPool(VkDevice d, const VkQueryPoolCreateInfo *ci,
+                                                        const VkAllocationCallbacks *a, VkQueryPool *p) {
+    pthread_once(&once, init);
+    return create_query_pool(d, ci, a, p);
+}
+EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyQueryPool(VkDevice d, VkQueryPool p, const VkAllocationCallbacks *a) {
+    pthread_once(&once, init);
+    destroy_query_pool(d, p, a);
+}
+EXPORT VKAPI_ATTR void VKAPI_CALL vkCmdBeginQuery(VkCommandBuffer cb, VkQueryPool p, uint32_t i, VkQueryControlFlags f) {
+    pthread_once(&once, init);
+    cmd_begin_query(cb, p, i, f);
+}
+EXPORT VKAPI_ATTR void VKAPI_CALL vkCmdEndQuery(VkCommandBuffer cb, VkQueryPool p, uint32_t i) {
+    pthread_once(&once, init);
+    cmd_end_query(cb, p, i);
+}
+EXPORT VKAPI_ATTR void VKAPI_CALL vkCmdResetQueryPool(VkCommandBuffer cb, VkQueryPool p, uint32_t f, uint32_t c) {
+    pthread_once(&once, init);
+    cmd_reset_query_pool(cb, p, f, c);
+}
+EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkGetQueryPoolResults(VkDevice d, VkQueryPool p, uint32_t f, uint32_t c, size_t s,
+                                                            void *data, VkDeviceSize st, VkQueryResultFlags fl) {
+    pthread_once(&once, init);
+    return get_query_pool_results(d, p, f, c, s, data, st, fl);
+}
+EXPORT VKAPI_ATTR void VKAPI_CALL vkCmdCopyQueryPoolResults(VkCommandBuffer cb, VkQueryPool p, uint32_t f, uint32_t c,
+                                                           VkBuffer b, VkDeviceSize o, VkDeviceSize st,
+                                                           VkQueryResultFlags fl) {
+    pthread_once(&once, init);
+    cmd_copy_query_pool_results(cb, p, f, c, b, o, st, fl);
+}
+
 static int wrapped_index(const char *name) {
     for (int i = 0; i < FN_COUNT; i++)
         if (!strcmp(name, FN_NAMES[i])) return i;
@@ -439,6 +611,19 @@ static PFN_vkVoidFunction wrap(const char *name) {
     case FN_RP2: return (PFN_vkVoidFunction)vkCreateRenderPass2;
     case FN_RP2KHR: return (PFN_vkVoidFunction)create_render_pass2_khr;
     case FN_CSM: return nfixes ? (PFN_vkVoidFunction)vkCreateShaderModule : NULL;  // nothing to fix: no detour
+    default: break;
+    }
+    if (query_slots < 2) return NULL;  // no query remapping: no detours
+    switch (wrapped_index(name)) {
+    case FN_CQP: return (PFN_vkVoidFunction)create_query_pool;
+    case FN_DQP: return (PFN_vkVoidFunction)destroy_query_pool;
+    case FN_BQ: return (PFN_vkVoidFunction)cmd_begin_query;
+    case FN_EQ: return (PFN_vkVoidFunction)cmd_end_query;
+    case FN_CRQP: return (PFN_vkVoidFunction)cmd_reset_query_pool;
+    case FN_RQP: return (PFN_vkVoidFunction)host_reset_query_pool;
+    case FN_RQPEXT: return (PFN_vkVoidFunction)host_reset_query_pool_ext;
+    case FN_GQPR: return (PFN_vkVoidFunction)get_query_pool_results;
+    case FN_CCQPR: return (PFN_vkVoidFunction)cmd_copy_query_pool_results;
     default: return NULL;
     }
 }
@@ -460,6 +645,7 @@ EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice dev
         devices[slot].device = device;
         devices[slot].fn[which] = fn;
     }
+    cmd_fn[which] = fn;
     pthread_mutex_unlock(&dev_lock);
     return w;
 }
@@ -473,5 +659,7 @@ EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance
     PFN_vkVoidFunction w = fn ? wrap(name) : NULL;
     if (!w) return fn;
     if (!strcmp(name, "vkCreateRenderPass2KHR")) fallback_rp2khr = (PFN_vkCreateRenderPass2)fn;
+    int which = wrapped_index(name);
+    if (which >= FN_CQP && !cmd_fn[which]) cmd_fn[which] = fn;
     return w;
 }
