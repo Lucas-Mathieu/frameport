@@ -1,13 +1,16 @@
 package: com.qcxr.qcxr
 title: QuestCraft
 status: issues
-notes: The launcher runs, but Minecraft crashes while starting its graphics (OpenGL error 1282).
+notes: Minecraft now starts (Vivecraft takes over VR at 72 fps with music), but the picture stays black. On first
+  start QuestCraft downloads its Java runtime, which didn't unpack on the Frame once (see details).
 details: QuestCraft downloads its Java runtime (JRE.zip from QuestCraft's GitHub releases) into files/runtimes/JRE
-  on first start; on the Frame that step left nothing behind ("libjvm.so not found"). With the runtime unpacked there
-  by hand, Java, Fabric and the mods load and Minecraft 1.21.5 starts initializing, then its first texture fails with
-  OpenGL error 1282 in QuestCraft's GL-to-GLES layer on Zink. Leads (2026-10-04) - Android's libEGL ran out of
-  eglGetProcAddress slots for desktop GL functions; LWJGL and JNA natives in the APK don't match the newer files
-  QuestCraft downloads.
+  on first start; on the Frame that step once left nothing behind ("libjvm.so not found"; unpacked by hand). Minecraft
+  1.21.5 then aborted at its first texture with "OpenGL error 1282", a GL error the Frame's Mesa (Zink) reports where
+  Quest's driver doesn't, which Minecraft checks strictly. QuestCraft's GL-to-GLES layer (LTW) ignores GL errors when
+  LIBGL_NOERROR is set; Lepton passes LEPTON_ENV_LIBGL_NOERROR to the app as LIBGL_NOERROR (verified 2026-10-05,
+  Vivecraft's menu world loads and submits frames at 72 fps). Then the headset shows black. Unity's session ends
+  cleanly and Vivecraft's own session (LWJGL OpenXR, two 1728x1728 GLES sRGB swapchains) becomes SteamVR's scene app,
+  so the images it submits are empty (under investigation with layer_debug).
 tested_version: 6.0.0-RC4
 engine: Unity
 xr: OpenXR
@@ -15,7 +18,9 @@ frame:
 - frame.unity_text_input
 device:
 - device.text_input_window
+lepton_env:
+  LEPTON_ENV_LIBGL_NOERROR: '1'
 verified:
   date: '2026-10-04'
-updated: '2026-10-04'
+updated: '2026-10-05'
 source_hint: QuestCraft
