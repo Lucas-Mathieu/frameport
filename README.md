@@ -52,7 +52,8 @@ Install games that target the Meta Quest, Android, or general PCVR onto your **V
 3. **Add games → Scan a folder** with your game backups (APK + OBB, or PC VR game folders).
 4. Open a game → **Install on Frame**, then play it from the Frame's Steam library.
 
-Full guide, firewalls and troubleshooting: [docs/INSTALL.md](docs/INSTALL.md).
+Full guide, firewalls and troubleshooting: [docs/INSTALL.md](docs/INSTALL.md). Questions (e.g. how to lay out games
+with OBB files): [docs/FAQ.md](docs/FAQ.md).
 
 ## Type on Frame
 
