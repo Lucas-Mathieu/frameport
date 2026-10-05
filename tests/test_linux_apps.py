@@ -106,3 +106,15 @@ def test_linux_recipes_dont_follow_the_catalog(tmp_path, monkeypatch):
     data["settings"]["recipes.app_version"] = "0.0.0"  # as after an app update
     library._follow_catalog(data)
     assert data["games"][g["package"]]["recipe"]["as_is"] is True
+
+
+def test_failed_pc_game_on_experimental_suggests_stable_proton():
+    from frameport.core import library
+
+    library.upsert_game("rift.x", kind="rift", recipe={"package": "rift.x", "patches": {}},
+                        installs={"frame": {"result": {"proton": "proton-experimental-arm64"}}})
+    assert pipeline.proton_stable_worth_trying("rift.x", "fail")
+    assert not pipeline.proton_stable_worth_trying("rift.x", "pass")
+    recipe = pipeline.apply_suggestions("rift.x", [pipeline.PROTON_STABLE])
+    assert recipe.patches[pipeline.PROTON_STABLE] == {"tool": "proton-stable"}
+    assert not pipeline.proton_stable_worth_trying("rift.x", "fail")  # already on stable

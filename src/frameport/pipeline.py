@@ -668,12 +668,31 @@ def test_game(package: str, target: Target, reporter: Reporter, seconds: int = 4
     for old in sorted(logs.glob(f"{package}-*.log"))[:-5]:  # keep the last 5 per game
         old.unlink(missing_ok=True)
     reporter.log(f"full launch log ({len((log or '').splitlines())} lines): {log_path}")
+    suggestions = useful_suggestions(package, result.suggestions())
+    if proton_stable_worth_trying(package, result.verdict):
+        suggestions.append(PROTON_STABLE)
+        reporter.log("it failed on Proton Experimental: the suggestion is to try the stable Proton")
     summary = {"state": result.state, "verdict": result.verdict, "milestone": result.milestone, "fps": result.fps,
                "findings": [f.__dict__ for f in result.findings],
-               "suggestions": useful_suggestions(package, result.suggestions()),
+               "suggestions": suggestions,
                "time": time.time(), "target": target.label, "log_path": str(log_path)}
     library.upsert_game(package, last_test=summary)
     return summary
+
+
+PROTON_STABLE = "pcvr.proton_tool"  # as a suggestion: run the game with the stable Proton instead of Experimental
+
+
+def proton_stable_worth_trying(package: str, verdict: str | None) -> bool:
+    """A PC VR game failed its launch test on Proton Experimental (the default): the stable Proton is worth a try."""
+    entry = library.game(package) or {}
+    if not is_rift(entry) or verdict == "pass":
+        return False
+    chosen = ((entry.get("recipe") or {}).get("patches") or {}).get(PROTON_STABLE) or {}
+    if chosen.get("tool") and "experimental" not in chosen["tool"]:
+        return False  # already on stable (or a specific tool)
+    used = (((entry.get("installs") or {}).get("frame") or {}).get("result") or {}).get("proton") or ""
+    return "experimental" in used or not chosen.get("tool")
 
 
 def useful_suggestions(package: str, suggestions: list[str]) -> list[str]:
@@ -697,6 +716,10 @@ def apply_suggestions(package: str, suggestions: list[str]) -> Recipe:
     entry = library.game(package)
     recipe = library.recipe_from_dict(entry["recipe"])
     for pid in suggestions:
+        if pid == PROTON_STABLE:
+            recipe.patches[pid] = {"tool": "proton-stable"}
+            recipe.reasons[pid] = "It failed on Proton Experimental: trying the stable Proton."
+            continue
         if pid.startswith("adapter."):
             from .patches.base import get
 

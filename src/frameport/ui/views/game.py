@@ -531,6 +531,18 @@ class GameView:
                 save(state["recipe"])
             return handler
 
+        def choose(pid, key):
+            def handler(e):
+                r = state["recipe"]
+                value = e.control.value or ""
+                if value:  # a non-default choice is stored as the patch's parameter
+                    r.patches[pid] = {key: value}
+                    r.reasons[pid] = tr("Chosen by you.")
+                else:
+                    r.patches.pop(pid, None)
+                save(r)
+            return handler
+
         def set_param(pid, key):
             def handler(e):
                 r = state["recipe"]
@@ -571,6 +583,22 @@ class GameView:
                         plain_reason(reason, p.default_on)
                     sub.insert(0, C.meta(shown, T.ACCENT))
                 extra = None
+                choices = getattr(p, "CHOICES", None)
+                if choices:  # a plain choice instead of a switch + text field (e.g. Proton: Experimental / Stable)
+                    current = recipe.params(p.id).get(p.params[0].key, "") if on else ""
+                    keys = [k for k, _label in choices]
+                    if current not in keys:  # a tool name typed under technical details
+                        choices = (*choices, (current, current))
+                    rows.append(ft.Container(ft.Row([
+                        ft.Column([C.body(tr(p.title), T.TEXT, weight=ft.FontWeight.W_500), *sub],
+                                  spacing=T.px(3), expand=True),
+                        ft.Dropdown(value=current, width=T.px(280), dense=True, border_color=T.BORDER,
+                                    text_size=T.T_BODY,
+                                    options=[ft.DropdownOption(key=k, text=tr(label)) for k, label in choices],
+                                    on_select=choose(p.id, p.params[0].key)),
+                    ], spacing=T.S3), padding=ft.Padding(T.S4, T.px(10), T.S4, T.px(10)), border=ft.Border(
+                        top=ft.BorderSide(1, T.BORDER))))
+                    continue
                 if not technical:
                     pass
                 elif cat == "adapter":

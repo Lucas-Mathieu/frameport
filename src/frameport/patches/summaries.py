@@ -74,7 +74,8 @@ SUMMARIES = {
     "pcvr.revive_openvr": "On this PC, runs Revive through SteamVR (works with more headsets).",
     "pcvr.xr_timefix": "Lets games written for newer OpenXR versions run on the Frame.",
     "pcvr.proton_log": "Writes a detailed Proton log for troubleshooting.",
-    "pcvr.proton_tool": "Chooses which Proton version runs the game on the Frame.",
+    "pcvr.proton_tool": "Which Proton runs the game on the Frame: Experimental gets fixes first; choose Stable if "
+                        "the game doesn't start.",
     "pcvr.steamvr_tuning": "Picks a refresh rate and motion smoothing that suit the game on this PC.",
     "pcvr.proton_env": "Extra settings for Proton (for testing).",
 }

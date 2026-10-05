@@ -281,6 +281,7 @@ def ensure_proton(frame: Frame, reporter: Reporter, tool: str | None = None, tim
     reporter.log(r.get("hint") or f"installing {r.get('tool')}")
     end = time.time() + timeout
     last = None
+    asked_runtime = False
     while time.time() < end:
         reporter.check_cancel()
         time.sleep(10)
@@ -292,6 +293,14 @@ def ensure_proton(frame: Frame, reporter: Reporter, tool: str | None = None, tim
             reporter.check("Proton installed", True, st["ready"]["display_name"])
             return st["ready"]
         dl = st.get("download") or {}
+        sug = st.get("suggested") or {}
+        if sug.get("installed") and not sug.get("require_installed") and not dl.get("total") and not asked_runtime:
+            # Steam names the runtime a Proton needs (e.g. Experimental) only once Proton itself is installed: ask
+            # for it now
+            asked_runtime = True
+            reporter.log("installing the Steam Linux Runtime this Proton needs")
+            frame.agent("install_proton", mode="unattended", tool=tool)
+            continue
         if dl.get("total"):
             reporter.progress(dl["done"] / dl["total"], f"downloading Proton {dl['done'] / 2**20:.0f}/"
                                                          f"{dl['total'] / 2**20:.0f} MiB")

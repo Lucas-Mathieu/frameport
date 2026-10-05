@@ -103,9 +103,17 @@ def test_cleanup_refuses_outside_paths(monkeypatch, tmp_path):
 
 
 # ------------------------------------------------------------------------------------------ PC VR under Proton
-def fake_steam_tools(a, tmp_path):
-    """A Steam library with an ARM64 Proton (needing a runtime) installed, like the Frame's."""
+def fake_steam_tools(a, tmp_path, experimental=False):
+    """A Steam library with an ARM64 Proton (needing a runtime) installed, like the Frame's; experimental=True also
+    installs Proton Experimental (the default since agent 49)."""
     apps = tmp_path / ".local/share/Steam/steamapps"
+    if experimental:
+        (apps / "common/Proton - Experimental (ARM64)").mkdir(parents=True)
+        (apps / "common/Proton - Experimental (ARM64)/toolmanifest.vdf").write_text(
+            '"manifest"\n{\n  "commandline" "/proton %verb%"\n  "require_tool_appid" "4185400"\n}\n')
+        (apps / "appmanifest_4427310.acf").write_text(
+            '"AppState"\n{\n\t"appid"\t\t"4427310"\n\t"name"\t\t"Proton Experimental (ARM64)"\n'
+            '\t"StateFlags"\t\t"4"\n\t"installdir"\t\t"Proton - Experimental (ARM64)"\n}\n')
     (apps / "common/Proton 11.0 (ARM64)").mkdir(parents=True)
     (apps / "common/SteamLinuxRuntime_4-arm64").mkdir(parents=True)
     (apps / "common/Proton 11.0 (ARM64)/toolmanifest.vdf").write_text(
@@ -131,6 +139,9 @@ def test_proton_status_and_command(monkeypatch, tmp_path):
     a = load_agent(monkeypatch, tmp_path)
     apps = fake_steam_tools(a, tmp_path)
     st = a.cmd_proton_status({})
+    # the default is Proton Experimental: not installed here, so nothing is ready until FramePort installs it
+    assert st["ready"] is None and st["suggested"]["name"] == "proton-experimental-arm64"
+    st = a.cmd_proton_status({"tool": "proton-stable-arm64"})
     assert st["ready"]["name"] == "proton_11-arm64"
     assert [t["name"] for t in st["tools"]] == ["proton_11-arm64", "proton-experimental-arm64"]  # stable first
     cmd = a.compat_command(st["ready"]["dir"])
@@ -146,7 +157,8 @@ def test_install_proton_request_mode(monkeypatch, tmp_path):
     monkeypatch.setattr(a.subprocess, "Popen", lambda args, **k: calls.append(args))
     r = a.cmd_install_proton({"tool": "proton-experimental-arm64"})
     assert r["requested"] == [4427310] and calls == [["steam", "-ifrunning", "steam://install/4427310"]]
-    assert a.cmd_install_proton({})["installed"] is True
+    assert a.cmd_install_proton({"tool": "proton-stable-arm64"})["installed"] is True
+    assert a.cmd_install_proton({})["requested"] == [4427310]  # the default: Experimental
 
 
 def test_stub_manifest(monkeypatch, tmp_path):
@@ -161,7 +173,7 @@ def test_stub_manifest(monkeypatch, tmp_path):
 
 def test_pcvr_install_flow(monkeypatch, tmp_path):
     a = load_agent(monkeypatch, tmp_path)
-    fake_steam_tools(a, tmp_path)
+    fake_steam_tools(a, tmp_path, experimental=True)
     monkeypatch.setattr(a, "pcvr_pids", lambda base: [])
     prep = a.cmd_prepare_pcvr({"package": "rift.space_game", "title": "Space Game"})
     inc = Path(prep["incoming"])
@@ -179,7 +191,7 @@ def test_pcvr_install_flow(monkeypatch, tmp_path):
                  "xrlayer": {"XR_APILAYER_FRAMEPORT_timefix.json": len(layer_json), "libxr_frameport_timefix.so": 3}}
     r = a.cmd_finalize_pcvr({"package": "rift.space_game", "title": "Space Game", "exe": "Space Game.exe",
                              "manifests": manifests, "env": {"PROTON_LOG": "1", "bad key": "x"}, "xr_layer": True})
-    assert r["ok"] and r["proton"] == "proton_11-arm64"
+    assert r["ok"] and r["proton"] == "proton-experimental-arm64"  # the default
     launch = Path(prep["anchor"]) / "launch.sh"
     text = launch.read_text()
     assert subprocess.run(["bash", "-n", str(launch)]).returncode == 0
@@ -321,7 +333,7 @@ def test_pcvr_launcher_oculus_hmd_helper(monkeypatch, tmp_path):
     import pytest
 
     a = load_agent(monkeypatch, tmp_path)
-    fake_steam_tools(a, tmp_path)
+    fake_steam_tools(a, tmp_path, experimental=True)
     monkeypatch.setattr(a, "pcvr_pids", lambda base: [])
 
     def install(pkg, helper=True, revive=True, oculus_hmd=True):
@@ -1234,3 +1246,14 @@ def test_incomplete_deployment_records_dont_break_listing(monkeypatch, tmp_path)
     games = a.cmd_list_installed({})["games"]
     assert [g["package"] for g in games] == ["com.x.ok"] and games[0]["base"] == str(good)
     assert a.deployment("com.x.ok")["base"] == str(good)
+
+
+def test_proton_defaults_to_experimental(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    stable = {"name": "proton_11-arm64", "display_name": "Proton 11.0-2 (ARM64)", "aliases": "proton-stable-arm64,"
+              "proton-stable", "experimental": False, "installed": True, "require_installed": True}
+    exp = {"name": "proton-experimental-arm64", "display_name": "Proton Experimental (ARM64)",
+           "aliases": "proton-experimental", "experimental": True, "installed": False, "require_installed": True}
+    assert a.pick_proton([stable, exp])["name"] == "proton-experimental-arm64"  # even before it's installed
+    assert a.pick_proton([stable, exp], "proton-stable")["name"] == "proton_11-arm64"  # by alias
+    assert a.pick_proton([stable])["name"] == "proton_11-arm64"  # no Experimental offered

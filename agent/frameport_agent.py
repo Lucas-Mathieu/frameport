@@ -35,7 +35,7 @@ import sys
 import time
 import zlib
 
-AGENT_VERSION = 48
+AGENT_VERSION = 49
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -262,10 +262,18 @@ def compat_command(tool_dir, verb="waitforexitandrun", depth=0):
 
 
 def pick_proton(tools, wanted=None):
-    ready = [t for t in tools if t["installed"] and t["require_installed"]]
+    """The Proton build a game uses: the one asked for (name, display name or alias such as proton-stable), else
+    Proton Experimental (the default since agent 49: Valve ships ARM64 fixes there first; a game that fails on it gets
+    "try Proton stable" suggested), else the newest stable one. Returned even when not installed yet: the installer
+    installs it."""
+    def matches(t, w):
+        return w in (t["name"], t["display_name"]) or w in [a.strip() for a in t["aliases"].split(",")]
     if wanted:
-        return next((t for t in tools if wanted in (t["name"], t["display_name"]) or wanted in t["aliases"].split(",")),
-                    None)
+        return next((t for t in tools if matches(t, wanted)), None)
+    experimental = next((t for t in tools if t["experimental"]), None)
+    if experimental:
+        return experimental
+    ready = [t for t in tools if t["installed"] and t["require_installed"]]
     return ready[0] if ready else (tools[0] if tools else None)
 
 

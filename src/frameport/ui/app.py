@@ -509,7 +509,9 @@ class FramePortApp:
                                        lambda e: self.share_config_dialog(job.package)))
         if summary and summary.get("suggestions") and job.package:
             sugg = summary["suggestions"]
-            out.append(C.primary(tr("Apply the suggested patches and reinstall"), ft.Icons.HEALING_ROUNDED,
+            label = (tr("Try the stable Proton and reinstall") if sugg == [pipeline.PROTON_STABLE]
+                     else tr("Apply the suggested patches and reinstall"))
+            out.append(C.primary(label, ft.Icons.HEALING_ROUNDED,
                                  lambda e: (pipeline.apply_suggestions(job.package, sugg),
                                             self.install(job.package, getattr(job, "to", "frame")))))
         if job.package and job.state != "running" and library.game(job.package):

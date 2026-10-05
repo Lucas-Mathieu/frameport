@@ -202,10 +202,12 @@ class ProtonLog(_PcvrPatch):
 class ProtonTool(_PcvrPatch):
     id = "pcvr.proton_tool"
     title = "Proton version (Frame)"
-    description = ("Which Proton build runs the game on the Frame (a Steam compat tool name from the Frame's ARM64 "
-                   "compat list, e.g. proton_11-arm64 or proton-experimental-arm64). Empty = newest installed.")
+    description = ("Which Proton build runs the game on the Frame: Proton Experimental (the default: gets Valve's "
+                   "ARM64 fixes first) or the stable Proton (tested longer; try it when a game fails on "
+                   "Experimental). Also takes any compat tool name from the Frame's ARM64 list.")
     order = 40
-    params = [Param("tool", "str", "", "compat tool name")]
+    params = [Param("tool", "str", "", "proton-experimental (default), proton-stable, or a compat tool name")]
+    CHOICES = (("", "Experimental (default)"), ("proton-stable", "Stable"))
 
 
 class ProtonEnv(_PcvrPatch):
