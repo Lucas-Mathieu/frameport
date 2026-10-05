@@ -12,6 +12,7 @@ import sys
 import time
 
 USB_IFACE = "usb0"
+FRAME_USB_IP, PC_USB_IP = "10.86.200.233", "10.86.200.234"  # fixed by the Frame's dnsmasq (dhcp-host by MAC)
 TEST_BYTES = 128 << 20
 
 
@@ -24,7 +25,10 @@ def pc_usb_addresses(frame_ip: str) -> list[str]:
             texts.append(subprocess.run(cmd, capture_output=True, text=True, timeout=10).stdout)
         except (OSError, subprocess.SubprocessError):
             continue
-    found = re.findall(r"(\d+\.\d+\.\d+\.\d+)", "\n".join(texts))
+    text = "\n".join(texts)
+    # interface addresses only (`ip`/ifconfig "inet X", ipconfig "IPv4 Address ... : X"): not broadcast/netmask values
+    found = re.findall(r"\binet\s+(\d+\.\d+\.\d+\.\d+)", text) + \
+        re.findall(r"IPv4[^:\n]*:\s*(\d+\.\d+\.\d+\.\d+)", text)
     return sorted({ip for ip in found if ip.startswith(prefix) and ip != frame_ip})
 
 

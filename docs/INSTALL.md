@@ -49,6 +49,20 @@ The Frame and the computer must be on the same network.
 and approve it on the Frame (Valve's own devkit pairing; it only sends this computer's key to the Frame). Install
 Lepton from the Steam Frame page afterwards if it's missing.
 
+### With a USB cable
+
+For networks that block the setup (guest Wi-Fi, firewalls, discovery not working), and for faster uploads:
+
+1. On the Frame, turn on **Developer Mode** (Settings → System → Developer Mode). The Frame's USB network only exists
+   in Developer Mode.
+2. Connect the Frame's USB-C port to the computer.
+3. In FramePort: **Steam Frame → Set up with a USB cable**. FramePort detects the cable and shows the setup command,
+   which reaches the computer over the cable. Already set up? It connects over the cable right away.
+
+The cable needs no driver on Windows 10/11, macOS or Linux, and the computer gets an address from the Frame
+automatically. Uploads use the cable whenever it's plugged in (about 37 MB/s, ~3× typical Wi-Fi), even when FramePort
+connected over Wi-Fi. Unplug it any time: FramePort finds the Frame on Wi-Fi again by itself.
+
 ### Firewalls
 
 If the setup command only says "timed out", a firewall on your computer blocks the Frame; the setup page

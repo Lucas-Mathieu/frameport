@@ -102,11 +102,13 @@ class PairingServer:
     requests: int = 0  # requests from the network (right or wrong code): the Frame can reach us
     flag: Path | None = None  # WSL: the temporary firewall rule stays while this file exists
     hint: str = ""  # set by the UI when nothing reached us after HINT_AFTER seconds: what may block the Frame
+    host: str = ""  # the address the Frame uses to reach this PC; "" = the PC's address towards the internet. The USB
+    # setup uses the cable's fixed PC address (10.86.200.234), so no Wi-Fi, router or discovery is involved
     _httpd: http.server.ThreadingHTTPServer | None = None
 
     @property
     def url(self) -> str:
-        return f"http://{local_ip_towards()}:{self.port}"
+        return f"http://{self.host or local_ip_towards()}:{self.port}"
 
     @property
     def one_liner(self) -> str:

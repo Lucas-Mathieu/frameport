@@ -181,7 +181,7 @@ class FrameView:
 
         pair_box = ft.Column(spacing=T.S3)
 
-        def pair(e):
+        def pair(e, host: str = ""):
             from ...frame.connection import FrameTarget
             from ...frame.pairing import PairingServer
 
@@ -190,7 +190,7 @@ class FrameView:
 
             def on_paired(info):
                 app.connect(FrameTarget(info["host"], info["user"], 22, info["name"]))
-            server = app.pairing = PairingServer(on_paired=on_paired).start()
+            server = app.pairing = PairingServer(on_paired=on_paired, host=host).start()
             show_command()
 
             def check_network():
@@ -209,6 +209,51 @@ class FrameView:
                 if app.route[0] == "frame" and app.pairing is server:
                     show_command()
             app.run_bg(check_network)
+
+        def usb_setup(e):
+            """Setup over a USB-C cable: no Wi-Fi, router, discovery or network firewall involved (the Frame's USB
+            network gives this PC the fixed address 10.86.200.234). The Frame enables its USB network only in
+            Developer Mode, so that comes first."""
+            from ...frame import usb
+            from ...frame.connection import FrameTarget, server_key
+
+            status = ft.Row([ft.ProgressRing(width=T.px(14), height=T.px(14), stroke_width=T.px(2), color=T.ACCENT),
+                             C.meta(tr("Waiting for the cable…"))], spacing=T.S2)
+            pair_box.controls = [
+                C.body(tr("1. On the Frame, turn on Developer Mode: Settings → System → Developer Mode."), T.TEXT),
+                C.body(tr("2. Connect the Frame's USB-C port to this computer with a USB cable."), T.TEXT),
+                status,
+            ]
+            pair_box.update()
+            token = object()
+            app._usb_setup = token
+
+            def watch():
+                for _ in range(600):  # up to 20 minutes
+                    if app._usb_setup is not token or app.route[0] != "frame":
+                        return
+                    if usb.PC_USB_IP in usb.pc_usb_addresses(usb.FRAME_USB_IP) and server_key(usb.FRAME_USB_IP,
+                                                                                                timeout=3):
+                        break
+                    time.sleep(2)
+                else:
+                    return
+                status.controls = [ft.Icon(ft.Icons.USB_ROUNDED, size=T.px(16), color=T.OK),
+                                   C.meta(tr("Cable connected."), T.OK)]
+                C.update(status)
+                target = FrameTarget(usb.FRAME_USB_IP, "steamos", 22)
+                try:  # already set up for FramePort: just connect over the cable
+                    from ...frame.connection import Frame
+
+                    Frame(target, None).connect(timeout=10).close()
+                    app.connect(target)
+                    return
+                except Exception:  # noqa: BLE001 - not set up yet: show the setup command for the cable
+                    pass
+                app.page.run_thread(lambda: (pair(None, host=usb.PC_USB_IP), pair_box.controls.insert(
+                    0, C.body(tr("3. On the Frame run this setup command (it reaches this computer over the "
+                                 "cable):"), T.TEXT)), pair_box.update()))
+            app.run_bg(watch)
 
         def show_command(update=True):
             """The setup command of the running pairing server: also when the page is redrawn (connection checks,
@@ -288,7 +333,11 @@ class FrameView:
             *([offline] if offline else []),
             step(1, tr("First-time setup"), tr("New Frame? Run one command on it and FramePort does the rest. Did this "
                                                "once already? Your Frame appears under step 2."),
-                 C.primary(tr("Show setup command"), ft.Icons.TERMINAL_ROUNDED, pair), pair_box,
+                 ft.Row([C.primary(tr("Show setup command"), ft.Icons.TERMINAL_ROUNDED, pair),
+                         C.secondary(tr("Set up with a USB cable"), ft.Icons.USB_ROUNDED, usb_setup,
+                                     tooltip=tr("No Wi-Fi needed: for networks that block the setup, and faster "
+                                                "game uploads"))], wrap=True, spacing=T.S3),
+                 pair_box,
                  help="first_time_setup"),
             step(2, tr("Already set up: on your network"), tr("Frames in Developer Mode show up here."), found,
                  help="developer_mode"),

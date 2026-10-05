@@ -152,8 +152,41 @@ def browse(seconds: float = 4.0, scan: bool = True) -> list[Found]:
         known = {f.host for f in out}
         for ip in _scan(local_subnets(), known):
             out.append(Found(ip, ip, 22, "steamos", "scan", [ip]))
-    rank = {"frameport": 0, "devkit": 1, "saved": 2, "scan": 3}
-    return sorted(out, key=lambda f: (rank.get(f.source, 9), f.name, link_label(f.host) != "network", f.host))
+    out = dedupe(out)
+    return sorted(out, key=lambda f: (SOURCE_RANK.get(f.source, 9), f.name, LINK_RANK.get(f.via, 9), f.host))
+
+
+SOURCE_RANK = {"frameport": 0, "devkit": 1, "saved": 2, "scan": 3}
+LINK_RANK = {"USB": 0, "Frame hotspot": 1, "network": 2}  # fastest first (USB ~37 MB/s, hotspot ~85, but the hotspot
+# needs the PC on the Frame's Wi-Fi: when both answer, the cable is the deliberate choice)
+
+
+def dedupe(found: list[Found], key_of=None) -> list[Found]:
+    """One entry per Frame: entries whose SSH host key matches (the same device reached over home Wi-Fi, its hotspot
+    and USB, or found by mDNS, the saved list and the network scan) merge into one that uses the fastest link, keeps
+    the best-known source/name and lists the other addresses. Entries whose key can't be read stay as they are."""
+    if key_of is None:
+        from .connection import server_key
+
+        def key_of(f: Found):
+            k = server_key(f.host, f.port, timeout=3)
+            return k.get_base64() if k else None
+    with ThreadPoolExecutor(16) as pool:
+        keys = list(pool.map(key_of, found))
+    groups: dict[str, list[Found]] = {}
+    out = []
+    for f, k in zip(found, keys, strict=True):
+        if k is None:
+            out.append(f)
+        else:
+            groups.setdefault(k, []).append(f)
+    for members in groups.values():
+        best = min(members, key=lambda f: (LINK_RANK.get(f.via, 9), f.host))
+        named = min(members, key=lambda f: (SOURCE_RANK.get(f.source, 9), f.source == "scan"))
+        addresses = list(dict.fromkeys([best.host] + [a for f in members for a in [f.host, *f.addresses]]))
+        out.append(Found(named.name if named.source != "scan" else best.name, best.host, best.port, named.user,
+                         named.source, addresses, {**best.properties, **named.properties}))
+    return out
 
 
 def local_ip_towards(host: str = "8.8.8.8") -> str:
