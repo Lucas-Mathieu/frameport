@@ -1,0 +1,18 @@
+package: com.enhanceexperience.tetriseffect
+title: TetrisEffect
+status: works
+notes: Opened the game, messed around with the menu, and played the first level. Works great.
+tested_version: 2.0.2
+engine: Unreal
+xr: VrApi
+alt_overport:
+- patch_remove_unreal_force_quit
+verified:
+  date: '2026-10-05'
+  known_good_sha256: 9ea10027ad8b7aefba8c14f23575c9cbbcaf3b38d12b971ea9c06635721b23c1
+  app: 0.9.1
+  overport_cli: 1.2.5
+  frame_build: '20260922.6101926'
+  agent: 48
+  issue: 45
+source_hint: tetriseffect
