@@ -91,7 +91,7 @@ static void read_settings(const char *path) {
         line[strcspn(line, "\r\n")] = 0;
         if (!strncmp(line, "vk_query_slots=", 15)) {
             int v = atoi(line + 15);
-            query_slots = v >= 2 && v <= 4 ? v : 1;
+            query_slots = v == 1 ? 2 : v >= 2 && v <= 4 ? v : 1;  // 1 = on (the settings dialog's switch) = 2 slots
         }
         if (!strncmp(line, "vk_shader_fix=", 14)) {
             nfixes = 0;  // later sources override earlier ones (as for the adapter's settings)

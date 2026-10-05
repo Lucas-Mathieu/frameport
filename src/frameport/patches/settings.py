@@ -120,9 +120,9 @@ SETTINGS = [
      "VR4's campaign). Format: <size>:<sha256>:<byte offset>:<word>,<word>,...; several separated by ';'. Comes from "
      "a game's recipe."),
     ("vk_query_slots", "int", 0, "Vulkan shim: slots per occlusion query",
-     "Vulkan shim (frame.vk_sanitize): 2 gives every occlusion query room for both eyes. In multiview passes the "
+     "Vulkan shim (frame.vk_sanitize): on gives every occlusion query room for both eyes. In multiview passes the "
      "Frame's driver writes a zero result for the second eye into the next query, so engines that count on one slot "
-     "cull visible objects (models popping in and out, e.g. Into The Radius 2). 0 = off."),
+     "cull visible objects (models popping in and out, e.g. Into The Radius 2). 0 = off, 1 = on (2 slots)."),
     ("gl_hide_multiview", "int", 1, "GL shim: hide multiview",
      "GL shim only: hide GL_OVR_multiview so all passes use single-view shaders. For GLES games whose multiview "
      "shaders fail on single-view render targets (e.g. Path of the Warrior)."),
@@ -152,6 +152,10 @@ UI: dict[str, dict] = {
     "focus_hold_ms": dict(group="screens", level="advanced", label="Ignore focus dips up to", depends="focus_hold",
                           help="Longer for headsets that briefly think they're off your head.",
                           control=("slider", 500.0, 3000.0, 100.0, "{:.0f} ms")),
+    "vk_query_slots": dict(group="troubleshooting", level="advanced", label="Stop objects popping in and out",
+                           help="For Vulkan games whose models flicker or vanish while you look at them (e.g. Into "
+                                "The Radius 2). Needs a rebuild.",
+                           control=("switch",)),
     "sync_guard": dict(group="troubleshooting", level="advanced", label="Steady controller input after focus",
                        help="For games that crash right after you return to them (e.g. after the Steam menu).",
                        control=("switch",)),
@@ -272,6 +276,7 @@ class AdapterSetting(Patch):
             "swapchain_fix": ap.is_gles,
             "gl_hide_multiview": lambda a: a.direct_vrapi and ap.is_gles(a),
             "vk_shader_fix": lambda a: a.engine == "Unreal",  # read by the Vulkan shim, which only Unreal games get
+            "vk_query_slots": lambda a: a.engine == "Unreal" and ap.is_vulkan(a),
             "controller_models": ap.may_use_render_models,
             **{k: ap.is_gles for k in ("equirect_emul", "equirect_face", "equirect_res", "equirect_flip",
                                        "equirect_fps", "equirect_stereo")},
