@@ -88,6 +88,7 @@ static int foveation_fix = 1;
 static int hide_space_warp = 0;
 static int controller_fix = 1;
 static int swapchain_fix = 1;
+static int rect_clamp = 1;  // clamp submitted image rects to their swapchain (SteamVR rejects a 1 px overrun)
 static int layer_fix = 1;
 static int mutable_fix = 0;
 static int swap_eyes = 0;
@@ -136,6 +137,7 @@ static void read_settings(const char *path) {
         if (sscanf(line, "hide_space_warp=%f", &value) == 1) hide_space_warp = value != 0;
         if (sscanf(line, "controller_fix=%f", &value) == 1) controller_fix = value != 0;
         if (sscanf(line, "swapchain_fix=%f", &value) == 1) swapchain_fix = value != 0;
+        if (sscanf(line, "rect_clamp=%f", &value) == 1) rect_clamp = value != 0;
         if (sscanf(line, "layer_fix=%f", &value) == 1) layer_fix = value != 0;
         if (sscanf(line, "mutable_fix=%f", &value) == 1) mutable_fix = value != 0;
         if (sscanf(line, "swap_eyes=%f", &value) == 1) swap_eyes = value != 0;
@@ -390,6 +392,45 @@ static void remember_swapchain(XrSwapchain handle) {
     pthread_mutex_unlock(&swapchains_lock);
 }
 
+// Swapchain sizes, to keep submitted image rects inside them (rect_clamp).
+#define MAX_SIZES 256
+static struct { XrSwapchain handle; uint32_t w, h; } sizes[MAX_SIZES];
+static pthread_mutex_t sizes_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void note_swapchain_size(XrSwapchain handle, uint32_t w, uint32_t h) {
+    pthread_mutex_lock(&sizes_lock);
+    int slot = -1;
+    for (int i = 0; i < MAX_SIZES; ++i) {
+        if (sizes[i].handle == handle) { slot = i; break; }
+        if (slot < 0 && sizes[i].handle == XR_NULL_HANDLE) slot = i;
+    }
+    if (slot >= 0) { sizes[slot].handle = handle; sizes[slot].w = w; sizes[slot].h = h; }
+    pthread_mutex_unlock(&sizes_lock);
+}
+
+static int swapchain_size(XrSwapchain handle, uint32_t *w, uint32_t *h) {
+    int found = 0;
+    pthread_mutex_lock(&sizes_lock);
+    for (int i = 0; i < MAX_SIZES && !found; ++i)
+        if (sizes[i].handle == handle && handle != XR_NULL_HANDLE) { *w = sizes[i].w; *h = sizes[i].h; found = 1; }
+    pthread_mutex_unlock(&sizes_lock);
+    return found;
+}
+
+// Clamp `r` to a w x h image; returns whether it changed.
+static int clamp_rect(XrRect2Di *r, uint32_t w, uint32_t h) {
+    XrRect2Di c = *r;
+    if (c.offset.x < 0) { c.extent.width += c.offset.x; c.offset.x = 0; }
+    if (c.offset.y < 0) { c.extent.height += c.offset.y; c.offset.y = 0; }
+    if ((uint32_t)c.offset.x >= w || (uint32_t)c.offset.y >= h) return 0;  // nothing sensible to keep: leave it
+    if ((int64_t)c.offset.x + c.extent.width > (int64_t)w) c.extent.width = (int32_t)(w - (uint32_t)c.offset.x);
+    if ((int64_t)c.offset.y + c.extent.height > (int64_t)h) c.extent.height = (int32_t)(h - (uint32_t)c.offset.y);
+    if (c.extent.width <= 0 || c.extent.height <= 0) return 0;
+    int changed = memcmp(&c, r, sizeof c) != 0;
+    *r = c;
+    return changed;
+}
+
 static void forget_swapchain(XrSwapchain handle) {
     pthread_mutex_lock(&swapchains_lock);
     for (size_t i = 0; i < swapchain_count; ++i)
@@ -439,6 +480,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
         (unsigned long long)fixed.usageFlags, (unsigned long long)fixed.createFlags, result);
     if (XR_SUCCEEDED(result)) {
         remember_swapchain(*swapchain);
+        note_swapchain_size(*swapchain, fixed.width, fixed.height);
         flip_on_create_swapchain(*swapchain, &fixed);
         emul_on_create_swapchain(*swapchain, &fixed);
         return result;
@@ -461,6 +503,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
     }
     if (XR_SUCCEEDED(result)) {
         remember_swapchain(*swapchain);
+        note_swapchain_size(*swapchain, fixed.width, fixed.height);
         flip_on_create_swapchain(*swapchain, &fixed);
         emul_on_create_swapchain(*swapchain, &fixed);
     }
@@ -1109,6 +1152,51 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
                                                  XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
             layer = (const XrCompositionLayerBaseHeader *)&projections[count];
             ++swapped;
+        }
+        if (rect_clamp) {
+            // Keep every image rect inside its swapchain: Unity/OVRPlugin can size the eye area a few pixels past
+            // the image on some Frames (PowerWash Simulator: rect 268+1656 on a 1920 wide swapchain) and SteamVR
+            // then rejects every frame with XR_ERROR_SWAPCHAIN_RECT_INVALID (-25) (GitHub #39).
+            uint32_t w, h;
+            if (layer->type == XR_TYPE_COMPOSITION_LAYER_PROJECTION &&
+                ((const XrCompositionLayerProjection *)layer)->viewCount <= 2) {
+                const XrCompositionLayerProjection *cur = (const XrCompositionLayerProjection *)layer;
+                int over = 0;
+                for (uint32_t v = 0; v < cur->viewCount; ++v) {
+                    XrRect2Di r = cur->views[v].subImage.imageRect;
+                    if (swapchain_size(cur->views[v].subImage.swapchain, &w, &h) && clamp_rect(&r, w, h)) over = 1;
+                }
+                if (over) {
+                    if (layer != (const XrCompositionLayerBaseHeader *)&projections[count]) projections[count] = *cur;
+                    if (projections[count].views != views[count])
+                        for (uint32_t v = 0; v < cur->viewCount; ++v) views[count][v] = cur->views[v];
+                    for (uint32_t v = 0; v < cur->viewCount; ++v)
+                        if (swapchain_size(views[count][v].subImage.swapchain, &w, &h) &&
+                            clamp_rect(&views[count][v].subImage.imageRect, w, h)) {
+                            static int logged;
+                            if (logged++ < 3)
+                                LOG("rect_clamp: view %u image rect clamped to %dx%d at %d,%d (swapchain %ux%u)", v,
+                                    views[count][v].subImage.imageRect.extent.width,
+                                    views[count][v].subImage.imageRect.extent.height,
+                                    views[count][v].subImage.imageRect.offset.x,
+                                    views[count][v].subImage.imageRect.offset.y, w, h);
+                        }
+                    projections[count].views = views[count];
+                    layer = (const XrCompositionLayerBaseHeader *)&projections[count];
+                    ++swapped;
+                }
+            } else if (layer->type == XR_TYPE_COMPOSITION_LAYER_QUAD) {
+                const XrCompositionLayerQuad *q = (const XrCompositionLayerQuad *)layer;
+                XrRect2Di r = q->subImage.imageRect;
+                if (swapchain_size(q->subImage.swapchain, &w, &h) && clamp_rect(&r, w, h)) {
+                    if (layer != (const XrCompositionLayerBaseHeader *)&quads[count]) quads[count] = *q;
+                    quads[count].subImage.imageRect = r;
+                    layer = (const XrCompositionLayerBaseHeader *)&quads[count];
+                    ++swapped;
+                    static int logged;
+                    if (!logged++) LOG("rect_clamp: quad image rect clamped (swapchain %ux%u)", w, h);
+                }
+            }
         }
         kept[count++] = layer;
     }

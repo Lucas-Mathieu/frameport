@@ -75,3 +75,11 @@ def test_rejected_controller_profile_is_information_only():
     f = {x.id: x for x in triage(log, "RUNNING", "com.example.game").findings}
     assert f["controller-profile-rejected"].severity == "info"
     assert triage(log, "RUNNING", "com.example.game").verdict == "pass"
+
+
+def test_swapchain_rect_invalid_is_recognised():
+    """GitHub #39: SteamVR rejected PowerWash Simulator's frames (rect a few px past the swapchain)."""
+    from frameport.validate import triage
+
+    log = "10-05 08:13:02.100  1149  1312 I FrameBridge: xrEndFrame failed -25\n"
+    assert "swapchain-rect-invalid" in [f.id for f in triage.triage(log).findings]

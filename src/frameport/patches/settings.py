@@ -108,6 +108,10 @@ SETTINGS = [
      "Override the guardian width (0 = use guardian, min 1.5 m)."),
     ("scene_depth", "float", 0.0, "Emulated room depth (m)",
      "Override the guardian depth (0 = use guardian, min 1.5 m)."),
+    ("rect_clamp", "int", 1, "Clamp image rects",
+     "Keeps every submitted image rect inside its swapchain. Unity can size the eye area a few pixels past the image "
+     "on some Frames; SteamVR then rejects every frame (xrEndFrame -25, XR_ERROR_SWAPCHAIN_RECT_INVALID) and the game "
+     "stops drawing (e.g. PowerWash Simulator stuck at \"Waiting\")."),
     ("swap_eyes", "int", 0, "Swap eyes", "Swap left/right views (diagnostic)."),
     ("strip_depth", "int", 0, "Strip depth layers", "Remove XR_KHR_composition_layer_depth chains (diagnostic)."),
     ("mutable_fix", "int", 0, "Mutable swapchain fix", "Experimental Vulkan mutable-format workaround."),
@@ -232,7 +236,7 @@ UI: dict[str, dict] = {
                             control=("choice", [(0, "As the game sends it"), (2, "Flat")])),
     **{key: dict(group="troubleshooting", level="advanced", control=("switch",)) for key in (
         "foveation_fix", "hide_space_warp", "swapchain_fix", "layer_fix", "gl_hide_multiview", "mutable_fix",
-        "flip_quads", "swap_eyes", "vk_validation",
+        "flip_quads", "swap_eyes", "vk_validation", "rect_clamp",
         "strip_depth", "respace_kick", "layer_debug", "eye_debug", "release_wait")},
 }
 
