@@ -25,6 +25,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | H.U.N.T | Quest | ✅ Works |  |
 | I Am Monkey | Quest | ✅ Works |  |
 | In Death: Unchained | Quest | ✅ Works |  |
+| Into The Radius 2 | Quest | ✅ Works |  |
 | Job Simulator | Quest | ✅ Works |  |
 | Keep Talking and Nobody Explodes | Quest | ✅ Works |  |
 | LEGO® Bricktales | Quest | ✅ Works |  |
@@ -55,7 +56,6 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Arcsmith | Quest | ⚠️ Works with issues | Right eye distorts during movement (unresolved; swap, tracking, Valve layers, depth and pacing ruled out). |
 | Assassin's Creed Nexus | Quest | ⚠️ Works with issues | Some launch warning text is still upside down; the rest of the UI is fixed by flip emulation. |
 | I Am Cat | Quest | ⚠️ Works with issues | The view vibrates slightly, even when holding still. |
-| Into The Radius 2 | Quest | ⚠️ Works with issues | Plays; space warp is turned off (no flickering textures) and the headset's brief focus losses are hidden (focus_hold, up to 2.5 s). |
 | Lucky's Tale | Quest | ⚠️ Works with issues | Runs out of memory within a few minutes and freezes the Frame until the game is killed. |
 | Myst | Quest | ⚠️ Works with issues | Minor graphical glitches on some objects. |
 | Phantom: Covert Ops | Quest | ⚠️ Works with issues | DLC/store button crashes (no Meta store). |

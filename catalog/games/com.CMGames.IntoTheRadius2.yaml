@@ -1,9 +1,10 @@
 package: com.CMGames.IntoTheRadius2
 title: Into The Radius 2
-status: issues
-notes: Plays; space warp is turned off (no flickering textures) and the headset's brief focus losses are hidden
-  (focus_hold, up to 2.5 s). The fog only renders without Valve's render-pass optimizer layer, so the launcher loads
-  just Valve's foveation layer. Some distant objects still pop in and out. Loading a save can take over a minute.
+status: works
+notes: Plays well (owner-verified 2026-10-05). Space warp is off, the headset's brief focus losses are hidden
+  (focus_hold, up to 2.5 s), only Valve's foveation layer is loaded (its render-pass optimizer removed the fog) and
+  an invalid depth resolve in Unreal's render passes is dropped (vk_spec_fixes; it made models flicker and windows
+  show behind them). Needs FramePort 0.9.2 or newer. Loading a save can take over a minute.
 details: Unreal Engine 5 game that uses Meta's Application SpaceWarp (extra motion-vector and depth swapchains). OVRPort's
   patch_disable_space_warp doesn't reach Unreal Engine 5, so FrameBridge's hide_space_warp hides XR_FB_space_warp and
   removes the space warp info from the eye images. Working config shared in GitHub issue 35. In the headset
@@ -11,7 +12,10 @@ details: Unreal Engine 5 game that uses Meta's Application SpaceWarp (extra moti
   shows no frames for 40-80 s while the game's Sentry SDK (debug mode) logs its breadcrumbs. Valve's VALVE_rpo
   (render-pass optimizer) Vulkan layer removes the game's fog (owner-verified 2026-10-05; with only VALVE_fdm_injection
   loaded the fog renders), which also hid the distance culling; ruled out for the remaining pop-in - Vulkan occlusion
-  query slots, Valve's FDM layer.
+  query slots, Valve's FDM layer. The cause, found with Khronos' validation layer (vk_validation) - Unreal's render
+  passes use Qualcomm's shader resolve (VK_SUBPASS_DESCRIPTION_SHADER_RESOLVE_BIT_QCOM) together with a depth resolve
+  of a single-sampled depth attachment (VUID-VkSubpassDescription2-flags-04908, -03179), harmless on Quest's driver,
+  wrong depth on the Frame's Mesa; the Vulkan shim's vk_spec_fixes drops that resolve.
 tested_version: 1.2.4
 engine: Unreal
 xr: OpenXR
@@ -22,10 +26,11 @@ adapter:
   hide_space_warp: 1
   focus_hold: 1
   focus_hold_ms: 2500
+  vk_spec_fixes: 1
 lepton_env:
   VK_INSTANCE_LAYERS: VK_LAYER_VALVE_fdm_injection
 verified:
-  date: '2026-10-04'
+  date: '2026-10-05'
   issue: 35
-updated: '2026-10-05'
+min_app: 0.9.2
 source_hint: Into The Radius 2
