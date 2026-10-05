@@ -1,10 +1,13 @@
 package: com.CMGames.IntoTheRadius2
 title: Into The Radius 2
 status: issues
-notes: Flickering textures were reported; space warp is turned off to address them (not yet confirmed in a headset).
+notes: Space warp is turned off (no flickering textures in the headset); the headset's brief focus losses are hidden
+  (focus_hold, up to 2.5 s) because the game pauses on each. Loading a save can take over a minute.
 details: Unreal Engine 5 game that uses Meta's Application SpaceWarp (extra motion-vector and depth swapchains). OVRPort's
   patch_disable_space_warp doesn't reach Unreal Engine 5, so FrameBridge's hide_space_warp hides XR_FB_space_warp and
-  removes the space warp info from the eye images. Working config shared in GitHub issue 35.
+  removes the space warp info from the eye images. Working config shared in GitHub issue 35. In the headset
+  (2026-10-05) the Frame dropped focus for 0.4 s and 1.0 s within ten seconds and Unreal paused each time; loading a save
+  shows no frames for 40-80 s while the game's Sentry SDK (debug mode) logs its breadcrumbs.
 tested_version: 1.2.4
 engine: Unreal
 xr: OpenXR
@@ -13,8 +16,10 @@ alt_overport:
 adapter:
   equirect_emul: 1
   hide_space_warp: 1
+  focus_hold: 1
+  focus_hold_ms: 2500
 verified:
   date: '2026-10-04'
   issue: 35
-updated: '2026-10-04'
+updated: '2026-10-05'
 source_hint: Into The Radius 2

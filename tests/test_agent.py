@@ -1174,6 +1174,33 @@ def test_dashboard_worker_starts_at_the_first_submitted_frame(monkeypatch, tmp_p
     assert "SteamClient.OpenVR.VROverlay.HideDashboard()" in calls
 
 
+def test_dashboard_worker_leaves_a_dashboard_the_player_opened(monkeypatch, tmp_path):
+    """ITR2 (agent 52): the player's controller button opened the dashboard and the worker closed it 60 ms later; the
+    game had paused for it and stayed paused. After a toggle_dashboard_action the worker must stop for good."""
+    a = load_agent(monkeypatch, tmp_path)
+    log, ui = tmp_path / "launch.log", tmp_path / "vrwebhelper_systemui.txt"
+    log.write_text("I FrameBridge: new layer: type=35\n")
+    ui.write_text("| [Dashboard] [ToggleDashboard] toggle_dashboard_action (an earlier session)\n")
+    visible = iter([True, False, False, True, True])
+    calls = []
+
+    def js(expr, timeout=5):
+        calls.append(expr)
+        return next(visible, True) if expr.endswith("Visible()") else None
+    monkeypatch.setattr(a, "steam_js", js)
+    steps = iter(range(10000))
+
+    def sleep(s):
+        if next(steps) == 2:  # the player presses the dashboard button
+            with open(ui, "a") as f:
+                f.write("| [Dashboard] [ToggleDashboard] toggle_dashboard_action bSourceIsVRLinkRemote false\n")
+    monkeypatch.setattr(a.time, "sleep", sleep)
+    clock = iter(range(0, 10000))
+    monkeypatch.setattr(a.time, "time", lambda: next(clock))
+    a.dashboard_worker(str(log), os.getpid(), wait_start=10, window=50, ui_log=str(ui))
+    assert calls.count("SteamClient.OpenVR.VROverlay.HideDashboard()") == 1  # Steam's start-up menu only
+
+
 def test_dashboard_worker_waits_for_vr_frames(monkeypatch, tmp_path):
     a = load_agent(monkeypatch, tmp_path)
     monkeypatch.setattr(a.time, "sleep", lambda s: None)

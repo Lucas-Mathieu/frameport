@@ -36,7 +36,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 52
+AGENT_VERSION = 53
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -3628,13 +3628,36 @@ def steam_js(expression, timeout=5):
 
 
 FIRST_FRAME_MARKERS = (b"FrameBridge: new layer:", b"FrameBridge: pacing:")
+# SteamVR's dashboard UI logs a dashboard opened with the controller's button as "[ToggleDashboard]
+# toggle_dashboard_action"; Steam's own start-up menu comes without it (onShowOverlayRequestFromSteam / frame menu)
+USER_DASHBOARD_MARKER = b"toggle_dashboard_action"
 
 
-def dashboard_worker(log, parent, wait_start=240, window=30, poll=0.5):
+def user_opened_dashboard(log, pos):
+    """(opened, new position): whether the player opened the dashboard (controller button) since `pos` in SteamVR's
+    vrwebhelper_systemui.txt. A missing log answers no (the worker then behaves as before)."""
+    try:
+        with open(log, "rb") as f:
+            f.seek(0, 2)
+            end = f.tell()
+            if pos is None or pos > end:  # first look, or the log was rotated: only what comes from now on
+                return False, end
+            f.seek(pos)
+            return USER_DASHBOARD_MARKER in f.read(), end
+    except OSError:
+        return False, pos
+
+
+def dashboard_worker(log, parent, wait_start=240, window=30, poll=0.5, ui_log=None):
     """Close SteamVR's dashboard (Steam's "Resume game" frame menu) that opens when the game submits its first VR
     frame: watch from FrameBridge's first "new layer:" line (the first submitted frame; Steam showed the menu ~0.3 s
     later with ITR2), checking every `poll` s for `window` s after it (at most 3 hides). Waiting for the first
-    "pacing:" summary (agent 44-51) was ~8 s too late: the owner had pressed Resume by then. Ends with the launcher."""
+    "pacing:" summary (agent 44-51) was ~8 s too late: the owner had pressed Resume by then. Stops for good once the
+    player opens the dashboard with the controller (agent 52 closed it 60 ms after each press: the game had paused
+    for it and stayed paused). Ends with the launcher."""
+    if ui_log is None:
+        ui_log = os.path.join(STEAM, "logs/vrwebhelper_systemui.txt")
+    _, ui_pos = user_opened_dashboard(ui_log, None)
     def alive():
         try:
             os.kill(int(parent), 0)
@@ -3661,6 +3684,10 @@ def dashboard_worker(log, parent, wait_start=240, window=30, poll=0.5):
     print(f"{time.strftime('%H:%M:%S')} first VR frame")
     hidden, end = 0, time.time() + window
     while time.time() < end and hidden < 3 and alive():
+        user, ui_pos = user_opened_dashboard(ui_log, ui_pos)
+        if user:  # the player wants the dashboard (or the game's menu button opened it): never close it on them
+            print(f"{time.strftime('%H:%M:%S')} dashboard opened with the controller: leaving it to the player")
+            return
         try:
             if steam_js("SteamClient.OpenVR.VROverlay.IsDashboardVisible()"):
                 steam_js("SteamClient.OpenVR.VROverlay.HideDashboard()")
