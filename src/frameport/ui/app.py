@@ -32,6 +32,7 @@ NAV = [("library", tr("Library"), ft.Icons.GRID_VIEW_ROUNDED),
        ("frame", tr("Steam Frame"), ft.Icons.VIEW_IN_AR_ROUNDED),
        ("files", tr("Files"), ft.Icons.FOLDER_OPEN_ROUNDED),
        ("screenshots", tr("Screenshots"), ft.Icons.PHOTO_LIBRARY_OUTLINED),
+       ("live", tr("Live view"), ft.Icons.CAST_ROUNDED),
        ("settings", tr("Settings"), ft.Icons.TUNE_ROUNDED)]
 POLL_SECONDS = 30
 
@@ -70,12 +71,14 @@ class FramePortApp:
         self.library_view = None  # created once (views/library.LibraryView), re-mounted on every visit
         self.files_view = None  # likewise (views/files.FilesView): keeps the location/folder between visits
         self.screenshots_view = None  # likewise (views/screenshots.ScreenshotsView): keeps the game filter
+        self.live_view = None  # likewise (views/live.LiveView): owns the running stream, which outlives the tab
         self.exe_queue: list[str] = []  # games whose executable the user should confirm (after a scan)
         self._failures: list[Job] = []  # failed installs/tests, shown together when the queue is done
         self.jobs = jobs_module.shared()  # one queue per process, shared by every window session
         self.jobs.subscribe(self._on_job)
         self._handled_jobs: set[int] = set()  # finished jobs this session has reacted to (pop-ups, refreshes)
-        page.on_close = lambda e: self.jobs.unsubscribe(self._on_job)  # session gone: stop drawing into it
+        page.on_close = lambda e: (self.jobs.unsubscribe(self._on_job),  # session gone: stop drawing into it
+                                   self.stop_live())  # and stop a live view (it would keep the Frame encoding)
         from .updater import Updater
 
         self.updater = Updater(self)  # new FramePort releases (sidebar card, Library bar, one-click update)
@@ -349,6 +352,12 @@ class FramePortApp:
                 if self.screenshots_view is None:
                     self.screenshots_view = ScreenshotsView(self)
                 view = self.screenshots_view.mount(*self.route[1:])
+            elif kind == "live":
+                from .views.live import LiveView
+
+                if self.live_view is None:
+                    self.live_view = LiveView(self)
+                view = self.live_view.mount()
             elif kind == "settings":
                 view = SettingsView(self).build()
             else:
@@ -378,8 +387,15 @@ class FramePortApp:
         elif self.route[0] == "screenshots" and (self.screenshots_view is None or self.screenshots_view.root is None
                                                  or self.frame_state != "connected"):
             self.render()
+        elif self.route[0] == "live" and (self.live_view is None or self.live_view.root is None
+                                          or self.frame_state != "connected"):
+            self.render()
         else:
             self._refresh_sidebar()
+
+    def stop_live(self) -> None:
+        if self.live_view is not None:
+            self.live_view.stop()
 
     def open_game(self, package: str, advanced: bool = False, show_all: bool = False) -> None:
         self.go("game", package, advanced, show_all)
@@ -1826,6 +1842,7 @@ class FramePortApp:
             work()
 
     def disconnect(self):
+        self.stop_live()
         if self.target:
             try:
                 self.target.close()

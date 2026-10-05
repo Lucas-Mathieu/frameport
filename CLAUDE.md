@@ -26,7 +26,12 @@ Read `docs/PLAYBOOK.md` (symptom → fix) before debugging a game, and `docs/FRA
     launch.sh logs `start/end <unix>` to `<anchor>/plays.log` (upgrade_launchers adds it; Proton launchers exec → start
     only) and shots are matched by time; thumbnails cached in `<data>/screenshots-cache/<frame>/`, shown by asset URL;
     delete leaves screenshots.vdf alone (Steam rewrites it at exit); game menu → "Screenshots" = `go("screenshots",
-    pkg)`); settings; welcome; activity panel). Files, Screenshots and the Library share right-click menus
+    pkg)`); live view (`views/live.py` + `install/livestream.py`: the Frame's built-in SteamVR "headset view" webcam
+    (`steamvr-v4l2cam.service` → v4l2loopback "SteamVR" /dev/video99, see docs/FRAME_RUNTIME.md) → ffmpeg/x264 →
+    fragmented MP4 on an SSH exec channel's stdout (the script stops ffmpeg on stdin EOF) → relay on 127.0.0.1 (keeps
+    init + fragments since the last keyframe for late viewers) → player page `install/live_player.py` (MSE) opened
+    in the user's default browser: Flet can't show video outside `flet build` bundles; the stream outlives the tab and
+    stops on disconnect/window close); settings; welcome; activity panel). Files, Screenshots and the Library share right-click menus
     (one `ft.ContextMenu` per view, filled on right-click; on one of several selected items they act on the whole
     selection, `C.menu_targets`) and click-and-drag multi-select (`C.DragSelect`: pan start/end on the area + item
     hover events, which Flutter also sends with the button held; Flet can't report item positions, so no rubber band).

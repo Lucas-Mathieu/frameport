@@ -302,7 +302,7 @@ def main() -> int:
     game = args.game or (library.games()[0]["package"] if library.games() else None)
     steps = [("library", lambda a: a.navigate(0)), ("frame", lambda a: a.navigate(1)),
              ("files", lambda a: a.go("files")), ("screenshots", lambda a: a.go("screenshots")),
-             ("tools", lambda a: a.go("settings"))]
+             ("live", lambda a: a.go("live")), ("tools", lambda a: a.go("settings"))]
     if game:
         steps.insert(1, ("game", lambda a: a.open_game(game)))
         steps.insert(2, ("game-customize", lambda a: a.open_game(game, advanced=True)))

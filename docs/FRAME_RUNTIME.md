@@ -106,6 +106,22 @@
 - SSH: `sshd` must be enabled (`sudo systemctl enable --now sshd`), which needs a user password (`passwd`).
 - mDNS: avahi-daemon runs by default; hostname `frame` → `frame.local`.
 
+## Video of the headset view (surveyed 2026-10-05; used by the Live view tab)
+- `steamvr-v4l2cam.service` (user unit, part of gamescope-session.target, `Restart=always`) runs SteamVR's
+  `/opt/steamvr/bin/linuxarm64/v4l2cam --output=99`: it reads the compositor's "Headset View" (IVRHeadsetView) and
+  writes it to a v4l2loopback webcam named **"SteamVR"** (`/dev/video99`, 1920x1080 RGB24, advertised 30 fps, frames
+  arrive at the display rate). Nothing on the Frame reads it by default; idle it costs nothing, read ~0.2 core.
+  It shows what the wearer sees (SteamVR home, Steam's panels; a game's layers are expected but not yet seen in it).
+  Black and ~1 fps while the headset sleeps (standby).
+- Steam's own game recording / Remote Play / broadcast capture the **gamescope** PipeWire node (`CDesktopCapturePipeWire:
+  ... node path: gamescope`): with gamescope's `--backend openvr` that's only the flat Steam UI, not VR. Steam's arm64
+  `libvideo.so` encodes with x264 (vaapi/nvenc paths don't apply). No cast/spectator feature for the Frame's own VR view
+  exists in Steam's UI; the SteamVR web server (27062) has no mirror route.
+- Encoding: the Qualcomm encoder (`/dev/video23` qcom-iris-encoder, V4L2 M2M) doesn't work with the stock tools (ffmpeg
+  `h264_v4l2m2m` hangs, gst `v4l2h264enc` not-negotiated). ffmpeg + libx264 works: FramePort's live view
+  (`install/livestream.py`: `fps=30` before the scale, ultrafast/zerolatency, 3 threads, nice 10, fragmented MP4 on
+  stdout) measured 0.34 core at 720p / 0.56 at 1080p with a quiet picture; expect ~1-1.4 cores with a busy scene.
+
 ## Text input
 
 - Lepton's Android has no on-screen keyboard (IME) and VR apps run headless, so no Android window has keyboard focus
