@@ -84,6 +84,9 @@ def _update_hint() -> None:
     age = updates.cache_age()
     if age is None or age > updates.CHECK_EVERY:
         threading.Thread(target=updates.refresh_cache, daemon=True).start()
+        from .recommend import catalog as _catalog
+
+        threading.Thread(target=_catalog.refresh_remote, daemon=True).start()  # confirmed configs from GitHub main
     up = updates.cached_update()
     today = time.strftime("%Y-%m-%d")
     if up and library.setting("update.cli_hint") != today:
@@ -225,6 +228,18 @@ def scan(path: Path = typer.Argument(..., help="a folder with game backups (APKs
     for g in pipeline.add_path(path, rep):
         r = g["recipe"]
         typer.echo(f"{g['package']:40} {g.get('title', '')[:34]:34} {r['status']:11} {r['source']}")
+
+
+@app.command("catalog-update")
+def catalog_update():
+    """Fetch confirmed game configs from the repo's main branch now (normally automatic, every 6 h)."""
+    from .recommend import catalog
+
+    n = catalog.refresh_remote(force=True)
+    st = catalog.remote_status()
+    typer.echo(f"{n} config(s) downloaded; {st['entries']} on GitHub main")
+    for pkg, why in sorted(st["skipped"].items()):
+        typer.echo(f"  skipped {pkg}: {why}")
 
 
 @app.command("add-linux")

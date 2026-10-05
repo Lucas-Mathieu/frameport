@@ -178,6 +178,7 @@
  "Check for new versions automatically": "",
  "Check for updates": "",
  "Check game files": "",
+ "Check now": "",
  "Check that the Frame and this computer are on the same network.": "",
  "Checking this PC…": "",
  "Checking tools…": "",
@@ -391,6 +392,8 @@
  "Game": "",
  "Game arguments (select SteamVR / OpenXR)": "",
  "Game config files": "",
+ "Game configs are up to date": "",
+ "Game configs from GitHub: last checked {when}": "",
  "Game launch capacity": "",
  "Game not found": "",
  "Game settings": "",
@@ -569,6 +572,7 @@
  "Needs the Oculus Platform (Meta Horizon app) for its license check, which the Frame doesn't have — it crashes at startup there. Play it on this PC.": "",
  "Needs Windows (or WSL on Windows)": "",
  "Neutralises Meta XR Audio's Quest-only calls (Unity/Wwise).": "",
+ "never": "",
  "New folder": "",
  "New Frame? Run one command on it and FramePort does the rest. Did this once already? Your Frame appears under step 2.": "",
  "New name": "",
@@ -1034,6 +1038,7 @@
  "Update available": "",
  "Update failed: {exc}": "",
  "Update FramePort to {version}": "",
+ "Update game configs from GitHub automatically (confirmed configs arrive without a FramePort update)": "",
  "Update now": "",
  "Update on Frame": "",
  "Update on this PC": "",
@@ -1173,6 +1178,10 @@
   "",
   ""
  ],
+ "{n} game config was updated": [
+  "",
+  ""
+ ],
  "{n} game didn't work out": [
   "",
   ""
@@ -1186,6 +1195,10 @@
   ""
  ],
  "{n} lines, the last 4000 shown": "",
+ "{n} needs a newer FramePort": [
+  "",
+  ""
+ ],
  "{n} new game in {name}": [
   "",
   ""

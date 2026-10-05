@@ -115,6 +115,12 @@ reality), showing only what matters for that game. Changes are kept with the gam
 
 ## Updating
 
+**Game configs** (the tested recipes in the catalog) update by themselves: FramePort checks GitHub every 6 hours for
+newly confirmed or fixed configs and uses them without a FramePort update; a game whose recipe changed then shows
+**Update on Frame**. Configs that need a newer FramePort are skipped until you update. Settings → Data shows the last
+check (**Check now**) and turns this off.
+
+
 FramePort checks for a new release at start and every 6 hours (it only downloads the release information). When one
 exists, the Library shows **Update now**: FramePort downloads the new version, verifies it against the release's
 `SHA256SUMS.txt` (on Windows also the signature), restarts and opens as the new version. Games, settings, signing keys

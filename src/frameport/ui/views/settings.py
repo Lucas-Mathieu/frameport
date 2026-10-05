@@ -8,7 +8,7 @@ import flet as ft
 from ... import REPO_URL, __version__, i18n, pipeline
 from ...core.paths import user_data_dir
 from ...errors import explain
-from ...i18n import fmt_size, tr
+from ...i18n import fmt_size, tr, tr_n
 from ...recommend import catalog
 from .. import components as C
 from .. import theme as T
@@ -139,6 +139,33 @@ class SettingsView:
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
         ], spacing=T.S3)
 
+    def catalog_updates(self) -> ft.Control:
+        """Settings → Data: confirmed game configs from GitHub main (recommend/catalog.refresh_remote)."""
+        import time
+
+        from ...core import library
+        from ...recommend import catalog
+
+        app = self.app
+        st = catalog.remote_status()
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(st["checked"])) if st["checked"] else tr("never")
+        line = tr("Game configs from GitHub: last checked {when}").format(when=when)
+        if st["skipped"]:
+            line += " · " + tr_n("{n} needs a newer FramePort", "{n} need a newer FramePort", len(st["skipped"]),
+                                 n=len(st["skipped"]))
+
+        def toggle(e):
+            library.set_setting("catalog.auto_update", bool(e.control.value))
+        return ft.Column([
+            ft.Row([C.meta(line, expand=True),
+                    C.ghost(tr("Check now"), ft.Icons.SYNC_ROUNDED,
+                            lambda e: app.run_bg(lambda: app._refresh_catalog(force=True)))],
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            C.switch(tr("Update game configs from GitHub automatically (confirmed configs arrive without a "
+                        "FramePort update)"), value=bool(library.setting("catalog.auto_update", True)),
+                     on_change=toggle),
+        ], spacing=T.S2)
+
     def appearance(self) -> ft.Control:
         from ...core import library
 
@@ -214,6 +241,7 @@ class SettingsView:
                                                        lambda e: app.copy(data))]), "data_folder"),
                 C.kv(tr("Catalog"), tr("{len} known-good recipes (bundled, remote and yours)")
                      .format(len=len(catalog.load())), "catalog"),
+                self.catalog_updates(),
             ], spacing=T.S2))),
             # text above, buttons below (side by side, the buttons squeezed the text in a narrow window)
             C.section(tr("Problems and feedback"), C.card(ft.Column([

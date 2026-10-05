@@ -127,6 +127,7 @@ class FramePortApp:
         threading.Thread(target=self._poll, daemon=True).start()
         threading.Thread(target=self._backfill_covers, daemon=True).start()
         self.updater.start()
+        self.run_bg(self._refresh_catalog)  # confirmed game configs from GitHub main (no release needed)
 
     # ================================================================== shell
     def _on_window_event(self, e) -> None:
@@ -1463,6 +1464,20 @@ class FramePortApp:
             pipeline.reanalyze(pkg, job.reporter)
             return tr("{title}: analyzed again").format(title=self._title(pkg))
         self.submit(tr("Analyze {title} again").format(title=self._title(pkg)), run, pkg, "task")
+
+    def _refresh_catalog(self, force: bool = False) -> int:
+        """New/changed confirmed configs from the repo's main branch; games following the catalog get them (their
+        page then offers Update on Frame). Quiet unless something changed or `force` (Settings → Check now)."""
+        from ..recommend import catalog
+
+        n = catalog.refresh_remote(force=force)
+        if n:
+            library.load()  # re-derives recipes whose catalog entry changed
+            self.refresh_view()
+            self.toast(tr_n("{n} game config was updated", "{n} game configs were updated", n, n=n))
+        elif force:
+            self.toast(tr("Game configs are up to date"))
+        return n
 
     def frame_power(self, action: str, force: bool = False) -> None:
         """Sleep / restart / shut down the Frame (agent `power`, run a few seconds later so the answer arrives)."""
