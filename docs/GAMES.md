@@ -54,6 +54,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Under Cover | Quest | ✅ Works |  |
 | VR4 | Quest | ✅ Works |  |
 | Wallace & Gromit in The Grand Getaway | Quest | ✅ Works |  |
+| Waltz of the Wizard: Extended Edition | Quest | ✅ Works |  |
 | Wander | Quest | ✅ Works |  |
 | Accounting+ | Quest | ⚠️ Works with issues | Starts in VR, but doesn't get past its "press any button" screen. |
 | Arcsmith | Quest | ⚠️ Works with issues | Right eye distorts during movement (unresolved; swap, tracking, Valve layers, depth and pacing ruled out). |
