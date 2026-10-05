@@ -1113,7 +1113,7 @@
  "VrApi → OpenXR adapter (OVRPort)": "",
  "VrApi → OpenXR bridge": "",
  "Vulkan shader fixes": "",
- "Vulkan shim (frame.vk_sanitize): 2 gives every occlusion query room for both eyes. In multiview passes the Frame's driver writes a zero result for the second eye into the next query, so engines that count on one slot cull visible objects (models popping in and out, e.g. Into The Radius 2). 0 = off, 1 = on (2 slots), 3-4 = more.": "",
+ "Vulkan shim (frame.vk_sanitize): on gives every occlusion query room for both eyes. In multiview passes the Frame's driver writes a zero result for the second eye into the next query, so engines that count on one slot cull visible objects (models popping in and out, e.g. Into The Radius 2). 0 = off, 1 = on (2 slots).": "",
  "Vulkan shim (frame.vk_sanitize): SPIR-V modules matching size + SHA-256 get words inserted at a byte offset, e.g. stores that initialize locals a shader reads before writing (an undefined loop counter hung the GPU in VR4's campaign). Format: <size>:<sha256>:<byte offset>:<word>,<word>,...; several separated by ';'. Comes from a game's recipe.": "",
  "Vulkan: drop invalid render-pass pointers": "",
  "v{remote} (updates on the next action)": "",
