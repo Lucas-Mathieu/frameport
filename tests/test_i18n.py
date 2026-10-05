@@ -78,3 +78,17 @@ def test_bundles_contain_the_translations():
     """Both packaging paths ship locales/*.json (flet build packages src/; PyInstaller needs --add-data)."""
     text = (ROOT / "scripts" / "package.py").read_text(encoding="utf-8")
     assert "src/frameport/locales" in text and "frameport/locales" in text
+
+
+def test_tr_n_calls_dont_pass_n_twice():
+    """tr_n formats with n itself: tr_n(..., n, n=n) raises TypeError at runtime (0.9.2 pre-release check)."""
+    import ast
+    from pathlib import Path
+
+    bad = []
+    for path in (Path(__file__).parents[1] / "src/frameport").rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "tr_n" and \
+                    any(k.arg == "n" for k in node.keywords):
+                bad.append(f"{path.name}:{node.lineno}")
+    assert not bad, bad

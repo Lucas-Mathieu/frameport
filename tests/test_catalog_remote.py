@@ -36,7 +36,7 @@ def github(monkeypatch):
 
 def test_remote_configs_are_used_and_newer_app_configs_skipped(github):
     files, calls = github
-    assert catalog.refresh_remote(force=True) == 4  # the four game configs (not triage.yaml)
+    assert catalog.refresh_remote(force=True) == 0  # the first download: nothing "updated" (no toast)
     entries = catalog.load(refresh=True)
     assert entries["com.x.good"].origin == "remote"
     st = catalog.remote_status()

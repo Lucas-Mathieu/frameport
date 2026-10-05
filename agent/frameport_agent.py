@@ -36,7 +36,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 50
+AGENT_VERSION = 51
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -263,19 +263,17 @@ def compat_command(tool_dir, verb="waitforexitandrun", depth=0):
 
 
 def pick_proton(tools, wanted=None):
-    """The Proton build a game uses: the one asked for (name, display name or alias such as proton-stable), else
-    Proton Experimental (the default since agent 49: Valve ships ARM64 fixes there first; a game that fails on it gets
-    "try Proton stable" suggested), else the newest stable one. Returned even when not installed yet: the installer
-    installs it."""
+    """The Proton build a game uses: the one asked for (name, display name or alias such as proton-experimental),
+    else the newest stable one (owner's choice 2026-10-05 after an A/B in the headset: Rick and Morty felt much
+    smoother on Proton 11 than on Experimental; a game that fails gets "try Proton Experimental" suggested).
+    Returned even when not installed yet: the installer installs it."""
     def matches(t, w):
         return w in (t["name"], t["display_name"]) or w in [a.strip() for a in t["aliases"].split(",")]
     if wanted:
         return next((t for t in tools if matches(t, wanted)), None)
-    experimental = next((t for t in tools if t["experimental"]), None)
-    if experimental:
-        return experimental
-    ready = [t for t in tools if t["installed"] and t["require_installed"]]
-    return ready[0] if ready else (tools[0] if tools else None)
+    stable = [t for t in tools if not t["experimental"]]
+    ready = [t for t in stable if t["installed"] and t["require_installed"]]
+    return (ready or stable or tools or [None])[0]
 
 
 def openxr_runtime():

@@ -185,6 +185,8 @@ def refresh_remote(force: bool = False) -> int:
         return 0
     if fetched or files != old.get("files"):
         load(refresh=True)
+    if not old.get("files"):  # the first download (a new install): nothing was "updated"
+        return 0
     return fetched
 
 

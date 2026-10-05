@@ -239,6 +239,35 @@ def driver(app: FramePortApp, steps: list[tuple[str, callable]], ready: threadin
         time.sleep(STEP_SECONDS)
 
 
+def find_button(root, text: str):
+    """The first button under `root` whose label is `text` (walks Flet's control tree)."""
+    seen, stack = set(), [root]
+    while stack:
+        c = stack.pop()
+        if c is None or id(c) in seen:
+            continue
+        seen.add(id(c))
+        label = getattr(c, "content", None)
+        if (label == text or getattr(c, "text", None) == text) and getattr(c, "on_click", None):
+            return c
+        for attr in ("controls", "content", "actions"):
+            v = getattr(c, attr, None)
+            if isinstance(v, list):
+                stack.extend(v)
+            elif v is not None and not isinstance(v, str):
+                stack.append(v)
+    return None
+
+
+def click_usb_setup(app) -> None:
+    app.navigate(1)
+    time.sleep(2)
+    button = find_button(app.body, "Set up with a USB cable")
+    print(f"usb button found: {button is not None}", flush=True)
+    if button:
+        button.on_click(None)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, required=True)
@@ -253,6 +282,8 @@ def main() -> int:
     ap.add_argument("--install-questions", nargs="+", metavar="PKG", default=None,
                     help="open the install questions for these games, then click each dialog's main button twice "
                          "(a double click must not duplicate dialogs); nothing is installed")
+    ap.add_argument("--usb-setup", action="store_true", help="click 'Set up with a USB cable' on the connect page "
+                    "(a Frame cabled to this PC) and screenshot what follows")
     ap.add_argument("--docs", action="store_true", help="only the screens used in the docs (Library, --game, Frame)")
     ap.add_argument("--linux", action="store_true", help="add two pretend arm64 Linux apps and render their pages")
     args = ap.parse_args()
@@ -304,6 +335,14 @@ def main() -> int:
                  ("linux-change-program", lambda a: a.choose_exe(LINUX_FOLDER)),
                  ("frame", lambda a: (a.page.pop_dialog(), a.navigate(1))),
                  ("linux-menu", lambda a: (a.navigate(0), time.sleep(3), a.library_view.open_menu(LINUX_APPIMAGE)))]
+    if args.usb_setup:
+        def continue_usb(a):
+            dialog = [d for d in a.page._dialogs.controls if d.open and type(d).__name__ == "AlertDialog"][-1]
+            button = find_button(dialog, "Done: look for the cable") or dialog.actions[-1]  # (label inside a Row)
+            print(f"dialog button found: {button is not None}", flush=True)
+            button.on_click(None)
+        steps = [("usb-explain", click_usb_setup), ("usb-continue", continue_usb),
+                 ("usb-wait", lambda a: time.sleep(8)), ("usb-after", lambda a: time.sleep(10))]
     if args.install_questions:
         queued: list[str] = []
 

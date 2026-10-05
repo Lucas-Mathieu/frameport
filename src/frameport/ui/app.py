@@ -510,7 +510,7 @@ class FramePortApp:
                                        lambda e: self.share_config_dialog(job.package)))
         if summary and summary.get("suggestions") and job.package:
             sugg = summary["suggestions"]
-            label = (tr("Try the stable Proton and reinstall") if sugg == [pipeline.PROTON_STABLE]
+            label = (tr("Try Proton Experimental and reinstall") if sugg == [pipeline.PROTON_TOOL]
                      else tr("Apply the suggested patches and reinstall"))
             out.append(C.primary(label, ft.Icons.HEALING_ROUNDED,
                                  lambda e: (pipeline.apply_suggestions(job.package, sugg),
@@ -1474,7 +1474,7 @@ class FramePortApp:
         if n:
             library.load()  # re-derives recipes whose catalog entry changed
             self.refresh_view()
-            self.toast(tr_n("{n} game config was updated", "{n} game configs were updated", n, n=n))
+            self.toast(tr_n("{n} game config was updated", "{n} game configs were updated", n))
         elif force:
             self.toast(tr("Game configs are up to date"))
         return n

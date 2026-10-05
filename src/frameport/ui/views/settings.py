@@ -151,8 +151,7 @@ class SettingsView:
         when = time.strftime("%Y-%m-%d %H:%M", time.localtime(st["checked"])) if st["checked"] else tr("never")
         line = tr("Game configs from GitHub: last checked {when}").format(when=when)
         if st["skipped"]:
-            line += " · " + tr_n("{n} needs a newer FramePort", "{n} need a newer FramePort", len(st["skipped"]),
-                                 n=len(st["skipped"]))
+            line += " · " + tr_n("{n} needs a newer FramePort", "{n} need a newer FramePort", len(st["skipped"]))
 
         def toggle(e):
             library.set_setting("catalog.auto_update", bool(e.control.value))

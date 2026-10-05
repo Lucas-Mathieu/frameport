@@ -105,7 +105,7 @@ def test_cleanup_refuses_outside_paths(monkeypatch, tmp_path):
 # ------------------------------------------------------------------------------------------ PC VR under Proton
 def fake_steam_tools(a, tmp_path, experimental=False):
     """A Steam library with an ARM64 Proton (needing a runtime) installed, like the Frame's; experimental=True also
-    installs Proton Experimental (the default since agent 49)."""
+    installs Proton Experimental (chosen per game; the default is the stable one)."""
     apps = tmp_path / ".local/share/Steam/steamapps"
     if experimental:
         (apps / "common/Proton - Experimental (ARM64)").mkdir(parents=True)
@@ -139,8 +139,7 @@ def test_proton_status_and_command(monkeypatch, tmp_path):
     a = load_agent(monkeypatch, tmp_path)
     apps = fake_steam_tools(a, tmp_path)
     st = a.cmd_proton_status({})
-    # the default is Proton Experimental: not installed here, so nothing is ready until FramePort installs it
-    assert st["ready"] is None and st["suggested"]["name"] == "proton-experimental-arm64"
+    assert st["ready"]["name"] == "proton_11-arm64" and st["suggested"]["name"] == "proton_11-arm64"  # stable
     st = a.cmd_proton_status({"tool": "proton-stable-arm64"})
     assert st["ready"]["name"] == "proton_11-arm64"
     assert [t["name"] for t in st["tools"]] == ["proton_11-arm64", "proton-experimental-arm64"]  # stable first
@@ -158,7 +157,7 @@ def test_install_proton_request_mode(monkeypatch, tmp_path):
     r = a.cmd_install_proton({"tool": "proton-experimental-arm64"})
     assert r["requested"] == [4427310] and calls == [["steam", "-ifrunning", "steam://install/4427310"]]
     assert a.cmd_install_proton({"tool": "proton-stable-arm64"})["installed"] is True
-    assert a.cmd_install_proton({})["requested"] == [4427310]  # the default: Experimental
+    assert a.cmd_install_proton({})["installed"] is True  # the default: the stable one, already installed
 
 
 def test_stub_manifest(monkeypatch, tmp_path):
@@ -191,7 +190,7 @@ def test_pcvr_install_flow(monkeypatch, tmp_path):
                  "xrlayer": {"XR_APILAYER_FRAMEPORT_timefix.json": len(layer_json), "libxr_frameport_timefix.so": 3}}
     r = a.cmd_finalize_pcvr({"package": "rift.space_game", "title": "Space Game", "exe": "Space Game.exe",
                              "manifests": manifests, "env": {"PROTON_LOG": "1", "bad key": "x"}, "xr_layer": True})
-    assert r["ok"] and r["proton"] == "proton-experimental-arm64"  # the default
+    assert r["ok"] and r["proton"] == "proton_11-arm64"  # the default: stable, also with Experimental installed
     launch = Path(prep["anchor"]) / "launch.sh"
     text = launch.read_text()
     assert subprocess.run(["bash", "-n", str(launch)]).returncode == 0
@@ -1248,12 +1247,13 @@ def test_incomplete_deployment_records_dont_break_listing(monkeypatch, tmp_path)
     assert a.deployment("com.x.ok")["base"] == str(good)
 
 
-def test_proton_defaults_to_experimental(monkeypatch, tmp_path):
+def test_proton_defaults_to_stable(monkeypatch, tmp_path):
     a = load_agent(monkeypatch, tmp_path)
     stable = {"name": "proton_11-arm64", "display_name": "Proton 11.0-2 (ARM64)", "aliases": "proton-stable-arm64,"
               "proton-stable", "experimental": False, "installed": True, "require_installed": True}
     exp = {"name": "proton-experimental-arm64", "display_name": "Proton Experimental (ARM64)",
            "aliases": "proton-experimental", "experimental": True, "installed": False, "require_installed": True}
-    assert a.pick_proton([stable, exp])["name"] == "proton-experimental-arm64"  # even before it's installed
-    assert a.pick_proton([stable, exp], "proton-stable")["name"] == "proton_11-arm64"  # by alias
-    assert a.pick_proton([stable])["name"] == "proton_11-arm64"  # no Experimental offered
+    assert a.pick_proton([stable, exp])["name"] == "proton_11-arm64"
+    assert a.pick_proton([exp, stable])["name"] == "proton_11-arm64"  # whatever the order
+    assert a.pick_proton([stable, exp], "proton-experimental")["name"] == "proton-experimental-arm64"  # by alias
+    assert a.pick_proton([exp])["name"] == "proton-experimental-arm64"  # only Experimental offered

@@ -210,6 +210,40 @@ class FrameView:
                     show_command()
             app.run_bg(check_network)
 
+        def usb_explain(e):
+            """The Frame turns its USB network on only in Developer Mode: say how first (Valve's labels on the current
+            Frame OS: Settings → System → Enable Developer Mode), then watch for the cable."""
+            def close():  # this dialog itself: pop_dialog() closes the topmost overlay, which may be a toast
+                dlg.open = False
+                C.update(dlg)
+
+            def go(ev):
+                close()
+                usb_setup(ev)
+            steps = [
+                tr("On the Frame, open Steam's Settings (Steam button → Settings)."),
+                tr("Go to System and turn on \"Enable Developer Mode\". A Developer page appears in Settings; nothing "
+                   "else changes, your games and data stay as they are."),
+                tr("Connect the Frame's USB-C port to this computer with a USB cable (a data cable, not a charge-only "
+                   "one)."),
+            ]
+            dlg = ft.AlertDialog(
+                title=ft.Text(tr("Turn on Developer Mode first"), weight=ft.FontWeight.W_600),
+                content=ft.Container(ft.Column([
+                    C.body(tr("The Frame only offers its USB connection in Developer Mode:"), T.TEXT),
+                    *[ft.Row([ft.Container(ft.Text(str(i), weight=ft.FontWeight.W_700, color=T.ACCENT),
+                                           width=T.px(24), height=T.px(24), border_radius=T.px(12),
+                                           bgcolor=T.ACCENT_SOFT, alignment=ft.Alignment.CENTER),
+                              C.body(text, T.TEXT_2, expand=True)], spacing=T.S3,
+                             vertical_alignment=ft.CrossAxisAlignment.START)
+                      for i, text in enumerate(steps, 1)],
+                    C.meta(tr("FramePort then finds the Frame on the cable by itself.")),
+                ], spacing=T.S3, tight=True), width=T.px(480)),
+                bgcolor=T.SURFACE_2, shape=ft.RoundedRectangleBorder(radius=T.RADIUS),
+                actions=[C.ghost(tr("Cancel"), on_click=lambda ev: close()),
+                         C.primary(tr("Done: look for the cable"), ft.Icons.USB_ROUNDED, go)])
+            app.page.show_dialog(dlg)
+
         def usb_setup(e):
             """Setup over a USB-C cable: no Wi-Fi, router, discovery or network firewall involved (the Frame's USB
             network gives this PC the fixed address 10.86.200.234). The Frame enables its USB network only in
@@ -220,11 +254,11 @@ class FrameView:
             status = ft.Row([ft.ProgressRing(width=T.px(14), height=T.px(14), stroke_width=T.px(2), color=T.ACCENT),
                              C.meta(tr("Waiting for the cable…"))], spacing=T.S2)
             pair_box.controls = [
-                C.body(tr("1. On the Frame, turn on Developer Mode: Settings → System → Developer Mode."), T.TEXT),
-                C.body(tr("2. Connect the Frame's USB-C port to this computer with a USB cable."), T.TEXT),
+                C.body(tr("Looking for the Frame on a USB cable (Developer Mode on, USB-C port connected to this "
+                          "computer)."), T.TEXT),
                 status,
             ]
-            pair_box.update()
+            C.update(pair_box)
             token = object()
             app._usb_setup = token
 
@@ -250,17 +284,18 @@ class FrameView:
                     return
                 except Exception:  # noqa: BLE001 - not set up yet: show the setup command for the cable
                     pass
-                app.page.run_thread(lambda: (pair(None, host=usb.PC_USB_IP), pair_box.controls.insert(
-                    0, C.body(tr("3. On the Frame run this setup command (it reaches this computer over the "
-                                 "cable):"), T.TEXT)), pair_box.update()))
+                app.page.run_thread(lambda: pair(None, host=usb.PC_USB_IP))
             app.run_bg(watch)
 
         def show_command(update=True):
             """The setup command of the running pairing server: also when the page is redrawn (connection checks,
             discovery), which used to close it."""
             line = app.pairing.one_liner
+            over_usb = bool(getattr(app.pairing, "host", ""))
             pair_box.controls = [
                 C.body(tr("On the Frame: SteamVR dashboard → Launch a program → Desktop, then app menu → System → "
+                          "Konsole, and run (it reaches this computer over the USB cable):") if over_usb else
+                       tr("On the Frame: SteamVR dashboard → Launch a program → Desktop, then app menu → System → "
                           "Konsole, and run:"), T.TEXT),
                 ft.Container(ft.Row([ft.Text(line, font_family="monospace", selectable=True, size=T.px(12),
                                              color=T.TEXT, expand=True),
@@ -285,7 +320,7 @@ class FrameView:
                               "there and approve FramePort. That way needs no connection into this computer.")),
                 ], spacing=T.S2), "warn"))
             if update:
-                pair_box.update()
+                C.update(pair_box)  # (a redraw of the page may have replaced it)
 
         if app.pairing and app.pairing.running:
             show_command(update=False)
@@ -334,9 +369,11 @@ class FrameView:
             step(1, tr("First-time setup"), tr("New Frame? Run one command on it and FramePort does the rest. Did this "
                                                "once already? Your Frame appears under step 2."),
                  ft.Row([C.primary(tr("Show setup command"), ft.Icons.TERMINAL_ROUNDED, pair),
-                         C.secondary(tr("Set up with a USB cable"), ft.Icons.USB_ROUNDED, usb_setup,
+                         C.meta(tr("OR"), weight=ft.FontWeight.W_600),
+                         C.secondary(tr("Set up with a USB cable"), ft.Icons.USB_ROUNDED, usb_explain,
                                      tooltip=tr("No Wi-Fi needed: for networks that block the setup, and faster "
-                                                "game uploads"))], wrap=True, spacing=T.S3),
+                                                "game uploads"))], wrap=True, spacing=T.S3,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER),
                  pair_box,
                  help="first_time_setup"),
             step(2, tr("Already set up: on your network"), tr("Frames in Developer Mode show up here."), found,

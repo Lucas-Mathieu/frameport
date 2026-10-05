@@ -108,13 +108,13 @@ def test_linux_recipes_dont_follow_the_catalog(tmp_path, monkeypatch):
     assert data["games"][g["package"]]["recipe"]["as_is"] is True
 
 
-def test_failed_pc_game_on_experimental_suggests_stable_proton():
+def test_failed_pc_game_on_stable_suggests_experimental_proton():
     from frameport.core import library
 
     library.upsert_game("rift.x", kind="rift", recipe={"package": "rift.x", "patches": {}},
-                        installs={"frame": {"result": {"proton": "proton-experimental-arm64"}}})
-    assert pipeline.proton_stable_worth_trying("rift.x", "fail")
-    assert not pipeline.proton_stable_worth_trying("rift.x", "pass")
-    recipe = pipeline.apply_suggestions("rift.x", [pipeline.PROTON_STABLE])
-    assert recipe.patches[pipeline.PROTON_STABLE] == {"tool": "proton-stable"}
-    assert not pipeline.proton_stable_worth_trying("rift.x", "fail")  # already on stable
+                        installs={"frame": {"result": {"proton": "proton_11-arm64"}}})
+    assert pipeline.proton_alternative_worth_trying("rift.x", "fail")
+    assert not pipeline.proton_alternative_worth_trying("rift.x", "pass")
+    recipe = pipeline.apply_suggestions("rift.x", [pipeline.PROTON_TOOL])
+    assert recipe.patches[pipeline.PROTON_TOOL] == {"tool": "proton-experimental"}
+    assert not pipeline.proton_alternative_worth_trying("rift.x", "fail")  # already on Experimental
