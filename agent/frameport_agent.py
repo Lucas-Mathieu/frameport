@@ -36,7 +36,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 54
+AGENT_VERSION = 55
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -1278,7 +1278,27 @@ def devkit_appid(gameid):
         for v in (root.get("shortcuts") or {}).values():
             if isinstance(v, dict) and v.get("DevkitGameID") == gameid and v.get("appid"):
                 return v["appid"] & 0xFFFFFFFF
-    return None
+    return devkit_appid_from_log(gameid)
+
+
+def devkit_appid_from_log(gameid):
+    """The appid Steam picked for a devkit game, from its console log ('sanitize shortcut app id "<dir>/<id>/launch.sh":
+    replacing 0 with N'). Steam adds the entry live but may save shortcuts.vdf only later (GitHub #42: a Frame with two
+    Steam accounts never had it on disk), so the log is the fallback. The newest line wins."""
+    exe = os.path.join(DEVKIT_GAMES, gameid, "launch.sh")
+    pat = re.compile(r'sanitize shortcut app id "' + re.escape(exe) + r'": replacing \d+ with (\d+)')
+    found = None
+    for name in ("console_log.previous.txt", "console_log.txt"):
+        try:
+            with open(os.path.join(STEAM, "logs", name), errors="replace") as f:
+                for line in f:
+                    if "sanitize shortcut app id" in line:
+                        m = pat.search(line)
+                        if m:
+                            found = int(m.group(1)) & 0xFFFFFFFF
+        except OSError:
+            continue
+    return found
 
 
 def devkit_register(pkg):

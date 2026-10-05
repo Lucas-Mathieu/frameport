@@ -1315,3 +1315,17 @@ def test_launch_test_waits_for_a_first_boot(monkeypatch, tmp_path):
     assert a.not_started(first, 31)  # no boot: the container really failed
     assert not a.not_started(first + "Boot complete!\nInstalling game.apk...\n", 120)
     assert not a.not_started("Boot complete!\n", 120)
+
+
+def test_devkit_appid_from_steams_console_log(monkeypatch, tmp_path):
+    """GitHub #42: Steam added the devkit entry live but never saved shortcuts.vdf; its console log names the appid."""
+    a = load_agent(monkeypatch, tmp_path)
+    logs = Path(a.STEAM) / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    exe = f"{a.DEVKIT_GAMES}/I_Am_Cat/launch.sh"
+    (logs / "console_log.txt").write_text(
+        f'[2026-10-05 14:45:37] sanitize shortcut app id "{exe}": replacing 0 with 3849978641, reason: k_unAppIdInvalid\n'
+        f'[2026-10-05 14:45:38] sanitize shortcut app id "{a.DEVKIT_GAMES}/Other/launch.sh": replacing 0 with 5\n'
+        f'[2026-10-05 15:29:14] sanitize shortcut app id "{exe}": replacing 0 with 3849978642, reason: k_unAppIdInvalid\n')
+    assert a.devkit_appid("I_Am_Cat") == 3849978642  # nothing in shortcuts.vdf: the newest log line
+    assert a.devkit_appid("Missing") is None
