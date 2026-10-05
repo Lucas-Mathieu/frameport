@@ -1,2 +1,2 @@
 # The FramePort version: the single source (pyproject reads it via hatch; CI checks a release tag matches it).
-__version__ = "0.9.1"
+__version__ = "0.10.0"

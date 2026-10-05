@@ -138,7 +138,7 @@ SETTINGS = [
 
 
 # settings that need a new build, not only new settings files: the Vulkan shim learned vk_shader_fix in 0.6.4 and
-# vk_query_slots in 0.9.2
+# vk_query_slots and vk_spec_fixes in 0.10.0
 REVISIONS = {"vk_shader_fix": 2, "vk_query_slots": 3, "vk_spec_fixes": 2}
 
 # How the "Game settings" dialog shows each setting to non-technical users: group, level (common settings are always

@@ -4,7 +4,7 @@ status: works
 notes: Plays well (owner-verified 2026-10-05). Space warp is off, the headset's brief focus losses are hidden
   (focus_hold, up to 2.5 s), only Valve's foveation layer is loaded (its render-pass optimizer removed the fog) and
   an invalid depth resolve in Unreal's render passes is dropped (vk_spec_fixes; it made models flicker and windows
-  show behind them). Needs FramePort 0.9.2 or newer. Loading a save can take over a minute.
+  show behind them). Needs FramePort 0.10.0 or newer. Loading a save can take over a minute.
 details: Unreal Engine 5 game that uses Meta's Application SpaceWarp (extra motion-vector and depth swapchains). OVRPort's
   patch_disable_space_warp doesn't reach Unreal Engine 5, so FrameBridge's hide_space_warp hides XR_FB_space_warp and
   removes the space warp info from the eye images. Working config shared in GitHub issue 35. In the headset
@@ -32,5 +32,5 @@ lepton_env:
 verified:
   date: '2026-10-05'
   issue: 35
-min_app: 0.9.2
+min_app: 0.10.0
 source_hint: Into The Radius 2
