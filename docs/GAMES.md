@@ -30,11 +30,13 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Keep Talking and Nobody Explodes | Quest | ✅ Works |  |
 | LEGO® Bricktales | Quest | ✅ Works |  |
 | Marvel's Deadpool VR | Quest | ✅ Works |  |
+| Marvel's Iron Man VR | Quest | ✅ Works |  |
 | Medieval Dynasty New Settlement | Quest | ✅ Works |  |
 | Mobile Suit Gundam: Silver Phantom | Quest | ✅ Works |  |
 | Nano | Quest | ✅ Works |  |
 | NEX Player | Quest | ✅ Works |  |
 | NOPE CHALLENGE | Quest | ✅ Works |  |
+| palazzo_santacruz | Quest | ✅ Works |  |
 | Path of the Warrior | Quest | ✅ Works |  |
 | PowerWash Simulator VR | Quest | ✅ Works |  |
 | QuestCraft | Quest | ✅ Works |  |
@@ -46,6 +48,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Stremio | Quest | ✅ Works |  |
 | SUPERHOT VR | PC VR | ✅ Works |  |
 | SUPERHOT VR | Quest | ✅ Works |  |
+| TetrisEffect | Quest | ✅ Works |  |
 | The Climb 2 | Quest | ✅ Works |  |
 | Toy Master | Quest | ✅ Works |  |
 | Under Cover | Quest | ✅ Works |  |
