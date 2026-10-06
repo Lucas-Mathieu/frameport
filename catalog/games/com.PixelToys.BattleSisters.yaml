@@ -1,0 +1,26 @@
+package: com.PixelToys.BattleSisters
+title: BattleSisters
+status: works
+notes: Starts in VR; controller buttons and vibration work.
+details: Unity 2019.4 with Unity's built-in Oculus support. frame.unity_oculus_check starts VR (Meta's system-app check),
+  adds the frame wait its legacy loop never makes (without it the GPU hung, black screen) and lets Unity's Oculus
+  input accept Lepton's device model (it only reported controllers on a device named "Oculus ...", so buttons were
+  dead). haptic_fix stops the first controller vibration from freezing the Frame (OVRPort's loader read its duration
+  in nanoseconds as seconds and the game ran out of memory).
+tested_version: 1.2.4
+engine: Unity
+xr: VrApi
+frame:
+- frame.unity_no_msaa
+- frame.unity_oculus_check
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.unity_gl_shim
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-06'
+  issue: 48
+updated: '2026-10-06'
+min_app: 0.11.1
+source_hint: Battle Sister

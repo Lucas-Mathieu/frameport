@@ -560,8 +560,9 @@ function table: a global pointer at 0x16b57c0 in this build, slots filled by nam
 the Go check `deviceModel == "Oculus Pacific"`); Lepton's model is "Valve Lepton" → Go/unknown → only Go masks polled,
 buttons dead. `unity_oculus_check` revision 4 (`oculus_model_checks`, Unity 2019 only) turns the 17 compares' length
 into 0 (`orr w2, wzr, #6` → `mov w2, #0` after the adrp/add of the "Oculus" literal; the string stays: it is also
-Unity's VR device name). Device result: libunity now polls `ovrp_GetControllerState(0x3)` (Touch); buttons in the
-headset not yet confirmed. Ruled out before: ProductName, GetNodePresent, the device-model string itself, exports.
+Unity's VR device name). Device result: libunity now polls `ovrp_GetControllerState(0x3)` (Touch); owner-confirmed
+2026-10-06: buttons work. Its first controller vibration then hit OVRPort's haptic-envelope bug (11 GB, OOM kill) →
+`haptic_fix` is now suggested for every game with libOVRPlugin.so (settings detect), BattleSisters works. Ruled out before: ProductName, GetNodePresent, the device-model string itself, exports.
 Accounting+ works (owner, 2026-10-06).
 **Vader Immortal (UE4, GitHub #49, 2026-10-06, headless):** stuck after the intro on an in-game image (the splash
 quad ends ~6 s in; then the game's own projection frames, 72 fps, balanced xrBeginFrame/xrEndFrame). Not the Platform

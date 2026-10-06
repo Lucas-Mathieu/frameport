@@ -510,3 +510,11 @@ def test_start_activity_after_overport_conversion(tmp_path):
         ctx = base.ApkContext(ws, a, {}, Reporter(), {"frame.start_activity": {}})
         assert patch.apply(ctx)
         assert patch.validate(ctx) == [("Only the VR activity is a launcher", True, "org.x.game.QuestActivity")]
+
+
+def test_haptic_fix_suggested_for_ovrplugin_games():
+    base.load_all()
+    p = base.REGISTRY["adapter.haptic_fix"]
+    s = p.detect(_analysis(libs=["libunity.so", "libOVRPlugin.so"]))
+    assert s and s.recommended and s.params == {"value": 1}
+    assert p.detect(_analysis(libs=["libunity.so"])) is None

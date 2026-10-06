@@ -14,6 +14,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | BARTENDER VR SIMULATOR | Quest | ✅ Works |  |
 | Batman: Arkham Shadow | Quest | ✅ Works |  |
 | BattleGlide | Quest | ✅ Works |  |
+| BattleSisters | Quest | ✅ Works |  |
 | Beat Saber | Quest | ✅ Works |  |
 | Beat Saber (co-existence build) | Quest | ✅ Works |  |
 | Blade & Sorcery: Nomad | Quest | ✅ Works |  |

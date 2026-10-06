@@ -286,6 +286,10 @@ class AdapterSetting(Patch):
         if self.key == "controller_models" and uses_render_models(a):
             return Suggestion(True, "The game asks the headset for its controller models: show Steam Frame controllers "
                                     "instead of Quest Touch controllers.", {"value": 1})
+        if self.key == "haptic_fix" and "libOVRPlugin.so" in a.libs:
+            return Suggestion(True, "Meta's OVRPlugin vibrates controllers through OVRPort's loader, which turns some "
+                                    "vibrations into gigabyte allocations that freeze the Frame (e.g. Lucky's Tale, "
+                                    "BattleSisters): vibrations are converted before they reach it.", {"value": 1})
         if self.key == "equirect_emul" and uses_equirect_layers(a):
             return Suggestion(True, "The game draws 360° layers (e.g. a video player's theatre or 360° videos), which "
                                     "the Frame's runtime can't show: show them as panels around you.", {"value": 1})
