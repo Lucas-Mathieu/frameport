@@ -267,3 +267,29 @@ static void mouse_click_frame(void) {
     click_now = pressed && !was_pressed;
     was_pressed = pressed;
 }
+
+// ---------------------------------------------------------------- hand nodes
+// Unity's built-in Oculus XR input creates its left/right controller devices (InputDevices.GetDeviceAtXRNode, the
+// Touch buttons and triggers games read through CommonUsages) for the hand nodes OVRPlugin reports as present
+// (ovrp_GetNodePresent). Logged per node; a hand node whose Touch controller is connected counts as present.
+typedef int (*PFN_NodePresent)(int node);
+#define NODE_HAND_LEFT 3
+#define NODE_HAND_RIGHT 4
+
+EXPORT int fpov_GetNodePresent(int node) {
+    static PFN_NodePresent real;
+    static int logged[16];
+    pthread_once(&input_once, input_init);
+    if (!real) {
+        void *ovrp = dlopen("libOVRPlugin.so", RTLD_NOW | RTLD_NOLOAD);
+        if (ovrp) real = (PFN_NodePresent)dlsym(ovrp, "ovrp_GetNodePresent");
+    }
+    int present = real ? real(node) : 0, answer = present;
+    if (!present && (node == NODE_HAND_LEFT || node == NODE_HAND_RIGHT) && real_connected)
+        answer = (real_connected() & (node == NODE_HAND_LEFT ? 0x1u : 0x2u)) != 0;  // LTouch / RTouch
+    if (node >= 0 && node < 16 && logged[node] != (answer ? 2 : 1)) {
+        logged[node] = answer ? 2 : 1;
+        LOG("ovrp node %d present: OVRPlugin %d -> Unity %d", node, present, answer);
+    }
+    return answer;
+}
