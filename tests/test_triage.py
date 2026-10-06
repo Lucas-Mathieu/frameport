@@ -106,3 +106,11 @@ def test_vrapi_called_before_init_suggests_the_stub_not_the_bridge():
     ids = {f.id for f in r.findings}
     assert "vrapi-before-init" in ids and "direct-vrapi" not in ids  # Jurassic World Aftermath (GitHub #62)
     assert r.suggestions() == ["frame.vrapi_stub"]
+
+
+def test_missing_vrapi_function():
+    log = ('10-06 00:53:00.662  1124  1124 E AndroidRuntime: java.lang.UnsatisfiedLinkError: Unable to load native '
+           'library "/data/app/x/lib/arm64-v8a/libtargemapp.so": dlopen failed: cannot locate symbol '
+           '"vrapi_PollEvent" referenced by "libtargemapp.so"\n')
+    ids = {f.id for f in triage(log, "EXITED", "ru.targem.blazerush").findings}
+    assert "vrapi-symbol-missing" in ids and "java-crash" not in ids

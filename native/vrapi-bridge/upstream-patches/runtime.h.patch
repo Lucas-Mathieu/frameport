@@ -1,5 +1,5 @@
---- runtime.h.orig	2026-09-28 17:20:25.629612301 -0400
-+++ runtime.h	2026-09-28 17:20:25.629612301 -0400
+--- runtime.h.orig
++++ runtime.h
 @@ -1,6 +1,7 @@
  // SPDX-License-Identifier: GPL-3.0-only
  #pragma once
@@ -21,3 +21,11 @@
      VkQueue queue = VK_NULL_HANDLE;
      uint32_t queueFamily = 0;
      double timeOffset = 0;
+@@ -73,6 +80,7 @@
+     PFN_xrSetAndroidApplicationThreadKHR setThread = nullptr;
+     PFN_axrbGetSystemDisplayRefreshRate getSystemDisplayRefreshRate = nullptr;
+     PFN_xrGetDisplayRefreshRateFB getDisplayRefreshRate = nullptr;
++    PFN_xrRequestDisplayRefreshRateFB requestDisplayRefreshRate = nullptr;
+     DisplayRefreshRateSource loggedDisplayRefreshRateSource = DisplayRefreshRateSource::Unqueried;
+     float loggedDisplayRefreshRate = 0;
+     ovrPosef trackingTransform{{0, 0, 0, 1}, {0, 0, 0}};

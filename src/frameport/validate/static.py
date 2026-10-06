@@ -61,6 +61,12 @@ def check_apk(apk: Path, package: str | None = None, expect_adapter: bool = True
             ("not in the APK or the system list: " + ", ".join(sorted(unresolved))) if unresolved else "")
         missing = missing_ovr_symbols({k: v for k, v in libs.items() if elf.is_elf(v)})
         add("Meta platform functions resolvable", not missing, ", ".join(sorted(missing)[:6]))
+        vrapi = libs.get("libvrapi.so")
+        if vrapi and elf.is_elf(vrapi):  # BlazeRush needed 4 the VrApi bridge lacked (GitHub #57): no start at all
+            have = elf.dyn_symbols(vrapi, True)
+            lacking = sorted({s for n, d in libs.items() if n != "libvrapi.so" and elf.is_elf(d)
+                              for s in elf.dyn_symbols(d, False) if s.startswith("vrapi_")} - have)
+            add("VrApi functions resolvable", not lacking, ", ".join(lacking[:6]))
         if expect_adapter:
             have = {"libopenxr_loader_generic.so", "libopenxr_loader_original.so", "libframe_settings.so"} <= set(libs)
             add("FrameBridge adapter", have, "" if have else "adapter/original loader/settings missing")

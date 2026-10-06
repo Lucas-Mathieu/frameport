@@ -101,6 +101,13 @@ signatures:
     severity: error
     diagnosis: The game submits a VrApi layer type the bridge can't show; whole frames are dropped (black screen).
     suggest: []
+  - id: vrapi-symbol-missing
+    pattern: 'cannot locate symbol "vrapi_\w+"'
+    severity: fatal
+    diagnosis: The game needs a VrApi function its libvrapi.so doesn't have (e.g. BlazeRush before the bridge gained
+      vrapi_PollEvent). Rebuild with the current FramePort; if it persists, report the function name.
+    suggest: []
+    supersedes: [native-crash, java-crash, dlopen-failed]
   - id: vrapi-before-init
     pattern: 'VrApiLoader: vrapi_\w+ was called before vrapi_Initialize'
     severity: fatal

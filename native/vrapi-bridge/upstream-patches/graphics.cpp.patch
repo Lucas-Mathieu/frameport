@@ -1,5 +1,5 @@
---- graphics.cpp.orig	2026-09-28 17:20:25.629612301 -0400
-+++ graphics.cpp	2026-09-28 18:50:49.704207711 -0400
+--- graphics.cpp.orig
++++ graphics.cpp
 @@ -1,6 +1,9 @@
  // SPDX-License-Identifier: GPL-3.0-only
  #include "runtime.h"
@@ -102,7 +102,43 @@
  
      uint32_t formatCount = 0;
      XrResult result = s.xr.xrEnumerateSwapchainFormats(s.session, 0, &formatCount, nullptr);
-@@ -502,8 +572,104 @@
+@@ -331,12 +401,29 @@
+         ovp::xrOk(result, "xrEnumerateSwapchainFormats");
+         return false;
+     }
+-    const int64_t wanted = static_cast<int64_t>(chain->format);
+-    if (std::find(formats.begin(), formats.begin() + formatCount, wanted) ==
+-        formats.begin() + formatCount) {
+-        OVP_ERROR("OpenXR runtime does not expose requested VkFormat %lld",
+-                  static_cast<long long>(wanted));
+-        return false;
++    int64_t wanted = static_cast<int64_t>(chain->format);
++    auto exposed = [&](int64_t f) {
++        return std::find(formats.begin(), formats.begin() + formatCount, f) != formats.begin() + formatCount;
++    };
++    if (!exposed(wanted)) {
++        // Steam Frame exposes only the sRGB variants. The output is filled with vkCmdCopyImage, a raw
++        // copy that is valid between size-compatible UNORM/SRGB twins, so use the twin instead.
++        int64_t twin = 0;
++        switch (wanted) {
++            case VK_FORMAT_R8G8B8A8_UNORM: twin = VK_FORMAT_R8G8B8A8_SRGB; break;
++            case VK_FORMAT_R8G8B8A8_SRGB: twin = VK_FORMAT_R8G8B8A8_UNORM; break;
++            case VK_FORMAT_B8G8R8A8_UNORM: twin = VK_FORMAT_B8G8R8A8_SRGB; break;
++            case VK_FORMAT_B8G8R8A8_SRGB: twin = VK_FORMAT_B8G8R8A8_UNORM; break;
++            default: break;
++        }
++        if (!twin || !exposed(twin)) {
++            OVP_ERROR("OpenXR runtime does not expose requested VkFormat %lld",
++                      static_cast<long long>(wanted));
++            return false;
++        }
++        OVP_LOG("Runtime lacks VkFormat %lld; using size-compatible VkFormat %lld for the output swapchain",
++                static_cast<long long>(wanted), static_cast<long long>(twin));
++        wanted = twin;
+     }
+ 
+     XrSwapchainCreateInfo create{XR_TYPE_SWAPCHAIN_CREATE_INFO};
+@@ -485,8 +572,104 @@
      return true;
  }
  
@@ -207,7 +243,7 @@
      bool black = false;
      XrCompositionLayerProjection projection{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
      std::array<XrCompositionLayerProjectionView, 2> views{{
-@@ -564,7 +730,97 @@
+@@ -547,7 +730,97 @@
      return true;
  }
  
@@ -305,7 +341,7 @@
      if (!settleCopy(kFrameWaitNs, false)) return false;
      reapRetired();
      if (count == 0) return true;
-@@ -843,6 +1099,28 @@
+@@ -826,6 +1099,28 @@
      for (uint32_t i = 0; i < description->LayerCount; ++i) {
          const ovrLayerHeader2* header = description->Layers[i];
          if (!header) return failFrame(InvalidParameter);
@@ -334,7 +370,7 @@
          if (header->Type != kProjectionLayer) {
              OVP_ERROR("Unsupported VrApi layer type %d", header->Type);
              return failFrame(Unsupported);
-@@ -927,6 +1205,56 @@
+@@ -910,6 +1205,56 @@
      for (uint32_t i = 0; i < description->LayerCount; ++i) {
          PreparedLayer& output = prepared[i];
          if (output.black) continue;
@@ -391,7 +427,7 @@
          const bool headLocked = (output.source->Header.Flags & kLayerFixedToView) != 0;
          if (headLocked && !haveHeadLockedViews) {
              XrViewLocateInfo locate{XR_TYPE_VIEW_LOCATE_INFO};
-@@ -968,6 +1296,9 @@
+@@ -951,6 +1296,9 @@
                            rect.x, rect.y, rect.width, rect.height);
                  return failFrame(InvalidParameter);
              }
@@ -401,7 +437,7 @@
              output.views[eye].subImage.swapchain = chain->output;
              output.views[eye].subImage.imageArrayIndex =
                  chain->type == kTexture2DArray ? eye : 0;
-@@ -1024,3 +1355,73 @@
+@@ -1007,3 +1355,73 @@
      destroyCopyContext();
  }
  } // namespace ovp::graphics

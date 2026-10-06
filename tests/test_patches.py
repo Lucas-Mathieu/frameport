@@ -589,3 +589,31 @@ def test_vrapi_stub_covers_jurassic_world_aftermath():
     exports = sorted(s for s in elf.dyn_symbols(vrapi, True) if s.startswith(("vrapi_", "ovr")))
     need = {s for s in elf.dyn_symbols(plugin, False) if s.startswith("vrapi_")}
     assert need and need <= elf.dyn_symbols(build_stub_library(exports, soname="libvrapi.so"), True)
+
+
+def test_static_check_finds_vrapi_functions_the_bridge_lacks(tmp_path, monkeypatch, quest_manifest):
+    from frameport.apk import sign
+    from frameport.validate import static
+
+    monkeypatch.setattr(sign, "verify", lambda apk: (True, ""))
+    monkeypatch.setattr(sign, "alignment_problems", lambda apk: [])
+    apk = tmp_path / "game.apk"
+    game = build_stub_library(["game_main"], soname="libtargemapp.so")
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr("AndroidManifest.xml", quest_manifest)
+        z.writestr("lib/arm64-v8a/libvrapi.so", build_stub_library(["vrapi_Initialize"], soname="libvrapi.so"))
+        z.writestr("lib/arm64-v8a/libtargemapp.so", game)
+    monkeypatch.setattr(static.elf, "dyn_symbols", lambda data, defined: (
+        {"vrapi_Initialize"} if defined else {"vrapi_Initialize", "vrapi_PollEvent"}) if data == game or defined
+        else set())
+    check = next(c for c in static.check_apk(apk, expect_adapter=False) if c["name"] == "VrApi functions resolvable")
+    assert check["ok"] is False and check["detail"] == "vrapi_PollEvent"  # BlazeRush (GitHub #57)
+
+
+def test_bridge_exports_what_blazerush_imports():
+    from frameport.analysis import elf
+    from frameport.patches.frame import artifact
+
+    have = elf.dyn_symbols(artifact("arm64-v8a", "libvrapi.so"), True)
+    assert {"vrapi_PollEvent", "vrapi_GetSystemPropertyFloatArray", "vrapi_RecenterPose",
+            "vrapi_SetDisplayRefreshRate"} <= have
