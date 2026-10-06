@@ -18,6 +18,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Beat Saber | Quest | ✅ Works |  |
 | Beat Saber (co-existence build) | Quest | ✅ Works |  |
 | Blade & Sorcery: Nomad | Quest | ✅ Works |  |
+| BodyCombat | Quest | ✅ Works |  |
 | Carve Snowboarding | Quest | ✅ Works |  |
 | Cook-Out | Quest | ✅ Works |  |
 | Demeter | Quest | ✅ Works |  |

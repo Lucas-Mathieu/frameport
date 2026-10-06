@@ -1,0 +1,19 @@
+package: com.odders.shapeit
+title: BodyCombat
+status: works
+tested_version: 3.0.0
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
+verified:
+  date: '2026-10-05'
+  known_good_sha256: 1aa5b2a46b25c86db65e3355a575af14b5d4d89b967c812274f181aab2e62b33
+  app: 0.9.1
+  overport_cli: 1.2.5
+  frame_build: '20260930.6234839'
+  agent: 48
+  issue: 56
+source_hint: LES MILLS BODYCOMBAT
