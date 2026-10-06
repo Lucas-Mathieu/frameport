@@ -272,3 +272,11 @@ def test_user_recipes_get_a_catalog_update_offer(tmp_path, monkeypatch):
     g = library.game("com.x.vr4")
     assert "catalog_update" not in g and g["recipe"]["patches"]["adapter.scale"] == {"value": 0.9}
     assert g["recipe"].get("source") != "user" and "adapter.vk_shader_fix" in g["recipe"]["patches"]
+
+
+def test_unity_device_model_is_repointed_in_place():
+    from frameport.patches.frame import unity_oculus_check as C
+
+    # Unity compares SystemInfo.deviceModel with "Oculus Quest" before creating Touch controllers; Lepton's Android is
+    # Build.MANUFACTURER "Valve" + Build.MODEL "Lepton" (liblepton/properties.sh): an in-place edit needs equal length
+    assert len(C.LEPTON_MODEL) <= len(C.QUEST_MODEL) and C.LEPTON_MODEL == "Valve Lepton"

@@ -16,6 +16,11 @@ ALWAYS_THERE = "android"
 # Unity's legacy frame loop never calls ovrp_WaitToBeginFrame: its ovrp_Update2 lookup goes to native/ovrpshim
 SHIM = "libfp_ovrp.so"
 UPDATE, SHIM_UPDATE = "ovrp_Update2", "fpov_Update2"
+# Unity's built-in Oculus input creates Touch controllers only when SystemInfo.deviceModel (Build.MANUFACTURER + " " +
+# Build.MODEL) is "Oculus Quest"; anything else gets Go-style devices (touchpad, tracked remotes), so the game's Touch
+# bindings never fire (BattleSisters, Accounting+: hands tracked, buttons dead, although OVRPlugin reports every press).
+# Lepton's Android is "Valve" "Lepton": the same length, so the compared string is repointed in place.
+QUEST_MODEL, LEPTON_MODEL = "Oculus Quest", "Valve Lepton"
 # input diagnostics (off): the C# P/Invoke names in libil2cpp.so pointed at the shim's wrappers, which log what they
 # return, report input focus as true and release buttons held > 2 s. Accounting+ still didn't pass "press any button"
 # with them (input reached the game cleanly), so they stay off; switch on to investigate another game.
@@ -34,9 +39,10 @@ class UnityOculusCheck(Patch):
                    "libunity.so at \"android\", which always exists. Games on Unity's built-in VR (2017–2018, and 2019 "
                    "without the Oculus XR Plugin) also get the frame wait their legacy frame loop never makes "
                    "(libfp_ovrp.so calls ovrp_WaitToBeginFrame before ovrp_Update2; without it no frame starts, the "
-                   "dashboard freezes or the GPU hangs).")
+                   "dashboard freezes or the GPU hangs), and Unity's Touch controllers, which it only creates on a "
+                   "device model \"Oculus Quest\" (Lepton's Android is \"Valve Lepton\"; else buttons do nothing).")
     order = 45
-    revision = 2  # 2: frame wait also for Unity 2019 without the Oculus XR Plugin
+    revision = 3  # 2: frame wait also for Unity 2019 without the Oculus XR Plugin; 3: Touch input (device model)
 
     @staticmethod
     def _major(a) -> int:
@@ -71,6 +77,10 @@ class UnityOculusCheck(Patch):
             return False
         data, loops = elf.replace_rodata_string(data, UPDATE, SHIM_UPDATE) if self.legacy_loop(ctx.analysis) \
             else (data, 0)
+        if loops:
+            data, models = elf.replace_rodata_string(data, QUEST_MODEL, LEPTON_MODEL)
+            if models:
+                ctx.notes.append(f"libunity.so: device model \"{QUEST_MODEL}\" -> \"{LEPTON_MODEL}\" (Touch input)")
         plugin = ws.lib("libOVRPlugin.so")
         if loops and ws.abi == "arm64-v8a" and ws.has(plugin):
             ovrp = ws.read(plugin)
