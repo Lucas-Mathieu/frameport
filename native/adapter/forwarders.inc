@@ -1,5 +1,4 @@
 // Generated from overport 3.4.3 libopenxr_loader_generic.so exports minus hooked functions.
-FORWARD(xrApplyHapticFeedback)
 FORWARD(xrAttachSessionActionSets)
 FORWARD(xrBeginSession)
 FORWARD(xrCreateAction)

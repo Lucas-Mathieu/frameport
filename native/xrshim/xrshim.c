@@ -17,6 +17,7 @@
 #include <android/log.h>
 #include <dlfcn.h>
 #include <pthread.h>
+#include <math.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -54,11 +55,14 @@ static XRAPI_ATTR XrResult XRAPI_CALL apply_haptic_feedback(XrSession session, c
                                                            const XrHapticBaseHeader *feedback) {
     if (feedback && feedback->type == XR_TYPE_HAPTIC_AMPLITUDE_ENVELOPE_VIBRATION_FB) {
         const XrHapticAmplitudeEnvelopeVibrationFB *env = (const XrHapticAmplitudeEnvelopeVibrationFB *)feedback;
-        float peak = 0.0f;
+        // the envelope's energy (RMS), not its peak: a short fading pulse held at its peak for the whole duration
+        // felt far stronger than on a Quest (The Boys VR, Jurassic World, BONELAB)
+        double sum = 0.0;
         for (uint32_t i = 0; env->amplitudes && i < env->amplitudeCount; ++i)
-            if (env->amplitudes[i] > peak) peak = env->amplitudes[i];
+            sum += (double)env->amplitudes[i] * env->amplitudes[i];
+        float rms = env->amplitudeCount ? (float)sqrt(sum / env->amplitudeCount) : 0.0f;
         XrHapticVibration plain = {XR_TYPE_HAPTIC_VIBRATION, NULL, env->duration, XR_FREQUENCY_UNSPECIFIED,
-                                   peak > 1.0f ? 1.0f : peak};
+                                   rms > 1.0f ? 1.0f : rms};
         if (haptics_logged++ < 3)
             __android_log_print(ANDROID_LOG_INFO, TAG, "extension shim: haptic envelope (%u samples, %lld ns) -> "
                                 "vibration %.2f", env->amplitudeCount, (long long)env->duration, plain.amplitude);

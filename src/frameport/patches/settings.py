@@ -85,6 +85,9 @@ SETTINGS = [
      "Apps that suggest controller bindings only for Meta's newer profiles (Touch Plus, Touch Pro), which the Frame's "
      "runtime rejects (XR_ERROR_PATH_UNSUPPORTED), get the same bindings as oculus/touch_controller instead "
      "(components Touch lacks are dropped). Without it such apps get no controller input."),
+    ("haptic_scale", "float", 1.0, "Vibration strength",
+     "Scales every controller vibration the game asks for (0-1): plain vibrations, Meta's amplitude envelopes and "
+     "PCM buffers. For games whose vibrations feel much stronger than on a Quest."),
     ("aim_pitch", "float", 0.0, "Pointer tilt (degrees)",
      "Tilts the controllers' pointing ray up (+) or down (−), for games whose pointer doesn't hit what you aim at."),
     ("aim_yaw", "float", 0.0, "Pointer turn (degrees)", "Turns the controllers' pointing ray left (+) or right (−)."),
@@ -211,6 +214,9 @@ UI: dict[str, dict] = {
     "profile_remap": dict(group="controllers", level="advanced", label="Treat newer Quest controllers as Touch",
                           help="For apps that only know Quest 3/Pro controllers: without it they get no buttons.",
                           control=("switch",)),
+    "haptic_scale": dict(group="controllers", level="common", label="Vibration strength",
+                         help="Turn it down if controller vibrations are too strong.",
+                         control=("slider", 0.0, 1.0, 0.05, "{:.0%}")),
     "aim_pitch": dict(group="controllers", level="common", label="Pointer angle",
                       help="If the pointer doesn't hit what you aim at, tilt it up or down.",
                       control=("slider", -30.0, 30.0, 1.0, "{:+.0f}°")),

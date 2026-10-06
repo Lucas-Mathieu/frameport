@@ -128,6 +128,7 @@ static int layer_debug;      // diagnostics: layers, swapchains, session states,
 static int stable_local;     // keep every LOCAL space the app creates on the session-start origin
 static int focus_hold = 1;   // hide brief focus dips once the session has been focused for a while
 static float focus_hold_ms = 5000;  // longest focus dip focus_hold hides
+static float haptic_scale = 1.0f;   // vibration strength (0-1), all vibration types (xrApplyHapticFeedback)
 static float aim_pitch, aim_yaw, aim_forward;  // aim pose correction (degrees, degrees, metres)
 static float refresh_rate;   // requested display refresh rate (Hz), 0 = the app's choice
 static int equirect_emul;    // show 360 layers as cube faces (GLES)
@@ -178,6 +179,7 @@ static void read_settings(const char *path) {
         if (sscanf(line, "stable_local=%f", &value) == 1) stable_local = value != 0;
         if (sscanf(line, "focus_hold=%f", &value) == 1) focus_hold = value != 0;
         if (sscanf(line, "focus_hold_ms=%f", &value) == 1 && value >= 100 && value <= 5000) focus_hold_ms = value;
+        if (sscanf(line, "haptic_scale=%f", &value) == 1 && value >= 0 && value <= 1) haptic_scale = value;
         if (sscanf(line, "aim_pitch=%f", &value) == 1 && fabsf(value) <= 90) aim_pitch = value;
         if (sscanf(line, "aim_yaw=%f", &value) == 1 && fabsf(value) <= 90) aim_yaw = value;
         if (sscanf(line, "aim_forward=%f", &value) == 1 && fabsf(value) <= 0.5f) aim_forward = value;
@@ -866,6 +868,48 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance instance, const XrSess
         emul_on_create_session(*session, info);
     }
     return result;
+}
+
+// Vibrations: logged (the first few, to see what games ask for) and scaled by haptic_scale. Plain vibrations, Meta's
+// amplitude envelopes and PCM buffers all pass here: games' own calls, OVRPort's VrApi bridge and the xrshim alike.
+static int haptics_logged;
+XRAPI_ATTR XrResult XRAPI_CALL xrApplyHapticFeedback(XrSession session, const XrHapticActionInfo *info,
+                                                    const XrHapticBaseHeader *feedback) {
+    PFN_xrApplyHapticFeedback fn = (PFN_xrApplyHapticFeedback)lookup(active_instance, "xrApplyHapticFeedback");
+    if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if (!feedback) return fn(session, info, feedback);
+    if (feedback->type == XR_TYPE_HAPTIC_VIBRATION) {
+        XrHapticVibration v = *(const XrHapticVibration *)feedback;
+        if (haptics_logged++ < 8)
+            LOG("haptic: vibration amplitude=%.2f duration=%lld ns frequency=%.0f (scale %.2f)", v.amplitude,
+                (long long)v.duration, v.frequency, haptic_scale);
+        v.amplitude *= haptic_scale;
+        return fn(session, info, (const XrHapticBaseHeader *)&v);
+    }
+    if (feedback->type == (XrStructureType)1000173001 || feedback->type == (XrStructureType)1000209001) {
+        // XR_TYPE_HAPTIC_AMPLITUDE_ENVELOPE_VIBRATION_FB / XR_TYPE_HAPTIC_PCM_VIBRATION_FB: a sample buffer
+        typedef struct { XrStructureType type; const void *next; XrDuration duration; uint32_t count; const float *s; } env_t;
+        typedef struct { XrStructureType type; const void *next; uint32_t count; const float *s; float rate; XrBool32 append;
+                         uint32_t *consumed; } pcm_t;
+        int envelope = feedback->type == (XrStructureType)1000173001;
+        uint32_t n = envelope ? ((const env_t *)feedback)->count : ((const pcm_t *)feedback)->count;
+        const float *in = envelope ? ((const env_t *)feedback)->s : ((const pcm_t *)feedback)->s;
+        if (haptics_logged++ < 8) {
+            float peak = 0;
+            for (uint32_t i = 0; in && i < n; ++i) peak = fmaxf(peak, in[i]);
+            LOG("haptic: %s %u samples peak=%.2f (scale %.2f)", envelope ? "envelope" : "pcm", n, peak, haptic_scale);
+        }
+        if (haptic_scale >= 0.999f || !in || !n || n > 1u << 20) return fn(session, info, feedback);
+        float *scaled = malloc(n * sizeof *scaled);
+        if (!scaled) return fn(session, info, feedback);
+        for (uint32_t i = 0; i < n; ++i) scaled[i] = in[i] * haptic_scale;
+        XrResult r;
+        if (envelope) { env_t e = *(const env_t *)feedback; e.s = scaled; r = fn(session, info, (const XrHapticBaseHeader *)&e); }
+        else { pcm_t c = *(const pcm_t *)feedback; c.s = scaled; r = fn(session, info, (const XrHapticBaseHeader *)&c); }
+        free(scaled);
+        return r;
+    }
+    return fn(session, info, feedback);
 }
 
 XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateSwapchainImages(XrSwapchain swapchain, uint32_t capacity, uint32_t *count,
@@ -1638,6 +1682,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const 
     if (!emulated && emulate_scene && !strcmp(name, "xrLocateSpacesKHR")) emulated = (PFN_xrVoidFunction)emu_locate_spaces_khr;
     if (emulated) { *function = emulated; return XR_SUCCESS; }
     HOOK(xrGetSystemProperties)
+    HOOK(xrApplyHapticFeedback)
     HOOK(xrCreateReferenceSpace)
     HOOK(xrLocateViews)
     HOOK(xrPollEvent)

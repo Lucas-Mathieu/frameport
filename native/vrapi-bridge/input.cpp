@@ -426,11 +426,39 @@ void sync() {
 }
 } // namespace ovp::input
 
+// Input diagnostics: every 5 s, how the game uses the controller API (FramePort, e.g. BlazeRush's untracked
+// controllers): call counts, the last tracking status/position per hand, and the vibration amplitudes it asked for.
+namespace ovp::input::diag {
+struct Counters {
+    uint32_t enumerate = 0, caps = 0, state = 0, tracking = 0, trackingFail = 0, haptic = 0;
+    uint32_t lastStatus[HandCount] = {};
+    float lastPos[HandCount][3] = {};
+    float hapticMin = 2.0f, hapticMax = -1.0f;
+    double lastTime = 0, lastLog = 0;
+};
+static Counters c;
+static void maybeLog() {
+    const double now = ovp::secondsNow();
+    if (c.lastLog == 0) c.lastLog = now;
+    if (now - c.lastLog < 5.0) return;
+    OVP_LOG("input 5s: enumerate=%u caps=%u state=%u tracking=%u (failed %u, time %.3f vs now %.3f) "
+            "L status=0x%x pos=%.2f,%.2f,%.2f R status=0x%x pos=%.2f,%.2f,%.2f haptic=%u amp %.2f..%.2f",
+            c.enumerate, c.caps, c.state, c.tracking, c.trackingFail, c.lastTime, now,
+            c.lastStatus[Left], c.lastPos[Left][0], c.lastPos[Left][1], c.lastPos[Left][2],
+            c.lastStatus[Right], c.lastPos[Right][0], c.lastPos[Right][1], c.lastPos[Right][2],
+            c.haptic, c.haptic ? c.hapticMin : 0.0f, c.haptic ? c.hapticMax : 0.0f);
+    const double last = now;
+    c = {};
+    c.lastLog = last;
+}
+} // namespace ovp::input::diag
+
 VRAPI ovrResult vrapi_EnumerateInputDevices(ovrMobile* mobile, uint32_t index,
                                              ovrInputCapabilityHeader* capsHeader) {
     ovp::Runtime& s = ovp::runtime();
     std::lock_guard<std::recursive_mutex> lock(s.mutex);
     if (capsHeader == nullptr) return InvalidParameter;
+    ++ovp::input::diag::c.enumerate;
     if (!ovp::validMobile(mobile) || !ovp::input::ready()) return NotInitialized;
     uint32_t connectedIndex = 0;
     for (size_t hand = 0; hand < ovp::input::HandCount; ++hand) {
@@ -450,6 +478,7 @@ VRAPI ovrResult vrapi_GetInputDeviceCapabilities(ovrMobile* mobile,
     std::lock_guard<std::recursive_mutex> lock(s.mutex);
     if (capsHeader == nullptr) return InvalidParameter;
     if (!ovp::validMobile(mobile) || !ovp::input::ready()) return NotInitialized;
+    ++ovp::input::diag::c.caps;
     if (capsHeader->Type != ovrControllerType_TrackedRemote) return Unsupported;
     size_t hand = 0;
     ovp::input::Hand* value = ovp::input::handForId(capsHeader->DeviceID, &hand);
@@ -478,6 +507,8 @@ VRAPI ovrResult vrapi_GetCurrentInputState(ovrMobile* mobile, ovrDeviceID device
     std::lock_guard<std::recursive_mutex> lock(s.mutex);
     if (inputState == nullptr) return InvalidParameter;
     if (!ovp::validMobile(mobile) || !ovp::input::ready()) return NotInitialized;
+    ++ovp::input::diag::c.state;
+    ovp::input::diag::maybeLog();
     if (inputState->ControllerType != ovrControllerType_TrackedRemote) return Unsupported;
     ovp::input::Hand* hand = ovp::input::handForId(deviceID);
     if (hand == nullptr) return NoDevice;
@@ -507,9 +538,18 @@ VRAPI ovrResult vrapi_GetInputTrackingState(ovrMobile* mobile, ovrDeviceID devic
     if (!hand->active) return DeviceUnavailable;
     const double requestedSeconds = absTimeInSeconds == 0.0 ? ovp::secondsNow() : absTimeInSeconds;
     const XrTime requestedTime = ovp::toXrTime(requestedSeconds);
+    auto& d = ovp::input::diag::c;
+    ++d.tracking;
+    d.lastTime = requestedSeconds;
+    ovp::input::diag::maybeLog();
     if (!ovp::locate(hand->gripSpace, requestedTime, tracking->HeadPose, tracking->Status)) {
+        ++d.trackingFail;
         return DeviceUnavailable;
     }
+    d.lastStatus[handIndex] = tracking->Status;
+    d.lastPos[handIndex][0] = tracking->HeadPose.Pose.Position.x;
+    d.lastPos[handIndex][1] = tracking->HeadPose.Pose.Position.y;
+    d.lastPos[handIndex][2] = tracking->HeadPose.Pose.Position.z;
     return Success;
 }
 
@@ -525,6 +565,12 @@ VRAPI ovrResult vrapi_SetHapticVibrationSimple(ovrMobile* mobile, ovrDeviceID de
     if (!hand->active) return DeviceUnavailable;
 
     const float amplitude = std::clamp(intensity, 0.0f, 1.0f);
+    auto& d = ovp::input::diag::c;
+    if (amplitude > 0.0f) {
+        ++d.haptic;
+        d.hapticMin = std::min(d.hapticMin, amplitude);
+        d.hapticMax = std::max(d.hapticMax, amplitude);
+    }
     if (amplitude == 0.0f) {
         XrHapticActionInfo info{XR_TYPE_HAPTIC_ACTION_INFO};
         info.action = ovp::input::g.actions.haptic;

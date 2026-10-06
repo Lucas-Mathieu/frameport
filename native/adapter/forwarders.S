@@ -1,21 +1,6 @@
 // Generated: register-preserving tail-call forwarders (see frame_adapter.c).
     .text
     .p2align 2
-    .globl xrApplyHapticFeedback
-    .type xrApplyHapticFeedback, %function
-xrApplyHapticFeedback:
-    adrp x16, fwd_xrApplyHapticFeedback
-    ldr x16, [x16, :lo12:fwd_xrApplyHapticFeedback]
-    br x16
-    .size xrApplyHapticFeedback, .-xrApplyHapticFeedback
-    .data
-    .p2align 3
-    .globl fwd_xrApplyHapticFeedback
-    .hidden fwd_xrApplyHapticFeedback
-fwd_xrApplyHapticFeedback:
-    .quad frame_unsupported
-    .text
-    .p2align 2
     .globl xrAttachSessionActionSets
     .type xrAttachSessionActionSets, %function
 xrAttachSessionActionSets:

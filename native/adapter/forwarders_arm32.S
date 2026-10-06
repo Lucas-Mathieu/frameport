@@ -3,23 +3,6 @@
     .arm
     .text
     .p2align 2
-    .globl xrApplyHapticFeedback
-    .type xrApplyHapticFeedback, %function
-xrApplyHapticFeedback:
-    ldr ip, 1f
-2:  add ip, pc, ip
-    ldr ip, [ip]
-    bx ip
-1:  .word fwd_xrApplyHapticFeedback - (2b + 8)
-    .size xrApplyHapticFeedback, .-xrApplyHapticFeedback
-    .data
-    .p2align 2
-    .globl fwd_xrApplyHapticFeedback
-    .hidden fwd_xrApplyHapticFeedback
-fwd_xrApplyHapticFeedback:
-    .word frame_unsupported
-    .text
-    .p2align 2
     .globl xrAttachSessionActionSets
     .type xrAttachSessionActionSets, %function
 xrAttachSessionActionSets:
