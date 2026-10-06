@@ -713,3 +713,17 @@ def test_unity_user_presence_points_the_xr_plugin_at_the_shim(tmp_path, quest_ma
         assert P.SHIM in elf.needed(z.read("lib/arm64-v8a/libOVRPlugin.so"))
         shim = z.read(f"lib/arm64-v8a/{P.SHIM}")
     assert P.SHIM_CALL in elf.dyn_symbols(shim, True)  # the rebuilt artifact exports the wrapper
+
+
+def test_microphone_fix_is_not_suggested_for_unitys_platform_wrapper(quest_manifest, tmp_path):
+    """Unity's C# platform wrapper (libil2cpp.so) names every Meta function, used or not: no reason to patch."""
+    from frameport.analysis.detect import analyze
+
+    def apk(lib):
+        p = tmp_path / f"{lib}.apk"
+        with zipfile.ZipFile(p, "w") as z:
+            z.writestr("AndroidManifest.xml", quest_manifest)
+            z.writestr(f"lib/arm64-v8a/{lib}", b"\x7fELF\0ovr_Microphone_GetOutputBufferMaxSize\0")
+        return p
+    assert not analyze(apk("libil2cpp.so")).extra["ovr_microphone"]
+    assert analyze(apk("libUE4.so")).extra["ovr_microphone"]  # Unreal's voice code calls it (TWD Ch. 2)
