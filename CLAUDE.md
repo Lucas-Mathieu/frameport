@@ -547,13 +547,15 @@ wait now also applies to Unity 2019 without the Oculus XR Plugin (`UnityOculusCh
 config `hijack_responses`), but OVRPort's `patch_clean_up_frida` removes its loadLibrary call, so it never runs on
 the Frame; `frame.ovr_trace` (opt-in, `native/ovrtrace`: 1138 exported ovr_* stubs → real loader functions, logcat
 tag `fp_ovrtrace`: calls, PopMessage answers, unanswered requests every 10 s) is the next diagnostic.
-**Unity built-in VR input (2026-10-05):** probe builds (`FRAMEPORT_INPUT_PROBE=1 frameport build …`) showed
-OVRPlugin returns the full Touch state for every controller mask (also Go masks) and the presses (A/B/stick clicks)
-reach both BattleSisters and Accounting+ code. Unity 2019's libunity creates Touch devices only when
-SystemInfo.deviceModel == "Oculus Quest"; Lepton's Android is "Valve" "Lepton" (liblepton/properties.sh) → Go-style
-devices only (libunity polls masks 0x8000000/0x1000000/0x2000000) → `unity_oculus_check` revision 3 repoints that
-string to "Valve Lepton" (same length). Unity 2017 (Accounting+) has no such string ("Oculus Pacific" only): still
-open. The probe log caps at 120 changes.
+**Unity built-in VR input (2026-10-05):** probe builds (`FRAMEPORT_INPUT_PROBE=1 frameport build …`; it logs
+trigger/grip crossings too) showed OVRPlugin returns the full Touch state for every controller mask (also Go masks);
+presses reach the games' OVRInput. Accounting+ (Il2CppDumper v6.7.46 reads its Unity 2017 metadata v24, run on Windows)
+passes stance selection (NewtonVR grip/trigger) but its motion warning waits for `Input.GetMouseButtonDown(0/1)`,
+which Lepton never delivers (no focused Android window) → ovrpshim registers its own
+`UnityEngine.Input::GetMouseButtonDown(System.Int32)` icall (il2cpp_add_internal_call, after Unity's: resolve first)
+that adds a click in the frame a Touch trigger or A/B/X/Y is newly pressed (`unity_oculus_check` revision 3).
+BattleSisters (Unity 2019 InputSystem/XR InputDevices; libunity polls only Go masks 0x8000000/0x1000000/0x2000000;
+device model "Oculus Quest" vs Lepton's "Valve Lepton" was not it): buttons still dead, open.
 **Lepton storage (2026-09-30):** each app's /sdcard (= /storage/emulated/0 → `<base>/lepton-data/external`) has `Movies`/`Download`/`Documents` symlinked to the Frame's `~/Videos`/`~/Downloads`/`~/Documents` (liblepton/mounting.sh, only if they exist at start); agent v24 `storage_targets` reads that mapping. Android's MediaProvider canonicalises paths to /home/steamos/... and rejects every file ("doesn't appear under [/system/media...]"), `sm list-volumes` is empty: the media index never works, apps must browse folders. Lepton installs with `adb install -g` (runtime permissions granted, MANAGE_EXTERNAL_STORAGE too). Files: `install/files.py`, `frameport frame send|storage`, GUI Files tab (formerly Frame → Send files).
 **SteamVR per-app settings (2026-09-30):** editing steamvr.vrsettings while SteamVR runs is lost; the web API (127.0.0.1:27062 /app/setsettings) needs `x-steamvr-secret`. `native/vrsettings` = `fp_vrsettings.exe` (freestanding, OpenVR `FnTable:IVRSettings_003` as a Utility app, loads SteamVR's bin/win64/openvr_api.dll) sets them live and SteamVR persists them: section `steam.app.<shortcut appid>`, keys `preferredRefreshRate` (float) and `motionSmoothingOverride` (0 global, 1 on, 2 off, 3 always). Steam Link (vrlink) lists the Frame's rates 72/80/90/96/108/120/144 in vrserver.txt and follows the per-app preference ("host preferred N Hz"; whether the key is honoured is unverified in-headset yet). Judder metric: vrcompositor.txt session summary dropped + "Timed out. N total" (Stormland: 0 dropped but 313 timeouts in 2 min); fpsVR (`%LOCALAPPDATA%\fpsVR\*.json`, 0.1 ms histograms) gives p99 CPU/GPU ms. `pcvr.steamvr_tuning` (default on, PC only) applies on Play: highest rate whose budget ≥ p99×1.05, at least one step down, smoothing on.
 

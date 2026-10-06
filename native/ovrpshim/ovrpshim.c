@@ -38,6 +38,8 @@ static void init(void) {
 
 #define STEP_RENDER (-1)  // ovrpStep_Render
 
+static void mouse_click_frame(void);  // below: controller presses as Unity mouse clicks
+
 EXPORT int fpov_Update2(int step, int frame_index, double prediction_seconds) {
     pthread_once(&once, init);
     static int last_waited = -1, logged;
@@ -45,6 +47,7 @@ EXPORT int fpov_Update2(int step, int frame_index, double prediction_seconds) {
         last_waited = frame_index;
         int r = real_wait(frame_index);
         if (logged++ < 3) LOG("ovrp frame loop shim: waited for frame %d: %d", frame_index, r);
+        mouse_click_frame();
     }
     return real_update2 ? real_update2(step, frame_index, prediction_seconds) : -1000;  // ovrpFailure
 }
@@ -116,7 +119,7 @@ static void note_state(const char *which, unsigned int mask, const State *s) {
     while (i < 8 && masks[i].seen && masks[i].mask != mask) i++;
     if (i == 8) return;
     if (!masks[i].seen || masks[i].buttons != s->words[1] || masks[i].connected != s->words[0]) {
-        if (changes++ < 120)
+        if (changes++ < 400)
             LOG("ovrp input: %s(mask 0x%x): connected 0x%x buttons 0x%x touches 0x%x%s", which, mask, s->words[0],
                 s->words[1], s->words[2], masks[i].seen ? "" : " (first call with this mask)");
         masks[i].seen = 1;
@@ -140,6 +143,22 @@ EXPORT int fpov_GetControllerState4(unsigned int mask, State *state) {
     pthread_once(&input_once, input_init);
     int r = real_state4 ? real_state4(mask, state) : -1000;
     if (state) {
+        // ovrpControllerState4 continues with 4 floats after the 4 masks: L/R IndexTrigger, L/R HandTrigger. OVRInput
+        // turns them into the trigger/grip buttons at 0.5; log each time one crosses it (per requested mask)
+        const float *axis = (const float *)((const char *)state + 16);
+        static struct { unsigned int mask, bits; } seen[8];
+        static int axis_logs;
+        unsigned int bits = 0;
+        for (int k = 0; k < 4; ++k) bits |= (axis[k] >= 0.5f) << k;
+        int i = 0;
+        while (i < 8 && seen[i].mask && seen[i].mask != mask) i++;
+        if (i < 8 && (!seen[i].mask || seen[i].bits != bits)) {
+            if (seen[i].mask && axis_logs++ < 200)
+                LOG("ovrp input: State4(mask 0x%x) triggers L %.2f R %.2f grips L %.2f R %.2f", mask, axis[0], axis[1],
+                    axis[2], axis[3]);
+            seen[i].mask = mask;
+            seen[i].bits = bits;
+        }
         note_state("State4", mask, state);
         state->words[1] = unstick(state->words[1]);
     }
@@ -192,4 +211,59 @@ EXPORT int fpov_GetAppHasInputFocus(int *has_focus) {
     last = r < 0 ? -1 : value;
     if (has_focus) *has_focus = 1;
     return 0;  // ovrpSuccess
+}
+
+// ---------------------------------------------------------------- controller presses as mouse clicks
+// Unity 2017-2019 games made for Go/Gear VR-era input wait for Input.GetMouseButtonDown(0/1), which a Quest delivers
+// for the controller's primary press (Accounting+'s "press any button" motion warning checks only that). Lepton runs
+// VR apps without a focused Android window, so no touch/mouse event ever arrives. IL2CPP looks engine functions up by
+// name (il2cpp_resolve_icall) on first use: this registers a replacement for UnityEngine.Input::GetMouseButtonDown
+// that returns Unity's answer, or true in the frame a Touch trigger (>= 0.5) or A/B/X/Y is newly pressed.
+#define MOUSE_ICALL "UnityEngine.Input::GetMouseButtonDown(System.Int32)"
+typedef void (*PFN_AddICall)(const char *name, const void *fn);
+typedef const void *(*PFN_ResolveICall)(const char *name);
+typedef int (*PFN_MouseDown)(int button);
+static PFN_MouseDown real_mouse_down;
+static volatile int click_now;  // set for the frame in which a press began
+
+static int fp_mouse_down(int button) {
+    int real = real_mouse_down ? real_mouse_down(button) : 0;
+    return real || ((button == 0 || button == 1) && click_now);
+}
+
+static void mouse_install(void) {
+    static int tries;
+    if (real_mouse_down || tries > 600) return;  // ~10 s of frames
+    tries++;
+    PFN_AddICall add = (PFN_AddICall)dlsym(RTLD_DEFAULT, "il2cpp_add_internal_call");
+    PFN_ResolveICall resolve = (PFN_ResolveICall)dlsym(RTLD_DEFAULT, "il2cpp_resolve_icall");
+    if (!add || !resolve) {
+        void *il2cpp = dlopen("libil2cpp.so", RTLD_NOW | RTLD_NOLOAD);
+        if (il2cpp) {
+            add = (PFN_AddICall)dlsym(il2cpp, "il2cpp_add_internal_call");
+            resolve = (PFN_ResolveICall)dlsym(il2cpp, "il2cpp_resolve_icall");
+        }
+    }
+    if (!add || !resolve) return;
+    const void *current = resolve(MOUSE_ICALL);
+    if (!current) return;  // Unity hasn't registered its own yet: try again next frame
+    real_mouse_down = (PFN_MouseDown)current;
+    add(MOUSE_ICALL, (const void *)fp_mouse_down);
+    LOG("controller presses count as mouse clicks (%s %s)", MOUSE_ICALL,
+        resolve(MOUSE_ICALL) == (const void *)fp_mouse_down ? "replaced" : "NOT replaced");
+}
+
+static void mouse_click_frame(void) {
+    mouse_install();
+    pthread_once(&input_once, input_init);
+    static int was_pressed;
+    unsigned char raw[512] __attribute__((aligned(16))) = {0};  // ovrpControllerState4 (+ room for newer layouts)
+    int pressed = 0;
+    if (real_state4 && real_state4(0x3, (State *)raw) >= 0) {
+        const unsigned int *w = (const unsigned int *)raw;
+        const float *axis = (const float *)(raw + 16);  // L/R IndexTrigger, L/R HandTrigger
+        pressed = (w[1] & 0x303u) != 0 || axis[0] >= 0.5f || axis[1] >= 0.5f;  // A, B, X, Y or a trigger
+    }
+    click_now = pressed && !was_pressed;
+    was_pressed = pressed;
 }
