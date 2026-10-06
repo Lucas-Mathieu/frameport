@@ -884,6 +884,13 @@ XRAPI_ATTR XrResult XRAPI_CALL xrApplyHapticFeedback(XrSession session, const Xr
             LOG("haptic: vibration amplitude=%.2f duration=%lld ns frequency=%.0f (scale %.2f)", v.amplitude,
                 (long long)v.duration, v.frequency, haptic_scale);
         v.amplitude *= haptic_scale;
+        if (v.amplitude <= 0.001f) {
+            // OVRPlugin stops a vibration by sending amplitude 0 with its usual 2 s duration (Jurassic World, The Boys
+            // VR): on a Quest that stops the motor; OpenXR's stop is xrStopHapticFeedback, and without it the last
+            // buzz ran its full 2 s
+            PFN_xrStopHapticFeedback stop = (PFN_xrStopHapticFeedback)lookup(active_instance, "xrStopHapticFeedback");
+            if (stop) return stop(session, info);
+        }
         return fn(session, info, (const XrHapticBaseHeader *)&v);
     }
     if (feedback->type == (XrStructureType)1000173001 || feedback->type == (XrStructureType)1000209001) {
