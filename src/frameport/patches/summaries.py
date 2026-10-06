@@ -42,6 +42,10 @@ SUMMARIES = {
                             "launcher, e.g. to import new content).",
     "frame.ltw_depth": "Fixes the black picture in Minecraft launchers (e.g. QuestCraft): uses depth formats the "
                        "Frame's graphics driver accepts.",
+    "frame.unity_gl_shim": "Stops a grey or frozen screen in Unity games that turn on anti-aliasing while running "
+                           "(e.g. The Room VR).",
+    "frame.unity_no_overlay_copy": "Stops a grey screen crash in some Unity games by skipping their overlay "
+                                   "layers (e.g. The Room VR's screen fades).",
     "frame.nodebug": "Stops strict debugging checks that make some games quit.",
     "frame.meta_permissions": "Declares Meta's permissions some mixed-reality games ask for, so they don't stop.",
     "frame.ovrplatformcompat": "Adds a small piece of Meta's platform library that some games need to start.",

@@ -23,11 +23,16 @@ class UnityRuntimeMsaa(Il2cppReturnPatch):
     description = ("Meta's OVRManager switches Unity to the headset's recommended MSAA level (4x) while the game runs, "
                    "whatever its quality settings say (log: \"Switching to the recommended level\"). Multisampled "
                    "render-to-texture on GLES can hang the Frame's GPU, up to a restart of the whole headset (e.g. "
-                   "Lucky's Tale in a menu). Rewrites OVRDisplay.recommendedMSAALevel -> 0 in libil2cpp.so (found with "
-                   "Cpp2IL), so MSAA stays off.")
+                   "Lucky's Tale in a menu) or a crash of its GL driver (e.g. The Room VR, whose own code sets 4x). "
+                   "Rewrites OVRDisplay.recommendedMSAALevel -> 0 and makes QualitySettings.antiAliasing's setter do "
+                   "nothing in libil2cpp.so (found with Cpp2IL), so MSAA stays off.")
     order = 47
     targets = {"Oculus.VR/OVRDisplay.cs": {"get_recommendedMSAALevel": RET_ZERO},
-               "Assembly-CSharp/OVRDisplay.cs": {"get_recommendedMSAALevel": RET_ZERO}}  # older Oculus Integration
+               "Assembly-CSharp/OVRDisplay.cs": {"get_recommendedMSAALevel": RET_ZERO},  # older Oculus Integration
+               # the game's own code can raise MSAA too (The Room VR: QualitySettingsManager.SetMSAA with its
+               # platform's default 4): Unity's setter does nothing, the quality settings' 0 stays
+               "UnityEngine.CoreModule/UnityEngine/QualitySettings.cs": {"set_antiAliasing": RET_ZERO}}
+    revision = 2  # 0.10.1: also QualitySettings.set_antiAliasing (the game's own runtime MSAA crashed Zink)
     check_name = "Unity MSAA"
 
     def applies(self, a):
@@ -65,5 +70,27 @@ class UnityMultiPass(Il2cppReturnPatch):
         return None  # only for a game that shows the symptom (catalog recipe or the user's choice)
 
 
+class UnityNoOverlayCopy(Il2cppReturnPatch):
+    id = "frame.unity_no_overlay_copy"
+    title = "Unity: skip OVROverlay layers (fades, splash screens)"
+    description = ("Meta's OVROverlay copies a texture into its own compositor layer every frame. For some games "
+                   "(e.g. The Room VR's screen fade, a 4x4 overlay) that copy crashes the Frame's GL driver: SIGSEGV "
+                   "in libgallium_dri.so on Unity's render thread right after a tiny xrCreateSwapchain, grey or frozen "
+                   "screen. Rewrites OVROverlay.PopulateLayer -> false in libil2cpp.so (found with Cpp2IL): overlays "
+                   "are skipped (fades become instant cuts, overlay splash screens don't show). Only for games with "
+                   "this crash: menus drawn as overlays would disappear too.")
+    order = 49
+    targets = {"Oculus.VR/OVROverlay.cs": {"PopulateLayer": RET_ZERO},
+               "Assembly-CSharp/OVROverlay.cs": {"PopulateLayer": RET_ZERO}}  # older Oculus Integration
+    check_name = "Unity overlays"
+
+    def applies(self, a):
+        return a.engine == "Unity" and "libil2cpp.so" in a.libs and not a.only_32bit and "GLES" in a.graphics
+
+    def detect(self, a):
+        return None  # only for a game that shows the crash (catalog recipe or the user's choice)
+
+
 register(UnityRuntimeMsaa)
 register(UnityMultiPass)
+register(UnityNoOverlayCopy)

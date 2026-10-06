@@ -88,7 +88,8 @@ static int foveation_fix = 1;
 static int hide_space_warp = 0;
 static int controller_fix = 1;
 static int swapchain_fix = 1;
-static int rect_clamp = 1;  // clamp submitted image rects to their swapchain (SteamVR rejects a 1 px overrun)
+static int rect_clamp = 1;
+static int pose_consistency = 0;  // repeat xrLocateViews queries for one display time get the same poses (GitHub #8)  // clamp submitted image rects to their swapchain (SteamVR rejects a 1 px overrun)
 static int layer_fix = 1;
 static int mutable_fix = 0;
 static int swap_eyes = 0;
@@ -138,6 +139,7 @@ static void read_settings(const char *path) {
         if (sscanf(line, "controller_fix=%f", &value) == 1) controller_fix = value != 0;
         if (sscanf(line, "swapchain_fix=%f", &value) == 1) swapchain_fix = value != 0;
         if (sscanf(line, "rect_clamp=%f", &value) == 1) rect_clamp = value != 0;
+        if (sscanf(line, "pose_consistency=%f", &value) == 1) pose_consistency = value != 0;
         if (sscanf(line, "layer_fix=%f", &value) == 1) layer_fix = value != 0;
         if (sscanf(line, "mutable_fix=%f", &value) == 1) mutable_fix = value != 0;
         if (sscanf(line, "swap_eyes=%f", &value) == 1) swap_eyes = value != 0;
@@ -912,11 +914,69 @@ XRAPI_ATTR XrResult XRAPI_CALL xrWaitFrame(XrSession session, const XrFrameWaitI
     return result;
 }
 
+// pose_consistency (GitHub #8, proposed by Klownicle for I Am Cat): the game asks xrLocateViews ~3 times per frame
+// for the same display time and got slightly different poses each time (tenths of a degree), so parts of its pipeline
+// rendered with different heads: judder. The first fully tracked answer for (session, space, view configuration,
+// display time) is kept and repeated; a new display time, another space or a failed/untracked answer is never cached.
+#define POSE_CACHE 8
+static struct {
+    XrSession session; XrSpace space; XrViewConfigurationType config; XrTime time;
+    XrViewStateFlags flags; uint32_t count; XrPosef pose[2]; XrFovf fov[2];
+} pose_cache[POSE_CACHE];
+static int pose_cache_next, pose_cache_hits;
+static pthread_mutex_t pose_cache_lock = PTHREAD_MUTEX_INITIALIZER;
+#define POSE_TRACKED (XR_VIEW_STATE_ORIENTATION_VALID_BIT | XR_VIEW_STATE_POSITION_VALID_BIT | \
+                      XR_VIEW_STATE_ORIENTATION_TRACKED_BIT | XR_VIEW_STATE_POSITION_TRACKED_BIT)
+
+static int pose_cache_lookup(XrSession session, const XrViewLocateInfo *info, XrViewState *state, uint32_t capacity,
+                             uint32_t *count, XrView *views) {
+    int hit = 0;
+    pthread_mutex_lock(&pose_cache_lock);
+    for (int i = 0; i < POSE_CACHE && !hit; ++i) {
+        if (pose_cache[i].session != session || pose_cache[i].space != info->space ||
+            pose_cache[i].config != info->viewConfigurationType || pose_cache[i].time != info->displayTime ||
+            !pose_cache[i].count || capacity < pose_cache[i].count)
+            continue;
+        state->viewStateFlags = pose_cache[i].flags;
+        *count = pose_cache[i].count;
+        for (uint32_t v = 0; v < pose_cache[i].count; ++v) {  // only the values: the caller's type/next stay
+            views[v].pose = pose_cache[i].pose[v];
+            views[v].fov = pose_cache[i].fov[v];
+        }
+        hit = 1;
+    }
+    if (hit && pose_cache_hits++ == 0) LOG("pose_consistency: repeated query answered with the frame's first poses");
+    pthread_mutex_unlock(&pose_cache_lock);
+    return hit;
+}
+
+static void pose_cache_store(XrSession session, const XrViewLocateInfo *info, const XrViewState *state,
+                             uint32_t count, const XrView *views) {
+    if (count == 0 || count > 2 || (state->viewStateFlags & POSE_TRACKED) != POSE_TRACKED) return;
+    pthread_mutex_lock(&pose_cache_lock);
+    int slot = pose_cache_next;
+    pose_cache_next = (pose_cache_next + 1) % POSE_CACHE;
+    pose_cache[slot].session = session;
+    pose_cache[slot].space = info->space;
+    pose_cache[slot].config = info->viewConfigurationType;
+    pose_cache[slot].time = info->displayTime;
+    pose_cache[slot].flags = state->viewStateFlags;
+    pose_cache[slot].count = count;
+    for (uint32_t v = 0; v < count; ++v) {
+        pose_cache[slot].pose[v] = views[v].pose;
+        pose_cache[slot].fov[v] = views[v].fov;
+    }
+    pthread_mutex_unlock(&pose_cache_lock);
+}
+
 XRAPI_ATTR XrResult XRAPI_CALL xrLocateViews(XrSession session, const XrViewLocateInfo *info, XrViewState *state,
         uint32_t capacity, uint32_t *count, XrView *views) {
     PFN_xrLocateViews fn = (PFN_xrLocateViews)lookup(active_instance, "xrLocateViews");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    int cacheable = pose_consistency && info && state && count && views && capacity > 0;
+    if (cacheable && pose_cache_lookup(session, info, state, capacity, count, views)) return XR_SUCCESS;
     XrResult result = fn(session, info, state, capacity, count, views);
+    if (cacheable && result == XR_SUCCESS) pose_cache_store(session, info, state, *count, views);
     if (equirect_emul && XR_SUCCEEDED(result) && info && count && views && state &&
         (state->viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT))
         emul_on_locate_views(info->space, info->displayTime, *count < capacity ? *count : capacity, views);

@@ -25,27 +25,28 @@ UNITY_INPUT_CALLS = ("ovrp_GetControllerState", "ovrp_GetControllerState2")
 
 class UnityOculusCheck(Patch):
     id = "frame.unity_oculus_check"
-    title = "Unity 2017: start VR without Meta's system apps"
-    description = ("Unity's older built-in Oculus support (Unity 2017–2018) only starts VR when Android has Meta's "
-                   "com.oculus.systemactivities package; without it the game runs as a hidden 2D app (you see the "
-                   "Android home screen, e.g. Accounting+). Points that package name in libunity.so at \"android\", "
-                   "which always exists, and adds the frame wait its legacy frame loop never makes (libfp_ovrp.so "
-                   "calls ovrp_WaitToBeginFrame before ovrp_Update2; without it no frame starts and the dashboard "
-                   "freezes).")
+    title = "Unity: start VR without Meta's system apps"
+    description = ("Unity's built-in Oculus support (Unity 2017–2019) only starts VR when Android has Meta's "
+                   "com.oculus.systemactivities package; without it the game runs as a 2D app (the Android home "
+                   "screen or a black window, e.g. Accounting+, BattleSisters). Points that package name in "
+                   "libunity.so at \"android\", which always exists. Unity 2017–2018 also get the frame wait their "
+                   "legacy frame loop never makes (libfp_ovrp.so calls ovrp_WaitToBeginFrame before ovrp_Update2; "
+                   "without it no frame starts and the dashboard freezes).")
     order = 45
 
+    @staticmethod
+    def _major(a) -> int:
+        return int(str((a.extra or {}).get("unity_version") or "0").split(".")[0] or 0)
+
     def applies(self, a):
-        x = a.extra or {}
-        major = int(str(x.get("unity_version") or "0").split(".")[0] or 0)
-        # Unity 2019+ games run without it (e.g. Lucky's Tale 2019.4): their builds stay as they are
-        return a.engine == "Unity" and "libOVRPlugin.so" in a.libs and bool(x.get("unity_oculus_check")) \
-            and 0 < major < 2019
+        # any Unity with built-in Oculus support whose libunity.so has the check (BattleSisters, Unity 2019.4, stayed
+        # a 2D app without it); Lucky's Tale (2019.4) runs either way
+        return a.engine == "Unity" and "libOVRPlugin.so" in a.libs and bool((a.extra or {}).get("unity_oculus_check"))
 
     def detect(self, a):
         if self.applies(a):
-            return Suggestion(True, "Older Unity with built-in Oculus support: it checks for Meta's system apps "
-                                    "before starting VR, and its frame loop never waits for the next frame "
-                                    "(e.g. Accounting+).")
+            return Suggestion(True, "Unity with built-in Oculus support: it checks for Meta's system apps before "
+                                    "starting VR, else it runs as a 2D app (e.g. Accounting+, BattleSisters).")
         return None
 
     def apply(self, ctx: ApkContext) -> bool:
@@ -56,7 +57,9 @@ class UnityOculusCheck(Patch):
         data, count = elf.replace_rodata_string(ws.read(name), PACKAGE, ALWAYS_THERE)
         if not count:
             return False
-        data, loops = elf.replace_rodata_string(data, UPDATE, SHIM_UPDATE)
+        # Unity 2019+ frame loops wait for frames themselves (BattleSisters, Lucky's Tale): no shim there
+        major = self._major(ctx.analysis)
+        data, loops = elf.replace_rodata_string(data, UPDATE, SHIM_UPDATE) if 0 < major < 2019 else (data, 0)
         plugin = ws.lib("libOVRPlugin.so")
         if loops and ws.abi == "arm64-v8a" and ws.has(plugin):
             ovrp = ws.read(plugin)

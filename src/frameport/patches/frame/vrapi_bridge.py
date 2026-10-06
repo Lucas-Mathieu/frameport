@@ -84,5 +84,29 @@ class GlShim(Patch):
         return True
 
 
+class UnityGlShim(GlShim):
+    id = "frame.unity_gl_shim"
+    title = "GL shim for Unity (no multisampled render-to-texture)"
+    description = (
+        "Loads the GL shim into a Unity GLES game and hides GL_EXT_multisampled_render_to_texture (and the multiview "
+        "variant). Some Unity games switch their eye buffer to 4x MSAA at runtime; the Frame only gives single-sampled "
+        "swapchains, Unity then renders through multisampled render-to-texture and Mesa/Zink crashes (SIGSEGV in "
+        "libgallium_dri.so on the render thread: grey or frozen screen, e.g. The Room VR). Hidden, Unity uses an "
+        "ordinary MSAA buffer and resolves it. Unity's multiview stays on (gl_hide_multiview defaults to 0 here).")
+    order = 62
+    requires = ()
+    experimental = False
+
+    def detect(self, a):
+        if self.applies(a) and ((a.extra or {}).get("ovr_runtime_msaa") or a.unity_msaa_levels):
+            return Suggestion(True, "Unity GLES game that may switch to MSAA at runtime: hide multisampled "
+                                    "render-to-texture, which crashes the Frame's GL driver (e.g. The Room VR).")
+        return None
+
+    def applies(self, a):
+        return a.engine == "Unity" and "GLES" in a.graphics and "arm64-v8a" in a.abis
+
+
 register(VrApiBridge)
 register(GlShim)
+register(UnityGlShim)

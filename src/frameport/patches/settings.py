@@ -108,6 +108,14 @@ SETTINGS = [
      "Override the guardian width (0 = use guardian, min 1.5 m)."),
     ("scene_depth", "float", 0.0, "Emulated room depth (m)",
      "Override the guardian depth (0 = use guardian, min 1.5 m)."),
+    ("pose_consistency", "int", 0, "Consistent head poses per frame",
+     "Repeat xrLocateViews queries for the same display time get the first, fully tracked answer again. Games that "
+     "ask several times per frame got slightly different poses and rendered parts of the frame with different heads: "
+     "judder (e.g. I Am Cat; proposed by Klownicle, GitHub #8)."),
+    ("haptic_fix", "int", 0, "Fix controller vibration freezes",
+     "Routes OVRPlugin through FramePort's extension shim, which turns Meta's amplitude-envelope vibrations into "
+     "plain ones: OVRPort's loader reads their nanosecond duration as seconds and allocates gigabytes, freezing the "
+     "Frame when the game vibrates a controller (e.g. Lucky's Tale's save slots, GitHub #9). Needs a rebuild."),
     ("rect_clamp", "int", 1, "Clamp image rects",
      "Keeps every submitted image rect inside its swapchain. Unity can size the eye area a few pixels past the image "
      "on some Frames; SteamVR then rejects every frame (xrEndFrame -25, XR_ERROR_SWAPCHAIN_RECT_INVALID) and the game "
@@ -135,6 +143,9 @@ SETTINGS = [
     ("vk_validation", "int", 0, "Vulkan shim: validation layer",
      "Diagnostics: the Vulkan shim (frame.vk_sanitize) adds Khronos' validation layer to the game's instance; its "
      "findings go to launch.log. The layer library (libVkLayer_khronos_validation.so) must be in the APK."),
+    ("gl_hide_msrtt", "int", 1, "GL shim: hide multisampled render-to-texture",
+     "GL shim only: hide GL_EXT_multisampled_render_to_texture(2) (Zink crashes rendering Unity's runtime MSAA eye "
+     "buffer through it, e.g. The Room VR)."),
     ("gl_hide_multiview", "int", 1, "GL shim: hide multiview",
      "GL shim only: hide GL_OVR_multiview so all passes use single-view shaders. For GLES games whose multiview "
      "shaders fail on single-view render targets (e.g. Path of the Warrior)."),
@@ -143,7 +154,7 @@ SETTINGS = [
 
 # settings that need a new build, not only new settings files: the Vulkan shim learned vk_shader_fix in 0.6.4 and
 # vk_query_slots and vk_spec_fixes in 0.10.0
-REVISIONS = {"vk_shader_fix": 2, "vk_query_slots": 3, "vk_spec_fixes": 2}
+REVISIONS = {"vk_shader_fix": 2, "vk_query_slots": 3, "vk_spec_fixes": 2, "haptic_fix": 2, "pose_consistency": 2}
 
 # How the "Game settings" dialog shows each setting to non-technical users: group, level (common settings are always
 # shown; advanced ones only under "Show advanced settings"), a plain label and one-line help, the control, and the
@@ -164,6 +175,13 @@ UI: dict[str, dict] = {
     "focus_hold_ms": dict(group="screens", level="advanced", label="Ignore focus dips up to", depends="focus_hold",
                           help="Longer for headsets that briefly think they're off your head.",
                           control=("slider", 500.0, 3000.0, 100.0, "{:.0f} ms")),
+    "pose_consistency": dict(group="picture", level="advanced", label="Steadier head tracking",
+                             help="For games that judder or shimmer while you hold your head still (e.g. I Am Cat).",
+                             control=("switch",)),
+    "haptic_fix": dict(group="controllers", level="advanced", label="Fix freezes when controllers vibrate",
+                       help="For games that freeze the Frame when a controller vibrates (e.g. Lucky's Tale). Needs a "
+                            "rebuild.",
+                       control=("switch",)),
     "vk_spec_fixes": dict(group="troubleshooting", level="advanced", label="Fix depth flicker (Unreal Vulkan)",
                           help="For Unreal games whose models flicker or show through walls and windows on the Frame "
                                "(e.g. Into The Radius 2). Needs a rebuild.",
@@ -236,7 +254,7 @@ UI: dict[str, dict] = {
                             control=("choice", [(0, "As the game sends it"), (2, "Flat")])),
     **{key: dict(group="troubleshooting", level="advanced", control=("switch",)) for key in (
         "foveation_fix", "hide_space_warp", "swapchain_fix", "layer_fix", "gl_hide_multiview", "mutable_fix",
-        "flip_quads", "swap_eyes", "vk_validation", "rect_clamp",
+        "flip_quads", "swap_eyes", "vk_validation", "rect_clamp", "gl_hide_msrtt",
         "strip_depth", "respace_kick", "layer_debug", "eye_debug", "release_wait")},
 }
 
@@ -291,9 +309,11 @@ class AdapterSetting(Patch):
             "mutable_fix": ap.is_vulkan,
             "swapchain_fix": ap.is_gles,
             "gl_hide_multiview": lambda a: a.direct_vrapi and ap.is_gles(a),
+            "gl_hide_msrtt": ap.is_gles,
             "vk_shader_fix": lambda a: a.engine == "Unreal",  # read by the Vulkan shim, which only Unreal games get
             "vk_query_slots": lambda a: a.engine == "Unreal" and ap.is_vulkan(a),
             "vk_validation": lambda a: a.engine == "Unreal",
+            "haptic_fix": lambda a: "libOVRPlugin.so" in a.libs,
             "vk_spec_fixes": lambda a: a.engine == "Unreal" and ap.is_vulkan(a),
             "controller_models": ap.may_use_render_models,
             **{k: ap.is_gles for k in ("equirect_emul", "equirect_face", "equirect_res", "equirect_flip",

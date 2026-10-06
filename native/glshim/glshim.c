@@ -13,9 +13,14 @@
 
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, "GLShim", __VA_ARGS__)
 
-static const char *const hidden[] = {
+static const char *const hidden_multiview[] = {
     "GL_OVR_multiview", "GL_OVR_multiview2", "GL_OVR_multiview_multisampled_render_to_texture",
+};
+// multisampled render-to-texture: Unity renders a runtime MSAA eye buffer through it, which crashes Zink (SIGSEGV in
+// libgallium_dri.so, e.g. The Room VR); hidden, Unity uses an ordinary MSAA renderbuffer + resolve
+static const char *const hidden_msrtt[] = {
     "GL_EXT_multisampled_render_to_texture", "GL_EXT_multisampled_render_to_texture2",
+    "GL_OVR_multiview_multisampled_render_to_texture",
 };
 
 static void *gles;
@@ -25,23 +30,47 @@ static void (*real_glGetIntegerv)(GLenum, GLint *);
 static __eglMustCastToProperFunctionPointerType (*real_eglGetProcAddress)(const char *);
 static pthread_once_t once = PTHREAD_ONCE_INIT;
 
-static int hide_multiview = 1;
+static int hide_multiview = -1;  // -1: not set (Unity keeps multiview, everything else hides it)
+static int hide_msrtt = 1;
 
-static void read_conf(void) {
-    char pkg[256] = {0}, path[512];
-    FILE *f = fopen("/proc/self/cmdline", "r");
+static void read_conf_file(const char *path) {
+    FILE *f = fopen(path, "r");
     if (!f) return;
-    size_t n = fread(pkg, 1, sizeof(pkg) - 1, f);
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        if (!strncmp(line, "gl_hide_multiview=", 18)) hide_multiview = atoi(line + 18);
+        if (!strncmp(line, "gl_hide_msrtt=", 14)) hide_msrtt = atoi(line + 14);
+    }
     fclose(f);
-    pkg[n] = 0;
+}
+
+// The same settings sources as FrameBridge, later ones winning: the build's libframe_settings.so (next to this
+// library), the game's framebridge.conf, then FRAMEBRIDGE_CONFIG (Lepton's per-game settings.conf).
+static void read_conf(void) {
+    Dl_info info;
+    char path[600];
+    if (dladdr((void *)read_conf, &info) && info.dli_fname) {
+        const char *slash = strrchr(info.dli_fname, '/');
+        if (slash && slash - info.dli_fname < 500) {
+            snprintf(path, sizeof(path), "%.*s/libframe_settings.so", (int)(slash - info.dli_fname), info.dli_fname);
+            read_conf_file(path);
+        }
+    }
+    char pkg[256] = {0};
+    FILE *f = fopen("/proc/self/cmdline", "r");
+    if (f) {
+        size_t n = fread(pkg, 1, sizeof(pkg) - 1, f);
+        fclose(f);
+        pkg[n] = 0;
+    }
     char *colon = strchr(pkg, ':');
     if (colon) *colon = 0;
-    snprintf(path, sizeof(path), "/sdcard/Android/data/%s/files/framebridge.conf", pkg);
-    if (!(f = fopen(path, "r"))) return;
-    char line[128];
-    while (fgets(line, sizeof(line), f))
-        if (!strncmp(line, "gl_hide_multiview=", 18)) hide_multiview = atoi(line + 18);
-    fclose(f);
+    if (*pkg && !strchr(pkg, '/')) {
+        snprintf(path, sizeof(path), "/sdcard/Android/data/%s/files/framebridge.conf", pkg);
+        read_conf_file(path);
+    }
+    const char *env = getenv("FRAMEBRIDGE_CONFIG");
+    if (env && *env) read_conf_file(env);
 }
 
 // Logging wrappers for the framebuffer calls engines use for eye buffers.
@@ -306,13 +335,21 @@ static void init(void) {
     real_glGetStringi = gles ? dlsym(gles, "glGetStringi") : NULL;
     real_glGetIntegerv = gles ? dlsym(gles, "glGetIntegerv") : NULL;
     real_eglGetProcAddress = egl ? dlsym(egl, "eglGetProcAddress") : NULL;
-    LOG("GL shim active: hide_multiview=%d", hide_multiview);
+    if (hide_multiview < 0) {  // Unity renders multiview itself and only needs MSRTT hidden
+        void *unity = dlopen("libunity.so", RTLD_NOW | RTLD_NOLOAD);
+        hide_multiview = unity ? 0 : 1;
+        if (unity) dlclose(unity);
+    }
+    LOG("GL shim active: hide_multiview=%d hide_msrtt=%d", hide_multiview, hide_msrtt);
 }
 
 static int is_hidden(const char *name) {
-    if (!hide_multiview) return 0;
-    for (size_t i = 0; i < sizeof(hidden) / sizeof(hidden[0]); ++i)
-        if (!strcmp(name, hidden[i])) return 1;
+    if (hide_multiview)
+        for (size_t i = 0; i < sizeof(hidden_multiview) / sizeof(hidden_multiview[0]); ++i)
+            if (!strcmp(name, hidden_multiview[i])) return 1;
+    if (hide_msrtt)
+        for (size_t i = 0; i < sizeof(hidden_msrtt) / sizeof(hidden_msrtt[0]); ++i)
+            if (!strcmp(name, hidden_msrtt[i])) return 1;
     return 0;
 }
 

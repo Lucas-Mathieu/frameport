@@ -68,7 +68,8 @@ def needs_xrshim(recipe_patches: dict) -> bool:
     """Adapter features whose functions OVRPort's dispatcher doesn't forward (it only knows a fixed table)."""
     from ..settings import adapter_settings
 
-    return bool(adapter_settings(recipe_patches).get("controller_models"))
+    s = adapter_settings(recipe_patches)
+    return bool(s.get("controller_models") or s.get("haptic_fix"))
 
 
 def add_xrshim(ctx: ApkContext) -> bool:

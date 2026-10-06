@@ -7,11 +7,18 @@
 // Meta's OVRPlugin finds xrGetInstanceProcAddr with dlopen("libopenxr_loader.so") + dlsym, so FramePort points that
 // string in libOVRPlugin.so at this library instead (patches/frame/adapter.py). Names the adapter emulates are served
 // by the adapter (framebridge_extension_proc); everything else goes to overport's xrGetInstanceProcAddr unchanged.
+//
+// Haptics (GitHub #9, found by Klownicle in Lucky's Tale): overport's dispatcher converts an
+// XrHapticAmplitudeEnvelopeVibrationFB with its nanosecond duration taken as seconds, so one vibration allocates an
+// enormous sample buffer and the Frame runs out of memory and freezes. The shim hands OVRPlugin its own
+// xrApplyHapticFeedback, which turns such an envelope into a plain XrHapticVibration (same duration, its peak
+// amplitude) before the dispatcher sees it. Everything else passes through unchanged.
 #include <openxr/openxr.h>
 #include <android/log.h>
 #include <dlfcn.h>
 #include <pthread.h>
 #include <stddef.h>
+#include <string.h>
 
 #define TAG "FrameBridge"
 #define EXPORT __attribute__((visibility("default")))
@@ -40,9 +47,38 @@ static PFN_xrVoidFunction adapter_proc(const char *name) {
     return fn(name);
 }
 
+static PFN_xrApplyHapticFeedback overport_haptics;
+static int haptics_logged;
+
+static XRAPI_ATTR XrResult XRAPI_CALL apply_haptic_feedback(XrSession session, const XrHapticActionInfo *info,
+                                                           const XrHapticBaseHeader *feedback) {
+    if (feedback && feedback->type == XR_TYPE_HAPTIC_AMPLITUDE_ENVELOPE_VIBRATION_FB) {
+        const XrHapticAmplitudeEnvelopeVibrationFB *env = (const XrHapticAmplitudeEnvelopeVibrationFB *)feedback;
+        float peak = 0.0f;
+        for (uint32_t i = 0; env->amplitudes && i < env->amplitudeCount; ++i)
+            if (env->amplitudes[i] > peak) peak = env->amplitudes[i];
+        XrHapticVibration plain = {XR_TYPE_HAPTIC_VIBRATION, NULL, env->duration, XR_FREQUENCY_UNSPECIFIED,
+                                   peak > 1.0f ? 1.0f : peak};
+        if (haptics_logged++ < 3)
+            __android_log_print(ANDROID_LOG_INFO, TAG, "extension shim: haptic envelope (%u samples, %lld ns) -> "
+                                "vibration %.2f", env->amplitudeCount, (long long)env->duration, plain.amplitude);
+        return overport_haptics(session, info, (const XrHapticBaseHeader *)&plain);
+    }
+    return overport_haptics(session, info, feedback);
+}
+
 EXPORT XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const char *name,
                                                             PFN_xrVoidFunction *function) {
     pthread_once(&once, resolve_overport);
+    if (name && function && instance != XR_NULL_HANDLE && overport_gipa && !strcmp(name, "xrApplyHapticFeedback")) {
+        PFN_xrVoidFunction real = NULL;
+        XrResult r = overport_gipa(instance, name, &real);
+        if (XR_SUCCEEDED(r) && real) {
+            overport_haptics = (PFN_xrApplyHapticFeedback)real;
+            *function = (PFN_xrVoidFunction)apply_haptic_feedback;
+        }
+        return r;
+    }
     if (name && function && instance != XR_NULL_HANDLE) {
         PFN_xrVoidFunction emulated = adapter_proc(name);
         if (emulated) {
