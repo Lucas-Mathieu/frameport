@@ -253,8 +253,13 @@ def _uses_feature(manifest: bytes, feature: str) -> bool:
     return any(el.name == "uses-feature" and (x.attr_str(el, "name") or "").startswith(feature) for el in x.elements())
 
 
+# Platform SDK enum helpers, e.g. ovrPeerConnectionState_ToString (BlazeRush): OVRPort's loader lacks several
+OVR_TO_STRING = re.compile(r"^ovr[A-Z][A-Za-z0-9]*_ToString$")
+
+
 def missing_ovr_symbols(lib_bytes: dict[str, bytes]) -> set[str]:
-    """ovr_* / ovrMessageType_* functions the game imports that the platform loader (+compat/stub libs) lacks."""
+    """ovr_* / ovrMessageType_* / ovr<Enum>_ToString functions the game imports that the platform loader (+compat/stub
+    libs) lacks."""
     loader = lib_bytes.get("libovrplatformloader.so")
     if not loader or not elf.is_elf(loader):
         return set()
@@ -268,5 +273,6 @@ def missing_ovr_symbols(lib_bytes: dict[str, bytes]) -> set[str]:
         if (name.startswith(("libovrplatformloader", "libopenxr_loader", "libframe_settings", "libfrda"))
                 or not elf.is_elf(data)):
             continue
-        wanted |= {s for s in elf.dyn_symbols(data, False) if s.startswith(("ovr_", "ovrMessageType_"))}
+        wanted |= {s for s in elf.dyn_symbols(data, False)
+                   if s.startswith(("ovr_", "ovrMessageType_")) or OVR_TO_STRING.match(s)}
     return wanted - exported

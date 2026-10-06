@@ -10,6 +10,7 @@ from __future__ import annotations
 import struct
 
 PAGE = 16384
+EMPTY_STRING_AT = 9  # e_ident padding (bytes 9-15 are zero), mapped with the text segment at vaddr 0
 
 
 def _elf_hash(name: bytes) -> int:
@@ -129,7 +130,14 @@ def build_stub_library(symbols: list[str], soname: str = "libovrstubs.so", abi: 
     out[dynsym_off:dynsym_off + len(syms)] = syms
     out[dynstr_off:dynstr_off + len(dynstr)] = dynstr
     out[hash_off:hash_off + len(hash_bytes)] = hash_bytes
-    out[text_off:text_off + text_size] = body * len(symbols)
+    text = bytearray(body * len(symbols))
+    if is64:  # *_ToString answers "" instead of NULL (a caller may build a string from it): adr x0, <a zero byte>
+        for i, name in enumerate(symbols):
+            if name.endswith("_ToString"):
+                pc = text_off + 8 * i
+                imm = (EMPTY_STRING_AT - pc) & 0x1FFFFF  # 21-bit signed offset; byte 9 of e_ident is always 0
+                text[8 * i:8 * i + 8] = struct.pack("<II", 0x10000000 | (imm & 3) << 29 | (imm >> 2) << 5, 0xD65F03C0)
+    out[text_off:text_off + text_size] = text
     out[dyn_off:dyn_off + len(dyn_bytes)] = dyn_bytes
     out[shstr_off:shstr_off + len(shstr)] = shstr
     out[sh_off:] = sh_bytes

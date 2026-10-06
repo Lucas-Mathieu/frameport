@@ -727,3 +727,22 @@ def test_microphone_fix_is_not_suggested_for_unitys_platform_wrapper(quest_manif
         return p
     assert not analyze(apk("libil2cpp.so")).extra["ovr_microphone"]
     assert analyze(apk("libUE4.so")).extra["ovr_microphone"]  # Unreal's voice code calls it (TWD Ch. 2)
+
+
+def test_to_string_stubs_return_an_empty_string():
+    """ovrPeerConnectionState_ToString & co. (BlazeRush): OVRPort's loader lacks them; NULL could crash the caller."""
+    import struct
+
+    from frameport.analysis import detect, elf
+
+    lib = build_stub_library(["ovr_Foo", "ovrPeerConnectionState_ToString"], soname="libovrstubs.so")
+    syms = elf._elf(lib).get_section_by_name(".dynsym")
+    at = syms.get_symbol_by_name("ovrPeerConnectionState_ToString")[0]["st_value"]
+    word = struct.unpack_from("<I", lib, at)[0]
+    imm = ((word >> 29) & 3) | ((word >> 5) & 0x7FFFF) << 2
+    imm -= (1 << 21) if imm & (1 << 20) else 0
+    assert word & 0x9F00001F == 0x10000000 and lib[at + imm] == 0  # adr x0, <a zero byte>
+    foo = syms.get_symbol_by_name("ovr_Foo")[0]["st_value"]
+    assert struct.unpack_from("<I", lib, foo)[0] == 0xD2800000  # everything else still returns 0
+    assert detect.OVR_TO_STRING.match("ovrVoipMuteState_ToString")
+    assert not detect.OVR_TO_STRING.match("ovrAvatar_Create")

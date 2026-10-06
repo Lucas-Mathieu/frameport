@@ -24,7 +24,7 @@ signatures:
     diagnosis: The runtime rejects the game's frames because an image rect reaches past its swapchain (by a few pixels on some Frames); the game stops drawing (e.g. stuck at a "Waiting" box). FrameBridge from FramePort 0.11.0 clamps the rects - rebuild and reinstall the game.
     suggest: [frame.adapter]
   - id: missing-ovr-symbol
-    pattern: '(UnsatisfiedLinkError|cannot locate symbol) .*"?(ovr_[A-Za-z0-9_]+|ovrMessageType_ToString)'
+    pattern: '(UnsatisfiedLinkError|cannot locate symbol) .*"?(ovr_[A-Za-z0-9_]+|ovr[A-Z][A-Za-z0-9]*_ToString)'
     severity: fatal
     diagnosis: The game imports Meta platform functions overport's loader lacks.
     suggest: [frame.ovrstubs, frame.ovrplatformcompat]
