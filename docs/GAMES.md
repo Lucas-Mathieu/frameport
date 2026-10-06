@@ -67,6 +67,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | BONELAB | Quest | ⚠️ Works with issues | Build 1.2068 plays (head tracking and controls work with frame.unity_user_presence); the newer build 1.2974 crashes at start (Vulkan), no fix yet. |
 | Myst | Quest | ⚠️ Works with issues | Minor graphical glitches on some objects. |
 | Phantom: Covert Ops | Quest | ⚠️ Works with issues | DLC/store button crashes (no Meta store). |
+| Pinball FX VR | Quest | ⚠️ Works with issues | Plays; mixed reality mode not working yet. |
 | Silhouette | Quest | ⚠️ Works with issues | Hand-tracking game; the Frame synthesizes hands from controllers, so it is janky. |
 | Time Stall | Quest | ⚠️ Works with issues | Both eyes distort during movement (unresolved). |
 | Vader Immortal: Episode I | Quest | ⚠️ Works with issues | Starts in VR and plays the intro, then stays on the loading card (Vader's portrait with a progress bar). |
