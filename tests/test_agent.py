@@ -1363,3 +1363,53 @@ def test_launch_registers_a_lost_devkit_entry_again(monkeypatch, tmp_path):
     out = a.cmd_launch({"package": "com.camouflaj.manta"})
     assert registered == ["com.camouflaj.manta"] and launches == [222, 333]
     assert out["via"] == "devkit" and out["steam"]["result"] == "started"
+
+
+@pytest.mark.skipif(sys.platform == "win32" or not __import__("shutil").which("flock"), reason="bash + flock")
+def test_second_launch_while_starting_is_ignored(monkeypatch, tmp_path):
+    """Play pressed again while Lepton still boots made the second Lepton stop the first one's container (both died:
+    Vader Immortal, BattleSisters). The launcher holds a lock for the game's lifetime; a second launch leaves it."""
+    import time
+
+    a = load_agent(monkeypatch, tmp_path)
+    base = tmp_path / "game"
+    (base / "lepton-app").mkdir(parents=True)
+    lepton = tmp_path / "lepton"
+    lepton.write_text(f"#!/bin/bash\necho started >>{tmp_path}/starts\nsleep ${{FAKE_RUN:-30}}\n")
+    lepton.chmod(0o755)
+    text = a.LAUNCH_SH.format(title="T", pkg="com.x.y", base_q=str(base), appid=1, lepton_q=str(lepton), extra_env="",
+                              watchdog=a.WATCHDOG, dashboard="true", single=a.SINGLE_LINE, plays_start="true",
+                              plays_end="true")
+    launcher = tmp_path / "launch.sh"
+    launcher.write_text(text)
+    launcher.chmod(0o755)
+    first = subprocess.Popen([str(launcher)], start_new_session=True)
+    try:
+        for _ in range(100):
+            if (tmp_path / "starts").exists():
+                break
+            time.sleep(0.05)
+        second = subprocess.run([str(launcher)], timeout=10)
+        assert second.returncode == 0 and first.poll() is None  # ignored, the first keeps running
+        assert (tmp_path / "starts").read_text().count("started") == 1
+        assert "second launch ignored" in (base / "launch-dup.log").read_text()
+    finally:
+        os.killpg(first.pid, 15)
+        first.wait(timeout=10)
+    third = subprocess.run([str(launcher)], timeout=20, env={**os.environ, "FAKE_RUN": "0"})
+    assert third.returncode == 0 and (tmp_path / "starts").read_text().count("started") == 2  # free again
+
+
+def test_upgrade_launchers_adds_the_single_launch_lock(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    anchor = tmp_path / "Applications/quest-frame/com.x.y"
+    anchor.mkdir(parents=True)
+    old = ('#!/bin/bash\napp_dir=/x\n[[ -d "$app_dir/lepton-app" ]] || { exit 1; }\nfix_perms\nparent=$PPID\n'
+           '( while sleep 2; do fix_perms; if true; then kill -TERM $$; fi; done ) & permfix=$!\nexport SteamAppId=1\n')
+    (anchor / "launch.sh").write_text(old)
+    a.upgrade_launchers()
+    text = (anchor / "launch.sh").read_text()
+    assert text.index(".launch.lock") < text.index("fix_perms") and "done ) 9>&- & permfix=$!" in text
+    assert text.count(".launch.lock") == 1
+    a.upgrade_launchers()
+    assert (anchor / "launch.sh").read_text().count(".launch.lock") == 1

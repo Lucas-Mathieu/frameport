@@ -36,7 +36,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 56
+AGENT_VERSION = 57
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -1889,6 +1889,7 @@ LAUNCH_SH = (r"""#!/usr/bin/env bash
 set -euo pipefail
 app_dir={base_q}
 [[ -d "$app_dir/lepton-app" ]] || {{ echo "Game files missing at $app_dir (storage not mounted?)" >&2; exit 1; }}
+{single}
 # Some games (Unreal cloud saves, SUPERHOT's cloud/data: mode 1700) create folders without write/search permission
 # for the app inside Lepton (it writes through the folder's group), which breaks saving or makes the game quit.
 # Repair them before and during every launch.
@@ -1939,10 +1940,19 @@ OLD_WATCHDOG = "( while sleep 2 && kill -0 $$ 2>/dev/null; do fix_perms; done ) 
 # by hand (also when Lepton shows its Android launcher first). Once the game's first VR frames are logged, the agent
 # closes it through Steam's UI (_dashboard_worker); opt out per game with FRAMEPORT_KEEP_DASHBOARD=1.
 DASHBOARD_LINE = ('[[ -n "${{FRAMEPORT_KEEP_DASHBOARD:-}}" ]] || python3 {agent_q} _dashboard_worker '
-                  '"$app_dir/launch.log" $$ >"$app_dir/dashboard.log" 2>&1 &')
+                  '"$app_dir/launch.log" $$ >"$app_dir/dashboard.log" 2>&1 9>&- &')
 WATCHDOG = ("parent=$PPID\n"
             "( while sleep 2 && kill -0 $$ 2>/dev/null; do fix_perms;"
-            " if [[ $parent -gt 1 ]] && ! kill -0 $parent 2>/dev/null; then kill -TERM $$; fi; done ) & permfix=$!")
+            " if [[ $parent -gt 1 ]] && ! kill -0 $parent 2>/dev/null; then kill -TERM $$; fi; done )"
+            " 9>&- & permfix=$!")
+
+
+# One launcher per game: Play pressed again while Lepton still boots (~10 s with nothing to see) made the second Lepton
+# stop the first one's container, and both died (Vader Immortal, BattleSisters). The lock is held by Lepton's process
+# (inherited fd), so it is released when the game ends.
+SINGLE_LINE = ('exec 9>"$app_dir/.launch.lock"; flock -n 9 || '
+               '{ echo "$(date +%s) already starting or running: second launch ignored" >>"$app_dir/launch-dup.log"; '
+               'exit 0; }')
 
 
 def dashboard_line():
@@ -1971,6 +1981,13 @@ def upgrade_launchers():
             new = new.replace(OLD_WATCHDOG, WATCHDOG, 1)
         if "_dashboard_worker" not in new and 'child=$!\nwait "$child"' in new:
             new = new.replace('child=$!\nwait "$child"', 'child=$!\n' + dashboard_line() + '\nwait "$child"', 1)
+        guard = '[[ -d "$app_dir/lepton-app" ]] ||'
+        if ".launch.lock" not in new and guard in new:
+            i = new.index("\n", new.index(guard)) + 1
+            new = new[:i] + SINGLE_LINE + "\n" + new[i:]
+            # the lock belongs to Lepton only: helpers that outlive the game must not keep it
+            new = new.replace("; fi; done ) & permfix=$!", "; fi; done ) 9>&- & permfix=$!", 1)
+            new = new.replace('>"$app_dir/dashboard.log" 2>&1 &', '>"$app_dir/dashboard.log" 2>&1 9>&- &', 1)
         if PLAYS_LOG not in new:
             start, end = plays_lines(os.path.dirname(path))
             if "\nsetsid " in new and "\n    trap - EXIT INT TERM\n" in new:  # Lepton launcher
@@ -1994,7 +2011,7 @@ def write_launcher(anchor, base, pkg, title, appid, lepton, env):
                     if re.fullmatch(r"[A-Z_][A-Z0-9_]*", k))
     text = LAUNCH_SH.format(title=title.replace("\n", " "), pkg=pkg, base_q=shlex.quote(base), appid=appid,
                             lepton_q=shlex.quote(lepton), extra_env=extra, watchdog=WATCHDOG,
-                            dashboard=dashboard_line(), plays_start=plays_lines(anchor)[0],
+                            dashboard=dashboard_line(), single=SINGLE_LINE, plays_start=plays_lines(anchor)[0],
                             plays_end=plays_lines(anchor)[1])
     path = os.path.join(anchor, "launch.sh")
     with open(path + ".tmp", "w") as f:
