@@ -403,6 +403,23 @@ def reset_recipe(package: str) -> Recipe:
     return recipe
 
 
+def apply_catalog_update(package: str) -> Recipe:
+    """Take the newer catalog recipe for a game whose recipe the user edited (the game page's "newer known-good
+    config" offer): derived again from the catalog, keeping the user's FrameBridge settings the catalog doesn't set."""
+    entry = library.game(package)
+    old = library.recipe_from_dict(entry["recipe"])
+    recipe = engine.suggest(library.analysis_from_dict(entry["analysis"]))
+    for pid, params in old.patches.items():
+        if pid.startswith("adapter.") and pid not in recipe.patches:
+            recipe.patches[pid] = params
+            if pid in old.reasons:
+                recipe.reasons[pid] = old.reasons[pid]
+    set_recipe(package, recipe)
+    with library.edit() as data:
+        data["games"].get(package, {}).pop("catalog_update", None)
+    return recipe
+
+
 def prepare_rift(package: str, reporter: Reporter) -> dict:
     """Rift games aren't rebuilt: check the folder still matches the analysis and make sure Revive is available."""
     from .build import sha256

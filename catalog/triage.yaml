@@ -13,6 +13,11 @@ signatures:
     severity: fatal
     diagnosis: 32-bit-only APK. The Steam Frame has no AArch32; this cannot run. Use the PC (Rift) version via Revive.
     suggest: []
+  - id: unity-render-crash
+    pattern: 'CRASH\s*:.*#\d+\s+pc [0-9a-f]+\s+\S*libgallium_dri\.so'
+    severity: fatal
+    diagnosis: Unity's render thread crashed inside the Frame's GL driver (Mesa/Zink); the picture freezes or stays grey. Known triggers - an OVROverlay copy (try "Unity - skip OVROverlay layers", e.g. The Room VR), MSAA switched on at runtime, a GPU hang (zink DEVICE LOST).
+    suggest: [frame.unity_no_overlay_copy, frame.unity_runtime_msaa_off]
   - id: swapchain-rect-invalid
     pattern: 'xrEndFrame failed -25\b'
     severity: fatal

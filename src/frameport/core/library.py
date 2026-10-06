@@ -62,8 +62,22 @@ def _follow_catalog(data: dict) -> bool:
             continue
         if app_updated and isinstance(a, dict):
             changed |= _refresh_data_fields(g, a)
-        if not isinstance(r, dict) or not isinstance(a, dict) or r.get("source") == "user":
+        if not isinstance(r, dict) or not isinstance(a, dict):
             continue
+        if r.get("source") == "user":
+            # the user's own recipe isn't replaced, but a changed catalog entry is offered on the game page (GitHub
+            # #10: a VR4 fix never reached a recipe whose Game settings had been saved once)
+            entry = catalog.lookup(pkg)
+            offer = entry.rev() if entry is not None and r.get("catalog_rev") not in (None, entry.rev()) else None
+            if g.get("catalog_update") != offer:
+                if offer:
+                    g["catalog_update"] = offer
+                else:
+                    g.pop("catalog_update", None)
+                changed = True
+            continue
+        if g.pop("catalog_update", None) is not None:  # no longer the user's recipe (reset): nothing to offer
+            changed = True
         entry = catalog.lookup(pkg)
         if not app_updated and (entry is None or r.get("catalog_rev") == entry.rev()):
             continue

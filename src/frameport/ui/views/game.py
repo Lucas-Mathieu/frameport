@@ -252,6 +252,18 @@ class GameView:
                     C.ghost(tr("Not now"), on_click=dismiss),
                 ], spacing=T.S2, run_spacing=T.S2, wrap=True),
             ], spacing=T.S2), "info", ft.Icons.VOLUNTEER_ACTIVISM_OUTLINED))
+        if g.get("catalog_update") and recipe.source == "user":
+            def take_update(e):
+                from ... import pipeline
+
+                pipeline.apply_catalog_update(pkg)
+                self.app.toast(tr("New config applied: use Update on Frame to install it"))
+                self.app.render()
+            out.append(C.callout(ft.Row([
+                C.body(tr("A newer known-good config for this game is available (you changed this game's settings, "
+                          "so it wasn't applied by itself)."), T.TEXT, expand=True),
+                C.secondary(tr("Use the new config"), ft.Icons.AUTO_FIX_HIGH_OUTLINED, take_update)],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER), "info", ft.Icons.NEW_RELEASES_OUTLINED))
         if g.get("steam_art_stale") and installed:
             out.append(C.callout(ft.Row([
                 C.body(tr("The Frame's Steam library still shows the old artwork."), T.TEXT, expand=True),

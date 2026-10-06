@@ -53,6 +53,7 @@ def save_to_recipe(package: str, values: dict) -> None:
     """Adapter patches = the settings that differ from their defaults (BASE_SETTINGS are written anyway)."""
     g = library.game(package)
     r = library.recipe_from_dict(g["recipe"])
+    before = {pid: dict(v or {}) for pid, v in r.patches.items() if pid.startswith("adapter.")}
     for key in SPECS:
         pid = f"adapter.{key}"
         v = _num(key, values.get(key, default(key)))
@@ -63,6 +64,9 @@ def save_to_recipe(package: str, values: dict) -> None:
             if (r.patches.get(pid) or {}).get("value") != v:
                 r.reasons[pid] = tr("Set by you.")
             r.patches[pid] = {"value": v}
+    after = {pid: dict(v or {}) for pid, v in r.patches.items() if pid.startswith("adapter.")}
+    if after == before:  # saved without a change: the recipe keeps following FramePort's catalog (GitHub #10)
+        return
     r.source = "user"
     pipeline.set_recipe(package, r)
 

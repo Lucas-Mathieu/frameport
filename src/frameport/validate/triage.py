@@ -109,4 +109,36 @@ def triage(log: str, state: str = "UNKNOWN", package: str | None = None, crash: 
     fps = re.findall(r"pacing: ([0-9.]+) fps", text)
     if fps:
         res.fps = float(fps[-1])
+    stopped = frames_stopped(lines)
+    if stopped and state == "RUNNING" and not any(f.severity == "fatal" for f in res.findings):
+        res.findings.append(Finding(
+            "frames-stopped", "fatal",
+            f"The game stopped sending frames {stopped:.0f} s before the test ended although its process kept "
+            "running (a crashed or stuck render thread: a frozen picture in the headset).", [],
+            "last FrameBridge pacing line"))
     return res
+
+
+LOGCAT_TIME = re.compile(r"^\d\d-\d\d (\d\d):(\d\d):(\d\d)\.(\d{3})")
+
+
+def frames_stopped(lines: list[str], gap: float = 20.0) -> float | None:
+    """Seconds between FrameBridge's last pacing line and the end of the log when that is over `gap` (the frame loop
+    died while the process lived on, e.g. The Room VR's render thread crash, PowerWash Simulator's rejected frames)."""
+    def secs(line):
+        m = LOGCAT_TIME.match(line)
+        return int(m[1]) * 3600 + int(m[2]) * 60 + int(m[3]) + int(m[4]) / 1000 if m else None
+    last_pacing = last = None
+    for ln in lines:  # logcat lines aren't strictly in time order: the latest time counts, not the last line
+        t = secs(ln)
+        if t is None:
+            continue
+        if last is not None and t < last - 43200:  # past midnight
+            t += 86400
+        last = t if last is None else max(last, t)
+        if "FrameBridge: pacing:" in ln:
+            last_pacing = t
+    if last_pacing is None or last is None:
+        return None
+    delta = last - last_pacing
+    return delta if delta > gap else None

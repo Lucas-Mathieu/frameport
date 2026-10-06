@@ -83,3 +83,17 @@ def test_swapchain_rect_invalid_is_recognised():
 
     log = "10-05 08:13:02.100  1149  1312 I FrameBridge: xrEndFrame failed -25\n"
     assert "swapchain-rect-invalid" in [f.id for f in triage.triage(log).findings]
+
+
+def test_frames_stopped_and_unity_render_crash():
+    """The Room VR passed its launch test although Unity's render thread had crashed in libgallium (GitHub #38)."""
+    from frameport.validate import triage
+
+    log = ("10-05 23:16:30.000  1  2 I FrameBridge: pacing: 59.0 fps\n"
+           "10-05 23:16:33.137  1  3 E CRASH   : \t#01  pc 0000000000c3fe18  /vendor/lib64/libgallium_dri.so ()\n"
+           "10-05 23:16:59.000  1  4 I OvrAudio: ovrAudio_Enable\n")
+    r = triage.triage(log, "RUNNING")
+    assert [f.id for f in r.findings] == ["unity-render-crash"] and r.verdict == "fail"
+    alone = triage.triage(log.replace("libgallium_dri", "libother"), "RUNNING")
+    assert "frames-stopped" in [f.id for f in alone.findings]
+    assert triage.frames_stopped(["10-05 23:16:30.000 x FrameBridge: pacing: 72 fps", "10-05 23:16:40.000 y"]) is None

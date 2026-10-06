@@ -245,3 +245,25 @@ def test_scan_finds_games_in_download_manager_layouts(tmp_path, monkeypatch):
     found = {g.apk.name: g for g in quest_dump.scan(root)}
     assert set(found) == {"stray.app.apk", "com.a.game.apk", "com.b.game.apk"}
     assert found["com.a.game.apk"].data_dir == root / "Manager/Game A v1/com.a.game"
+
+
+def test_user_recipes_get_a_catalog_update_offer(tmp_path, monkeypatch):
+    """GitHub #10: a recipe whose Game settings were saved once ("user") never followed a catalog fix again; now
+    the game is flagged, and taking the offer re-derives it keeping the user's own FrameBridge settings."""
+    from frameport import pipeline
+    from frameport.core import library
+    from frameport.recommend import catalog
+
+    monkeypatch.setattr(library, "_path", lambda: tmp_path / "library.json")
+    entry = catalog.CatalogEntry(package="com.x.vr4", title="VR4", adapter={"vk_shader_fix": "1:2:3:4"})
+    monkeypatch.setattr(catalog, "lookup", lambda pkg: entry if pkg == "com.x.vr4" else None)
+    an = {"package": "com.x.vr4", "engine": "Unreal", "libs": ["libUE4.so"], "abis": ["arm64-v8a"]}
+    recipe = {"package": "com.x.vr4", "patches": {"adapter.scale": {"value": 0.9}}, "source": "user",
+              "catalog_rev": "old"}
+    (tmp_path / "library.json").write_text(__import__("json").dumps(
+        {"games": {"com.x.vr4": {"package": "com.x.vr4", "analysis": an, "recipe": recipe}}, "settings": {}}))
+    assert library.game("com.x.vr4")["catalog_update"] == entry.rev()
+    pipeline.apply_catalog_update("com.x.vr4")
+    g = library.game("com.x.vr4")
+    assert "catalog_update" not in g and g["recipe"]["patches"]["adapter.scale"] == {"value": 0.9}
+    assert g["recipe"].get("source") != "user" and "adapter.vk_shader_fix" in g["recipe"]["patches"]

@@ -1323,10 +1323,11 @@ def test_devkit_appid_from_steams_console_log(monkeypatch, tmp_path):
     logs = Path(a.STEAM) / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     exe = f"{a.DEVKIT_GAMES}/I_Am_Cat/launch.sh"
+    why = "reason: k_unAppIdInvalid"
     (logs / "console_log.txt").write_text(
-        f'[2026-10-05 14:45:37] sanitize shortcut app id "{exe}": replacing 0 with 3849978641, reason: k_unAppIdInvalid\n'
+        f'[2026-10-05 14:45:37] sanitize shortcut app id "{exe}": replacing 0 with 3849978641, {why}\n'
         f'[2026-10-05 14:45:38] sanitize shortcut app id "{a.DEVKIT_GAMES}/Other/launch.sh": replacing 0 with 5\n'
-        f'[2026-10-05 15:29:14] sanitize shortcut app id "{exe}": replacing 0 with 3849978642, reason: k_unAppIdInvalid\n')
+        f'[2026-10-05 15:29:14] sanitize shortcut app id "{exe}": replacing 0 with 3849978642, {why}\n')
     assert a.devkit_appid("I_Am_Cat") == 3849978642  # nothing in shortcuts.vdf: the newest log line
     assert a.devkit_appid("Missing") is None
 
@@ -1343,7 +1344,8 @@ def test_devkit_appid_ignores_the_previous_steam_session(monkeypatch, tmp_path):
 
 
 def test_launch_registers_a_lost_devkit_entry_again(monkeypatch, tmp_path):
-    """After a Steam restart Steam forgot the (never saved) devkit entry: Play gets AppError_9 and registers it again."""
+    """After a Steam restart Steam forgot the (never saved) devkit entry: Play gets AppError_9 and registers it
+    again."""
     a = load_agent(monkeypatch, tmp_path)
     monkeypatch.setattr(a, "check_pkg", lambda p: p)
     monkeypatch.setattr(a, "deployment", lambda p: {"appid": 111, "title": "Batman"})
