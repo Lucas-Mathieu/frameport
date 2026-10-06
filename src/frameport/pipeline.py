@@ -539,6 +539,9 @@ def install_game(package: str, target: Target, reporter: Reporter, apk_only: boo
     test_build = apk is not None
     b = entry.get("build") or {}
     recipe = library.recipe_from_dict(entry["recipe"])
+    if not test_build and not b.get("apk"):  # never built yet (e.g. `frameport install` right after a scan)
+        build_game(package, reporter)
+        return install_game(package, target, reporter, apk_only, add_to_library)
     apk = Path(apk) if apk else Path(b["alt_apk"] if recipe.use_alt and b.get("alt_apk") else b["apk"])
     if not test_build and not apk.exists():  # the converted copy was removed after an earlier install: make it again
         build_game(package, reporter)

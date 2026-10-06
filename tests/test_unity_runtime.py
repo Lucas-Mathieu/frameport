@@ -317,3 +317,26 @@ def test_oculus_model_checks_accept_any_device_but_the_go():
     assert n == 1
     assert struct.unpack_from("<I", out, 8)[0] == C.MOV_W2_0 and struct.unpack_from("<I", out, 24)[0] == C.ORR_W2_6
     assert out[0x1010:0x1016] == b"Oculus"  # the string itself stays (Unity's VR device name)
+
+
+def test_install_builds_a_game_that_was_never_built(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from frameport import pipeline
+    from frameport.core import library
+    from frameport.core.models import Recipe
+
+    library.upsert_game("com.x.fresh", apk=str(tmp_path / "in.apk"),
+                        recipe=library.recipe_to_dict(Recipe("com.x.fresh")))
+    out = tmp_path / "built.apk"
+    out.write_bytes(b"PK")
+
+    def build(package, reporter):
+        library.upsert_game(package, build={"apk": str(out)})
+    monkeypatch.setattr(pipeline, "build_game", build)
+    monkeypatch.setattr(pipeline, "remove_converted_copies", lambda package: 0)
+    installed = []
+    target = SimpleNamespace(label="frame", install=lambda *a: installed.append(a[2]) or {"ok": True},
+                             add_to_library=lambda pkgs, rep: None)
+    pipeline.install_game("com.x.fresh", target, None)  # used to fail with KeyError 'apk'
+    assert installed == [out]
