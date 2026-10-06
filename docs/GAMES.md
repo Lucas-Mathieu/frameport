@@ -36,6 +36,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Marvel's Deadpool VR | Quest | ✅ Works |  |
 | Marvel's Iron Man VR | Quest | ✅ Works |  |
 | Medieval Dynasty New Settlement | Quest | ✅ Works |  |
+| Metro Awakening | Quest | ✅ Works |  |
 | Mobile Suit Gundam: Silver Phantom | Quest | ✅ Works |  |
 | Nano | Quest | ✅ Works |  |
 | NEX Player | Quest | ✅ Works |  |

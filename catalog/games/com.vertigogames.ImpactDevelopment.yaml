@@ -1,0 +1,22 @@
+package: com.vertigogames.ImpactDevelopment
+title: Metro Awakening
+status: works
+notes: Runs with the Vulkan shim's fixes and fragment density maps hidden (reported by a contributor, GitHub #65).
+details: Unreal 5.2 (Vulkan) quit itself (ForceQuit, use_alt), then crashed three times in the Frame's Vulkan driver
+  (Turnip) on things Quest's driver ignores - a depth resolve in a subpass without a depth attachment, image barriers
+  and image views for a missing image. Unreal turns on fragment-density-map foveation because the driver offers the
+  extension and then expects the density map from the headset, which the Frame never provides; vk_hide_fdm hides the
+  extension from the game (Valve's own foveation layer is unaffected).
+tested_version: 1.0-916944
+engine: Unreal
+xr: OpenXR
+alt_overport:
+- patch_remove_unreal_force_quit
+use_alt: true
+adapter:
+  vk_spec_fixes: 1
+  vk_hide_fdm: 1
+verified:
+  date: '2026-10-06'
+updated: '2026-10-06'
+source_hint: Metro Awakening

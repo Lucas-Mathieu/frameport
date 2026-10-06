@@ -118,8 +118,9 @@ def test_missing_vrapi_function():
 
 def test_unreal_vulkan_driver_crash_and_missing_fdm():
     """Metro Awakening (Unreal 5.2): Turnip crashed on Unreal's render passes, null-image barriers and FDM views."""
-    tomb = ("10-06 08:04:22.702  1236  1236 F DEBUG   :       #00 pc 0000000000ad74d0  /vendor/lib64/hw/vulkan.freedreno.so"
-            " (BuildId: 052b)\n10-06 08:04:22.703  1236  1236 F DEBUG   :       #03 pc 0000000004822ab4  "
+    tomb = ("10-06 08:04:22.702  1236  1236 F DEBUG   :       #00 pc 0000000000ad74d0  "
+            "/vendor/lib64/hw/vulkan.freedreno.so (BuildId: 052b)\n"
+            "10-06 08:04:22.703  1236  1236 F DEBUG   :       #03 pc 0000000004822ab4  "
             "/data/app/x/lib/arm64/libUnreal.so (BuildId: 7a70)\n")
     r = triage(LOG_OK, "EXITED", "com.example.game", crash=tomb)
     f = next(f for f in r.findings if f.id == "unreal-vulkan-driver-crash")
@@ -127,5 +128,7 @@ def test_unreal_vulkan_driver_crash_and_missing_fdm():
     fdm = ("10-06 08:10:51.264  1147  1241 I FrameBridge: vk shim: left out 1 image barrier(s) without an image "
            "(first: layout 0 -> 1000218000, aspect 0x1, layers 4294967295)\n")
     assert "unreal-fdm-missing" in [f.id for f in triage(LOG_OK + fdm, "RUNNING", "com.example.game").findings]
-    hidden = "10-06 08:10:47.924  1147  1165 I FrameBridge: vk shim: fragment density map extensions hidden from the game\n"
-    assert "unreal-fdm-missing" not in [f.id for f in triage(LOG_OK + hidden + fdm, "RUNNING", "com.example.game").findings]
+    hidden = ("10-06 08:10:47.924  1147  1165 I FrameBridge: vk shim: fragment density map extensions hidden from "
+              "the game\n")
+    found = triage(LOG_OK + hidden + fdm, "RUNNING", "com.example.game").findings
+    assert "unreal-fdm-missing" not in [f.id for f in found]
