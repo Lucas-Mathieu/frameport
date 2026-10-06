@@ -89,7 +89,8 @@ static int hide_space_warp = 0;
 static int strip_color_bias = 0;
 static int frame_balance = 0;  // end a still-open frame before the next xrBeginFrame
 static int frame_begins, frame_discarded, frame_ends, frame_balanced;  // per pacing period (layer_debug)
-static int frame_open;  // drop XrCompositionLayerColorScaleBiasKHR (the runtime's color pass)
+static int frame_open;
+static int sc_acquires, sc_waits, sc_releases, sc_wait_fails;  // per pacing period (layer_debug)  // drop XrCompositionLayerColorScaleBiasKHR (the runtime's color pass)
 static int controller_fix = 1;
 static int swapchain_fix = 1;
 static int rect_clamp = 1;
@@ -812,6 +813,23 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateSwapchainImages(XrSwapchain swapchain,
     return result;
 }
 
+// counted for layer_debug (an app that skips the wait or release keeps runtime resources alive)
+XRAPI_ATTR XrResult XRAPI_CALL xrWaitSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageWaitInfo *info) {
+    PFN_xrWaitSwapchainImage fn = (PFN_xrWaitSwapchainImage)lookup(active_instance, "xrWaitSwapchainImage");
+    if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    XrResult result = fn(swapchain, info);
+    __atomic_add_fetch(&sc_waits, 1, __ATOMIC_RELAXED);
+    if (result != XR_SUCCESS) __atomic_add_fetch(&sc_wait_fails, 1, __ATOMIC_RELAXED);
+    return result;
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL xrReleaseSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageReleaseInfo *info) {
+    PFN_xrReleaseSwapchainImage fn = (PFN_xrReleaseSwapchainImage)lookup(active_instance, "xrReleaseSwapchainImage");
+    if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    __atomic_add_fetch(&sc_releases, 1, __ATOMIC_RELAXED);
+    return fn(swapchain, info);
+}
+
 XRAPI_ATTR XrResult XRAPI_CALL xrAcquireSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageAcquireInfo *info,
         uint32_t *index) {
     PFN_xrAcquireSwapchainImage fn = (PFN_xrAcquireSwapchainImage)lookup(active_instance, "xrAcquireSwapchainImage");
@@ -823,6 +841,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrAcquireSwapchainImage(XrSwapchain swapchain, co
         return XR_SUCCESS;
     }
     XrResult result = fn(swapchain, info, index);
+    __atomic_add_fetch(&sc_acquires, 1, __ATOMIC_RELAXED);
     if (XR_SUCCEEDED(result) && index) { flip_on_acquire(swapchain, *index); emul_on_acquire(swapchain, *index); }
     return result;
 }
@@ -1080,6 +1099,12 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
         if (elapsed >= 5.0) {
             LOG("pacing: %.1f fps, displayTime vs predicted: avg %.2f ms, max %.2f ms", frames / elapsed,
                 drift_sum / (double)frames / 1e6, drift_max / 1e6);
+            if (layer_debug)
+                LOG("layer_debug: swapchain images: %d acquired, %d waited (%d not ok), %d released",
+                    __atomic_exchange_n(&sc_acquires, 0, __ATOMIC_RELAXED),
+                    __atomic_exchange_n(&sc_waits, 0, __ATOMIC_RELAXED),
+                    __atomic_exchange_n(&sc_wait_fails, 0, __ATOMIC_RELAXED),
+                    __atomic_exchange_n(&sc_releases, 0, __ATOMIC_RELAXED));
             if (layer_debug)
                 LOG("layer_debug: frames: %d xrBeginFrame (%d discarded), %d xrEndFrame, %d balanced",
                     __atomic_exchange_n(&frame_begins, 0, __ATOMIC_RELAXED),
@@ -1571,6 +1596,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const 
     }
     if (surface_emul) HOOK_AS(xrCreateSwapchainAndroidSurfaceKHR, hook_xrCreateSwapchainAndroidSurfaceKHR)
     if (eye_debug || release_wait) HOOK_AS(xrReleaseSwapchainImage, eye_hook_xrReleaseSwapchainImage)
+    if (layer_debug) {  // counters only; every other wait/release hook above takes precedence
+        HOOK(xrWaitSwapchainImage)
+        HOOK(xrReleaseSwapchainImage)
+    }
     if (sync_guard || layer_debug) HOOK_AS(xrSyncActions, hook_xrSyncActions)
     if (layer_debug) HOOK_AS(xrGetActionStateBoolean, hook_xrGetActionStateBoolean)
     if (layer_debug || aim_correction_on() || profile_remap)

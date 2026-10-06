@@ -391,21 +391,6 @@ fwd_xrPathToString:
     .quad frame_unsupported
     .text
     .p2align 2
-    .globl xrReleaseSwapchainImage
-    .type xrReleaseSwapchainImage, %function
-xrReleaseSwapchainImage:
-    adrp x16, fwd_xrReleaseSwapchainImage
-    ldr x16, [x16, :lo12:fwd_xrReleaseSwapchainImage]
-    br x16
-    .size xrReleaseSwapchainImage, .-xrReleaseSwapchainImage
-    .data
-    .p2align 3
-    .globl fwd_xrReleaseSwapchainImage
-    .hidden fwd_xrReleaseSwapchainImage
-fwd_xrReleaseSwapchainImage:
-    .quad frame_unsupported
-    .text
-    .p2align 2
     .globl xrRequestExitSession
     .type xrRequestExitSession, %function
 xrRequestExitSession:
@@ -508,20 +493,5 @@ xrSyncActions:
     .globl fwd_xrSyncActions
     .hidden fwd_xrSyncActions
 fwd_xrSyncActions:
-    .quad frame_unsupported
-    .text
-    .p2align 2
-    .globl xrWaitSwapchainImage
-    .type xrWaitSwapchainImage, %function
-xrWaitSwapchainImage:
-    adrp x16, fwd_xrWaitSwapchainImage
-    ldr x16, [x16, :lo12:fwd_xrWaitSwapchainImage]
-    br x16
-    .size xrWaitSwapchainImage, .-xrWaitSwapchainImage
-    .data
-    .p2align 3
-    .globl fwd_xrWaitSwapchainImage
-    .hidden fwd_xrWaitSwapchainImage
-fwd_xrWaitSwapchainImage:
     .quad frame_unsupported
     .section .note.GNU-stack,"",%progbits

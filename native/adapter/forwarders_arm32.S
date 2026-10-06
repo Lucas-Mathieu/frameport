@@ -445,23 +445,6 @@ fwd_xrPathToString:
     .word frame_unsupported
     .text
     .p2align 2
-    .globl xrReleaseSwapchainImage
-    .type xrReleaseSwapchainImage, %function
-xrReleaseSwapchainImage:
-    ldr ip, 1f
-2:  add ip, pc, ip
-    ldr ip, [ip]
-    bx ip
-1:  .word fwd_xrReleaseSwapchainImage - (2b + 8)
-    .size xrReleaseSwapchainImage, .-xrReleaseSwapchainImage
-    .data
-    .p2align 2
-    .globl fwd_xrReleaseSwapchainImage
-    .hidden fwd_xrReleaseSwapchainImage
-fwd_xrReleaseSwapchainImage:
-    .word frame_unsupported
-    .text
-    .p2align 2
     .globl xrRequestExitSession
     .type xrRequestExitSession, %function
 xrRequestExitSession:
@@ -578,22 +561,5 @@ xrSyncActions:
     .globl fwd_xrSyncActions
     .hidden fwd_xrSyncActions
 fwd_xrSyncActions:
-    .word frame_unsupported
-    .text
-    .p2align 2
-    .globl xrWaitSwapchainImage
-    .type xrWaitSwapchainImage, %function
-xrWaitSwapchainImage:
-    ldr ip, 1f
-2:  add ip, pc, ip
-    ldr ip, [ip]
-    bx ip
-1:  .word fwd_xrWaitSwapchainImage - (2b + 8)
-    .size xrWaitSwapchainImage, .-xrWaitSwapchainImage
-    .data
-    .p2align 2
-    .globl fwd_xrWaitSwapchainImage
-    .hidden fwd_xrWaitSwapchainImage
-fwd_xrWaitSwapchainImage:
     .word frame_unsupported
     .section .note.GNU-stack,"",%progbits
