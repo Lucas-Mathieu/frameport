@@ -1,0 +1,25 @@
+package: com.coatsink.alone
+title: Jurassic World Aftermath Collection
+status: works
+notes: Plays (owner's headset test, 2026-10-06).
+tested_version: v3.16
+engine: Unity
+xr: VrApi
+frame:
+- frame.unity_no_msaa
+- frame.unity_oculus_check
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.unity_gl_shim
+- frame.vrapi_stub
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-06'
+  known_good_sha256: 0566b39d96258fa15eb1b03f27a7ad4219eb5442b0355cd803ed1cf13313f1b3
+  app: 0.12.0
+updated: '2026-10-06'
+min_app: 0.12.0
+source_hint: Jurassic World Aftermath Collection

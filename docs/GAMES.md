@@ -33,7 +33,9 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | In Death: Unchained | Quest | ✅ Works |  |
 | Into The Radius 2 | Quest | ✅ Works |  |
 | Job Simulator | Quest | ✅ Works |  |
+| Jurassic World Aftermath Collection | Quest | ✅ Works |  |
 | Keep Talking and Nobody Explodes | Quest | ✅ Works |  |
+| Lambda1VR | Quest | ✅ Works |  |
 | LEGO® Bricktales | Quest | ✅ Works |  |
 | Lucky's Tale | Quest | ✅ Works |  |
 | Marvel's Deadpool VR | Quest | ✅ Works |  |
@@ -57,6 +59,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | SUPERHOT VR | PC VR | ✅ Works |  |
 | SUPERHOT VR | Quest | ✅ Works |  |
 | TetrisEffect | Quest | ✅ Works |  |
+| The Boys VR | Quest | ✅ Works |  |
 | The Climb 2 | Quest | ✅ Works |  |
 | The Room VR | Quest | ✅ Works |  |
 | Toy Master | Quest | ✅ Works |  |
@@ -75,6 +78,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Time Stall | Quest | ⚠️ Works with issues | Both eyes distort during movement (unresolved). |
 | Vader Immortal: Episode I | Quest | ⚠️ Works with issues | Starts in VR and plays the intro, then stays on the loading card (Vader's portrait with a progress bar). |
 | WiiCompiled VR | Quest | ⚠️ Works with issues | To add a game: in FramePort's Files tab, upload your .wcgame file to this game's storage, folder Android/data/org.wiicompiled.quest/files/WiiCompiledOpenXRVR… |
+| BlazeRush | Quest | ❌ Doesn't run | Starts and reaches the menu room, but the room shows no controllers and ignores all input (it all reaches the game); no fix yet. |
 | Espire 1: VR Operative (Quest Edition) | Quest | ❌ Doesn't run | Mesa GL driver crash during texture upload. |
 | HITMAN 3 VR: Reloaded | Quest | ❌ Doesn't run | Vulkan driver crash (freedreno), even without Valve layers. |
 | Journey of the Gods | Quest | ❌ Doesn't run | 32-bit only; the Frame has no AArch32. |
