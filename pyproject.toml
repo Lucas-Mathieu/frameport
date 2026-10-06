@@ -79,10 +79,11 @@ company = "FramePort"
 path = "src"
 module = "main"
 
-# jni_flutter 1.0.4+1 (2026-10-06) requires jni ^1.1.0 while Flet's build template pins jni 1.0.0: every bundle failed
-# ("generated bindings expect package:jni ^1.1.0"). Remove once Flet moves to jni 1.1.
+# jni_flutter (1.0.4 and 1.0.4+1, 2026-10) generates bindings that require jni ^1.1.0, while Flet's build template pins
+# jni 1.0.0: every bundle failed ("generated bindings expect package:jni ^1.1.0"). jni 1.1 also satisfies bindings
+# made for 1.0 (the check is "same major, at least this minor"). Remove once Flet's template moves to jni 1.1.
 [tool.flet.flutter.pubspec.dependency_overrides]
-jni_flutter = "1.0.4"
+jni = "1.1.0"
 
 [tool.flet.macos]
 entitlement."com.apple.security.files.user-selected.read-write" = true
