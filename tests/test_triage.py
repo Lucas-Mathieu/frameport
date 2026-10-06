@@ -97,3 +97,12 @@ def test_frames_stopped_and_unity_render_crash():
     alone = triage.triage(log.replace("libgallium_dri", "libother"), "RUNNING")
     assert "frames-stopped" in [f.id for f in alone.findings]
     assert triage.frames_stopped(["10-05 23:16:30.000 x FrameBridge: pacing: 72 fps", "10-05 23:16:40.000 y"]) is None
+
+
+def test_vrapi_called_before_init_suggests_the_stub_not_the_bridge():
+    log = ("10-06 02:04:56.040  1154  1180 I OVRPlugin: OVRPlugin 1.89.1 initialized\n"
+           "10-06 02:04:56.324  1154  1180 F VrApiLoader: vrapi_SetPropertyInt was called before vrapi_Initialize()!\n")
+    r = triage(log, "EXITED", "com.coatsink.alone")
+    ids = {f.id for f in r.findings}
+    assert "vrapi-before-init" in ids and "direct-vrapi" not in ids  # Jurassic World Aftermath (GitHub #62)
+    assert r.suggestions() == ["frame.vrapi_stub"]

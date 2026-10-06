@@ -62,6 +62,8 @@ SUMMARIES = {
                                 "screen).",
     "frame.unity_multipass": "Draws each eye separately; try it when one eye shows a grey or broken picture.",
     "frame.swapchain_limit": "Allows very large pictures (8K video, theatres) instead of quitting.",
+    "frame.vrapi_stub": "Stops Meta's leftover VrApi library from closing the game at start (e.g. Jurassic World "
+                        "Aftermath).",
     "frame.vrapi_bridge": "Translator for games built on Meta's oldest VR interface.",
     "frame.gl_shim": "Fixes graphics code that the Frame's drivers reject (black screen with sound).",
     "frame.metaxr_telemetry": "Skips a Quest-only reporting step in Meta's audio library that crashes some games.",

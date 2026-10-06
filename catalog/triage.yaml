@@ -101,8 +101,15 @@ signatures:
     severity: error
     diagnosis: The game submits a VrApi layer type the bridge can't show; whole frames are dropped (black screen).
     suggest: []
+  - id: vrapi-before-init
+    pattern: 'VrApiLoader: vrapi_\w+ was called before vrapi_Initialize'
+    severity: fatal
+    diagnosis: Meta's VrApi loader stopped the game. Its OVRPlugin runs on OpenXR but still calls a VrApi function
+      without starting VrApi (e.g. Jurassic World Aftermath); the VrApi bridge can't stand in for this loader.
+    suggest: [frame.vrapi_stub]
+    supersedes: [direct-vrapi, native-crash]
   - id: direct-vrapi
-    pattern: 'vrapi_Initialize|VrApi.*not supported|libvrapi\.so.*(not found|failed)'
+    pattern: '(?<!called before )vrapi_Initialize|VrApi.*not supported|libvrapi\.so.*(not found|failed)'
     severity: warning
     diagnosis: The engine talks to VrApi directly; it needs the VrApi bridge.
     suggest: [frame.vrapi_bridge]

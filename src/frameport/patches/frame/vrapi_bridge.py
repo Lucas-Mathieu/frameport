@@ -19,6 +19,7 @@ class VrApiBridge(Patch):
     )
     order = 60
     experimental = True
+    conflicts = ("frame.vrapi_stub",)
 
     def detect(self, a):
         if a.direct_vrapi and "arm64-v8a" in a.abis:

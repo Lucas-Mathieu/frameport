@@ -546,3 +546,46 @@ def yaml_load(text):
     import yaml
 
     return yaml.safe_load(text)
+
+
+def test_vrapi_stub_keeps_every_function_of_metas_loader(tmp_path, quest_manifest):
+    from frameport.analysis import elf
+
+    apk = _apk(tmp_path, quest_manifest)
+    metas = build_stub_library(["vrapi_Initialize", "vrapi_SetPropertyInt", "vrapi_GetHmdInfo"], soname="libvrapi.so")
+    metas = metas.replace(b"\x00\x00\x80\xd2", b"\x20\x00\x80\xd2")  # different code, same exports (mov x0, #1)
+    with ApkWorkspace(apk) as ws:
+        ws.put(ws.lib("libvrapi.so"), metas)
+        ws.put(ws.lib("libOVRPlugin.so"), build_stub_library(["ovrp_GetVersion"], soname="libOVRPlugin.so"))
+        patch = base.get("frame.vrapi_stub")
+        a = _analysis(libs=["libvrapi.so", "libOVRPlugin.so"], direct_vrapi=False)
+        assert patch.applies(a) and patch.detect(a) is None  # suggested by triage only
+        assert not patch.applies(_analysis(libs=["libvrapi.so"], direct_vrapi=True))  # that's the bridge's case
+        ctx = base.ApkContext(ws, a, {}, Reporter(), {"frame.vrapi_stub": {}})
+        assert patch.apply(ctx)
+        stub = ws.read_lib("libvrapi.so")
+        assert elf.dyn_symbols(stub, True) == {"vrapi_Initialize", "vrapi_SetPropertyInt", "vrapi_GetHmdInfo"}
+        assert elf.soname(stub) == "libvrapi.so" and not patch.apply(ctx)  # applying twice changes nothing
+    assert "frame.vrapi_bridge" in base.get("frame.vrapi_stub").conflicts
+
+
+def test_vrapi_stub_covers_jurassic_world_aftermath():
+    """With the real APK's libraries (FRAMEPORT_GAMES): every vrapi_* OVRPlugin imports is in the stub."""
+    import os
+    from pathlib import Path
+
+    from frameport.analysis import elf
+
+    root = os.environ.get("FRAMEPORT_GAMES")
+    if not root:
+        import pytest
+        pytest.skip("FRAMEPORT_GAMES not set")
+    apks = list(Path(root).glob("Jurassic World Aftermath*/com.coatsink.alone.apk"))
+    if not apks:
+        import pytest
+        pytest.skip("Jurassic World Aftermath not in FRAMEPORT_GAMES")
+    with zipfile.ZipFile(apks[0]) as z:
+        vrapi, plugin = (z.read(f"lib/arm64-v8a/{n}") for n in ("libvrapi.so", "libOVRPlugin.so"))
+    exports = sorted(s for s in elf.dyn_symbols(vrapi, True) if s.startswith(("vrapi_", "ovr")))
+    need = {s for s in elf.dyn_symbols(plugin, False) if s.startswith("vrapi_")}
+    assert need and need <= elf.dyn_symbols(build_stub_library(exports, soname="libvrapi.so"), True)
