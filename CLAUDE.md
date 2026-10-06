@@ -559,6 +559,18 @@ device model "Oculus Quest" vs Lepton's "Valve Lepton", ovrp_GetSystemProductNam
 ovrp_GetNodePresent (hands present after ~2 s, logged by the shim) and missing ovrp_GetControllerState exports were
 all ruled out in the headset): buttons still dead; next = find what makes libunity's Oculus input poll only Go
 controllers. Accounting+ works (owner, 2026-10-06).
+**Vader Immortal (UE4, GitHub #49, 2026-10-06, headless):** stuck after the intro on an in-game image (the splash
+quad ends ~6 s in; then the game's own projection frames, 72 fps, balanced xrBeginFrame/xrEndFrame). Not the Platform
+SDK (`frame.ovr_trace`: only user + entitlement, both answered) and not the repack's Frida gadget (OVRPort's
+`patch_clean_up_frida` removes its loadLibrary). It **leaks ~430 GPU mappings (/dev/dri/renderD128) and ~20 MB a
+second** (6.5 GB + swap after 5 min, then 26 fps): page-fault stacks (perf -e page-faults, offsets resolved with the
+process maps + vrclient.so's own symbols; its text segment is at file offset + 0x4000) end in SteamVR's runtime:
+`xrBeginFrame → CSxrCompositorOpenVR::BeginFrame → SubmitExplicitTimingData → CVRCompositorSharedTextures::
+BeginGPUTimingCommandBuffer` and `xrEndFrame → CVRCompositorClient::SubmitWithArrayIndexAndTime`. Ruled out: the
+layer color scale/bias + image layout structs (FrameBridge `strip_color_bias` 1/2, diagnostic), Valve's Vulkan
+layers (VK_INSTANCE_LAYERS=""), array swapchains in general (Lucky's Tale/I Am Cat flat). Kernel tracepoints aren't
+allowed for steamos. FrameBridge: `layer_debug` logs xrDestroySwapchain and per-5 s xrBeginFrame/xrEndFrame counts;
+`frame_balance` (ends an open frame before the next begin) exists but Vader never leaves one open.
 **Lepton storage (2026-09-30):** each app's /sdcard (= /storage/emulated/0 → `<base>/lepton-data/external`) has `Movies`/`Download`/`Documents` symlinked to the Frame's `~/Videos`/`~/Downloads`/`~/Documents` (liblepton/mounting.sh, only if they exist at start); agent v24 `storage_targets` reads that mapping. Android's MediaProvider canonicalises paths to /home/steamos/... and rejects every file ("doesn't appear under [/system/media...]"), `sm list-volumes` is empty: the media index never works, apps must browse folders. Lepton installs with `adb install -g` (runtime permissions granted, MANAGE_EXTERNAL_STORAGE too). Files: `install/files.py`, `frameport frame send|storage`, GUI Files tab (formerly Frame → Send files).
 **SteamVR per-app settings (2026-09-30):** editing steamvr.vrsettings while SteamVR runs is lost; the web API (127.0.0.1:27062 /app/setsettings) needs `x-steamvr-secret`. `native/vrsettings` = `fp_vrsettings.exe` (freestanding, OpenVR `FnTable:IVRSettings_003` as a Utility app, loads SteamVR's bin/win64/openvr_api.dll) sets them live and SteamVR persists them: section `steam.app.<shortcut appid>`, keys `preferredRefreshRate` (float) and `motionSmoothingOverride` (0 global, 1 on, 2 off, 3 always). Steam Link (vrlink) lists the Frame's rates 72/80/90/96/108/120/144 in vrserver.txt and follows the per-app preference ("host preferred N Hz"; whether the key is honoured is unverified in-headset yet). Judder metric: vrcompositor.txt session summary dropped + "Timed out. N total" (Stormland: 0 dropped but 313 timeouts in 2 min); fpsVR (`%LOCALAPPDATA%\fpsVR\*.json`, 0.1 ms histograms) gives p99 CPU/GPU ms. `pcvr.steamvr_tuning` (default on, PC only) applies on Play: highest rate whose budget ≥ p99×1.05, at least one step down, smoothing on.
 

@@ -31,21 +31,6 @@ fwd_xrAttachSessionActionSets:
     .quad frame_unsupported
     .text
     .p2align 2
-    .globl xrBeginFrame
-    .type xrBeginFrame, %function
-xrBeginFrame:
-    adrp x16, fwd_xrBeginFrame
-    ldr x16, [x16, :lo12:fwd_xrBeginFrame]
-    br x16
-    .size xrBeginFrame, .-xrBeginFrame
-    .data
-    .p2align 3
-    .globl fwd_xrBeginFrame
-    .hidden fwd_xrBeginFrame
-fwd_xrBeginFrame:
-    .quad frame_unsupported
-    .text
-    .p2align 2
     .globl xrBeginSession
     .type xrBeginSession, %function
 xrBeginSession:

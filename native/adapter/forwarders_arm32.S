@@ -37,23 +37,6 @@ fwd_xrAttachSessionActionSets:
     .word frame_unsupported
     .text
     .p2align 2
-    .globl xrBeginFrame
-    .type xrBeginFrame, %function
-xrBeginFrame:
-    ldr ip, 1f
-2:  add ip, pc, ip
-    ldr ip, [ip]
-    bx ip
-1:  .word fwd_xrBeginFrame - (2b + 8)
-    .size xrBeginFrame, .-xrBeginFrame
-    .data
-    .p2align 2
-    .globl fwd_xrBeginFrame
-    .hidden fwd_xrBeginFrame
-fwd_xrBeginFrame:
-    .word frame_unsupported
-    .text
-    .p2align 2
     .globl xrBeginSession
     .type xrBeginSession, %function
 xrBeginSession:

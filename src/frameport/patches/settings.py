@@ -16,6 +16,10 @@ SETTINGS = [
     ("scale", "float", 1.0, "Resolution scale",
      "Multiplies the recommended eye-buffer width and height (0.5–2.0). 1.5 ≈ 2.25× pixels."),
     ("foveation_fix", "int", 1, "Hide Quest foveation", "Hides Quest foveation extensions the Frame runtime lacks."),
+    ("strip_color_bias", "int", 0, "Drop layer color fades",
+     "Removes the color scale/bias (XR_KHR_composition_layer_color_scale_bias) from the game's layers, so the runtime "
+     "doesn't apply it. The Frame's runtime allocates GPU memory for it every frame without freeing it, e.g. Vader "
+     "Immortal leaked ~20 MB/s on its loading screen. Fades done this way no longer show."),
     ("hide_space_warp", "int", 0, "Turn off space warp",
      "Hides XR_FB_space_warp, so the game renders every frame itself instead of half of them plus motion vectors "
      "(Application SpaceWarp). For games whose picture flickers or smears on the Frame (e.g. Unreal Engine 5 games "
@@ -255,7 +259,7 @@ UI: dict[str, dict] = {
                             control=("choice", [(0, "As the game sends it"), (2, "Flat")])),
     **{key: dict(group="troubleshooting", level="advanced", control=("switch",)) for key in (
         "foveation_fix", "hide_space_warp", "swapchain_fix", "layer_fix", "gl_hide_multiview", "mutable_fix",
-        "flip_quads", "swap_eyes", "vk_validation", "rect_clamp", "gl_hide_msrtt",
+        "flip_quads", "swap_eyes", "vk_validation", "rect_clamp", "gl_hide_msrtt", "strip_color_bias",
         "strip_depth", "respace_kick", "layer_debug", "eye_debug", "release_wait")},
 }
 

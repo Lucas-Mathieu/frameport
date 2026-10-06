@@ -86,6 +86,10 @@ static int foveation_fix = 1;
 // hide XR_FB_space_warp: games then render every frame themselves (UE5 Application SpaceWarp flickered on the Frame,
 // e.g. Into The Radius 2; OVRPort's patch_disable_space_warp doesn't reach UE5's OpenXR plugin)
 static int hide_space_warp = 0;
+static int strip_color_bias = 0;
+static int frame_balance = 0;  // end a still-open frame before the next xrBeginFrame
+static int frame_begins, frame_discarded, frame_ends, frame_balanced;  // per pacing period (layer_debug)
+static int frame_open;  // drop XrCompositionLayerColorScaleBiasKHR (the runtime's color pass)
 static int controller_fix = 1;
 static int swapchain_fix = 1;
 static int rect_clamp = 1;
@@ -136,6 +140,8 @@ static void read_settings(const char *path) {
         if (sscanf(line, "scale=%f", &value) == 1 && value >= 0.5f && value <= 2.0f) scale = value;
         if (sscanf(line, "foveation_fix=%f", &value) == 1) foveation_fix = value != 0;
         if (sscanf(line, "hide_space_warp=%f", &value) == 1) hide_space_warp = value != 0;
+        if (sscanf(line, "strip_color_bias=%f", &value) == 1) strip_color_bias = (int)value;
+        if (sscanf(line, "frame_balance=%f", &value) == 1) frame_balance = value != 0;
         if (sscanf(line, "controller_fix=%f", &value) == 1) controller_fix = value != 0;
         if (sscanf(line, "swapchain_fix=%f", &value) == 1) swapchain_fix = value != 0;
         if (sscanf(line, "rect_clamp=%f", &value) == 1) rect_clamp = value != 0;
@@ -214,6 +220,8 @@ static void initialize(void) {
         log_file = fopen(path, "a");
     }
     if (hide_space_warp) LOG("per-game: hide_space_warp=1 (XR_FB_space_warp hidden, space warp info removed)");
+    if (strip_color_bias) LOG("per-game: strip_color_bias=%d (layer color scale/bias removed)", strip_color_bias);
+    if (frame_balance) LOG("per-game: frame_balance=1 (an open frame is ended before the next one begins)");
     if (eye_debug || release_wait) LOG("per-game: eye_debug=%d release_wait=%d log_file=%s", eye_debug, release_wait,
                                        log_file ? path : "none");
     if (controller_models && *process && !strchr(process, '/')) render_model_init(process);
@@ -515,6 +523,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
 XRAPI_ATTR XrResult XRAPI_CALL xrDestroySwapchain(XrSwapchain swapchain) {
     PFN_xrDestroySwapchain fn = (PFN_xrDestroySwapchain)lookup(active_instance, "xrDestroySwapchain");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if (layer_debug) {
+        static int logged;
+        if (logged++ < 200) LOG("layer_debug: xrDestroySwapchain %p", (void *)swapchain);
+    }
     forget_swapchain(swapchain);
     surf_on_destroy(swapchain);
     flip_on_destroy(swapchain);
@@ -1019,9 +1031,39 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateViews(XrSession session, const XrViewLoca
     return result;
 }
 
+// xrBeginFrame: counted for layer_debug. A game that begins a new frame while the previous one is still open
+// (never ended) makes the runtime discard it; the Frame's runtime then never recycles that frame's GPU timing
+// command buffer (Vader Immortal: ~430 GPU mappings / 20 MB a second). frame_balance ends the open frame first,
+// with no layers, as the runtime expects.
+static XrTime last_begin_display_time;
+XRAPI_ATTR XrResult XRAPI_CALL xrBeginFrame(XrSession session, const XrFrameBeginInfo *info) {
+    PFN_xrBeginFrame fn = (PFN_xrBeginFrame)lookup(active_instance, "xrBeginFrame");
+    if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if (frame_open && frame_balance) {
+        PFN_xrEndFrame end = (PFN_xrEndFrame)lookup(active_instance, "xrEndFrame");
+        XrFrameEndInfo empty = {XR_TYPE_FRAME_END_INFO, NULL, last_begin_display_time ? last_begin_display_time
+                                                                                        : last_predicted_time,
+                                XR_ENVIRONMENT_BLEND_MODE_OPAQUE, 0, NULL};
+        XrResult r = end ? end(session, &empty) : XR_ERROR_FUNCTION_UNSUPPORTED;
+        static int logged;
+        if (logged++ < 3) LOG("frame_balance: ended an open frame before xrBeginFrame (result %d)", r);
+        __atomic_add_fetch(&frame_balanced, 1, __ATOMIC_RELAXED);
+    }
+    XrResult result = fn(session, info);
+    __atomic_add_fetch(&frame_begins, 1, __ATOMIC_RELAXED);
+    if (result == XR_FRAME_DISCARDED) __atomic_add_fetch(&frame_discarded, 1, __ATOMIC_RELAXED);
+    if (XR_SUCCEEDED(result)) {
+        frame_open = 1;
+        last_begin_display_time = last_predicted_time;
+    }
+    return result;
+}
+
 XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInfo *info) {
     PFN_xrEndFrame fn = (PFN_xrEndFrame)lookup(active_instance, "xrEndFrame");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    frame_open = 0;
+    __atomic_add_fetch(&frame_ends, 1, __ATOMIC_RELAXED);
     if (eye_debug) eye_debug_end_frame(session, info);
     {   // frame pacing statistics every ~5 s: fps and submitted-vs-predicted display time
         static struct timespec start;
@@ -1038,6 +1080,12 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
         if (elapsed >= 5.0) {
             LOG("pacing: %.1f fps, displayTime vs predicted: avg %.2f ms, max %.2f ms", frames / elapsed,
                 drift_sum / (double)frames / 1e6, drift_max / 1e6);
+            if (layer_debug)
+                LOG("layer_debug: frames: %d xrBeginFrame (%d discarded), %d xrEndFrame, %d balanced",
+                    __atomic_exchange_n(&frame_begins, 0, __ATOMIC_RELAXED),
+                    __atomic_exchange_n(&frame_discarded, 0, __ATOMIC_RELAXED),
+                    __atomic_exchange_n(&frame_ends, 0, __ATOMIC_RELAXED),
+                    __atomic_exchange_n(&frame_balanced, 0, __ATOMIC_RELAXED));
             if (layer_debug)
                 LOG("layer_debug: input: %d xrSyncActions (%d ok, last %d), %d bool reads, %d pressed",
                     __atomic_exchange_n(&input_syncs, 0, __ATOMIC_RELAXED),
@@ -1170,6 +1218,48 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
             static int logged;
             if (!logged++) LOG("strip_depth: removed depth info from projection layer");
             ++swapped;
+        }
+        {
+            // XR_KHR_composition_layer_color_scale_bias (1000034000) on the layer itself: logged when its values
+            // change (layer_debug); with strip_color_bias the runtime never gets it (Vader Immortal: the Frame's
+            // runtime allocates GPU memory for it every frame and never frees it)
+            const XrBaseInStructure *head = (const XrBaseInStructure *)layer->next;
+            const XrCompositionLayerColorScaleBiasKHR *cb = NULL;
+            for (const XrBaseInStructure *n = head; n; n = n->next)
+                if (n->type == XR_TYPE_COMPOSITION_LAYER_COLOR_SCALE_BIAS_KHR) cb = (const XrCompositionLayerColorScaleBiasKHR *)n;
+            if (cb && layer_debug) {
+                static float last[8] = {-1};
+                float now[8] = {cb->colorScale.r, cb->colorScale.g, cb->colorScale.b, cb->colorScale.a,
+                                cb->colorBias.r, cb->colorBias.g, cb->colorBias.b, cb->colorBias.a};
+                static int logged;
+                if (memcmp(now, last, sizeof(now)) && logged++ < 100) {
+                    LOG("layer_debug: layer type=%d color scale %.2f %.2f %.2f %.2f bias %.2f %.2f %.2f %.2f", layer->type,
+                        now[0], now[1], now[2], now[3], now[4], now[5], now[6], now[7]);
+                    memcpy(last, now, sizeof(now));
+                }
+            }
+            if (cb && strip_color_bias && (layer->type == XR_TYPE_COMPOSITION_LAYER_PROJECTION ||
+                                           layer->type == XR_TYPE_COMPOSITION_LAYER_QUAD)) {
+                const XrBaseInStructure *rest = head;  // skip leading color structs; one further down drops the chain
+                while (rest && rest->type == XR_TYPE_COMPOSITION_LAYER_COLOR_SCALE_BIAS_KHR) rest = rest->next;
+                for (const XrBaseInStructure *n = rest; n; n = n->next)
+                    if (n->type == XR_TYPE_COMPOSITION_LAYER_COLOR_SCALE_BIAS_KHR) rest = NULL;
+                if (strip_color_bias > 1) rest = NULL;  // 2: the layer's whole extension chain (diagnostics)
+                if (layer->type == XR_TYPE_COMPOSITION_LAYER_PROJECTION) {
+                    if (layer != (const XrCompositionLayerBaseHeader *)&projections[count])
+                        projections[count] = *(const XrCompositionLayerProjection *)layer;
+                    projections[count].next = rest;
+                    layer = (const XrCompositionLayerBaseHeader *)&projections[count];
+                } else {
+                    if (layer != (const XrCompositionLayerBaseHeader *)&quads[count])
+                        quads[count] = *(const XrCompositionLayerQuad *)layer;
+                    quads[count].next = rest;
+                    layer = (const XrCompositionLayerBaseHeader *)&quads[count];
+                }
+                static int logged;
+                if (!logged++) LOG("strip_color_bias: removed the color scale/bias from a layer");
+                ++swapped;
+            }
         }
         if (hide_space_warp && layer->type == XR_TYPE_COMPOSITION_LAYER_PROJECTION &&
             ((const XrCompositionLayerProjection *)layer)->viewCount == 2) {
@@ -1464,6 +1554,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const 
     HOOK(xrCreateSwapchain)
     HOOK(xrDestroySwapchain)
     HOOK(xrEndFrame)
+    HOOK(xrBeginFrame)
     HOOK(xrLocateHandJointsEXT)
     HOOK(xrGetCurrentInteractionProfile)
     HOOK(xrEnumerateInstanceExtensionProperties)
