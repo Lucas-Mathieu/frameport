@@ -180,6 +180,9 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         extra={
             "frame_patched": "libframe_settings.so" in libset,  # already has FramePort's FrameBridge adapter
             # Team Beef's TBXR ports pick their OpenXR path by headset maker (frame.tbxr_vendor): their libraries
+            # the game asks Meta's platform for asset files (content shipped as separate files, frame.asset_files)
+            "asset_file_api": any(b"\0ovr_AssetFile_GetList\0" in d for n, d in lib_bytes.items()
+                                  if n != "libovrplatformloader.so"),
             "tbxr_libs": sorted(n for n, d in lib_bytes.items() if b"\0OPENXR_HMD\0" in d and b"\0meta\0" in d),
             "missing_ovr_symbols": sorted(missing_ovr_symbols(lib_bytes)), "size": path.stat().st_size,
             "data_bytes": data_bytes or 0,

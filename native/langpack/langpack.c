@@ -30,6 +30,12 @@
 //
 // Which pack is "current": the one the game applied with SetCurrent; else $FRAMEPORT_LANGPACK (a tag); else the only
 // pack if there is exactly one.
+//
+// Content files (patch frame.asset_files, which sets the marker byte g_assets_slot; or FRAMEPORT_ASSET_FILES=1):
+// every *.pak next to the game's OBB is also listed as an installed asset file of type "default" (Meta's type for
+// content that comes with the game, IAP status "free"), named after the file. ovr_AssetFile_DownloadById on one of
+// them answers at once with a completed download update and a result carrying the file's path (nothing is copied).
+// E.g. Star Wars: Tales from the Galaxy's Edge, whose seasons and sound banks are such files (ETacoDLC::Season1...).
 #define _GNU_SOURCE
 #include <ctype.h>
 #include <dirent.h>
@@ -93,6 +99,8 @@ static int g_traced;
 #define MSG_ASSETFILE_STATUSBYID 0x5D955D38u
 #define MSG_LANGUAGEPACK_GETCURRENT 0x1F90F0D5u
 #define MSG_LANGUAGEPACK_SETCURRENT 0x5B4FBBE0u
+#define MSG_ASSETFILE_DOWNLOADBYID 0x2D008992u
+#define MSG_NOTIFICATION_DOWNLOADUPDATE 0x2FDD0CCDu
 
 #define MAXP 32
 #define PATHLEN 1024
@@ -206,6 +214,12 @@ DEFORIG(u64, AssetFileDownloadResult_GetAssetId, (const void *r), (r))
 DEFORIG(const char *, AssetFileDownloadResult_GetFilepath, (const void *r), (r))
 DEFORIG(u64, AssetFile_GetList, (void), ())
 DEFORIG(u64, AssetFile_StatusById, (u64 id), (id))
+DEFORIG(u64, AssetFile_DownloadById, (u64 id), (id))
+DEFORIG(void *, Message_GetAssetFileDownloadUpdate, (const void *m), (m))
+DEFORIG(u64, AssetFileDownloadUpdate_GetAssetFileId, (const void *u), (u))
+DEFORIG(u64, AssetFileDownloadUpdate_GetBytesTotal, (const void *u), (u))
+DEFORIG(long long, AssetFileDownloadUpdate_GetBytesTransferred, (const void *u), (u))
+DEFORIG(_Bool, AssetFileDownloadUpdate_GetCompleted, (const void *u), (u))
 DEFORIG(int, Error_GetCode, (const void *e), (e))
 DEFORIG(int, Error_GetHttpCode, (const void *e), (e))
 DEFORIG(const char *, Error_GetMessage, (const void *e), (e))
@@ -216,9 +230,12 @@ DEFORIG(const char *, Error_GetDisplayableMessage, (const void *e), (e))
  * ------------------------------------------------------------------------------------------------------------- */
 
 typedef struct {
-    char tag[48];
+    char tag[48];  // language packs: the BCP47 tag; content files: empty
+    char name[128];  // content files: the file name (the asset's name)
     char path[PATHLEN];
     u64 id;
+    long long size;
+    int content;
 } pack_t;
 
 static const struct {
@@ -263,14 +280,46 @@ static int valid_tag(const char *t) {
 
 static void add_pack(pack_t *out, int *n, const char *tag, const char *path) {
     for (int i = 0; i < *n; i++)
-        if (tag_eq(out[i].tag, tag)) return;  // first one wins
+        if (!out[i].content && tag_eq(out[i].tag, tag)) return;  // first one wins
     pack_t *p = &out[(*n)++];
+    memset(p, 0, sizeof *p);
     snprintf(p->tag, sizeof p->tag, "%s", tag);
     snprintf(p->path, sizeof p->path, "%s", path);
     p->id = hash_tag(tag);
 }
 
 static int g_logged_dirs;
+
+// frame.asset_files sets the byte after the marker to '1' (frameport.patches.frame.langpack.with_assets)
+#define ASSETS_MARK "@FPASSETS@"
+__attribute__((used)) static char g_assets_slot[sizeof ASSETS_MARK + 1] = ASSETS_MARK "0";
+
+static int assets_enabled(void) {
+    const char *env = getenv("FRAMEPORT_ASSET_FILES");
+    if (env && *env) return *env == '1';
+    return ((const volatile char *)g_assets_slot)[sizeof ASSETS_MARK - 1] == '1';
+}
+
+static u64 hash_name(const char *name) {
+    u64 h = 1469598103934665603ULL ^ 0x66;  // FNV-1a, seeded apart from the tags
+    for (const char *p = name; *p; p++) {
+        h ^= (unsigned char)((*p >= 'A' && *p <= 'Z') ? *p + 32 : *p);
+        h *= 1099511628211ULL;
+    }
+    return 0x4650000000000000ULL | (h & 0x0000FFFFFFFFFFFFULL);
+}
+
+static void add_content(pack_t *out, int *n, const char *name, const char *path, long long size) {
+    for (int i = 0; i < *n; i++)
+        if (out[i].content && strcasecmp(out[i].name, name) == 0) return;  // first one wins
+    pack_t *p = &out[(*n)++];
+    memset(p, 0, sizeof *p);
+    p->content = 1;
+    snprintf(p->name, sizeof p->name, "%.127s", name);  // (callers pass names shorter than 128)
+    snprintf(p->path, sizeof p->path, "%s", path);
+    p->size = size;
+    p->id = hash_name(name);
+}
 
 // Tags to leave out of the list (comma separated, case-insensitive): env FRAMEPORT_LANGPACK_SKIP, plus the lines
 // of a file "fp_langpack_skip" in any scanned folder. For finding out which pack a game needs reported: e.g. a game
@@ -323,6 +372,9 @@ static void scan_dir(const char *dir, int depth, pack_t *out, int *n) {
                 memcpy(tag, e->d_name, len - 5);
                 tag[len - 5] = 0;
                 if (valid_tag(tag) && !skipped(tag)) add_pack(out, n, tag, path);
+            } else if (len > 4 && strcasecmp(e->d_name + len - 4, ".pak") == 0 && assets_enabled() &&
+                       strlen(e->d_name) < sizeof out[0].name) {
+                add_content(out, n, e->d_name, path, (long long)st.st_size);
             }
         }
     }
@@ -347,8 +399,10 @@ static int scan(pack_t *out) {
     static int last = -1;
     if (n != last) {
         last = n;
-        fplog("%d language pack(s) found", n);
-        for (int i = 0; i < n; i++) fplog("  pack %s -> %s", out[i].tag, out[i].path);
+        fplog("%d language pack(s) and content file(s) found", n);
+        for (int i = 0; i < n; i++)
+            fplog("  %s %s -> %s", out[i].content ? "content" : "pack", out[i].content ? out[i].name : out[i].tag,
+                  out[i].path);
     }
     g_logged_dirs = 1;
     return n;
@@ -390,10 +444,10 @@ static char g_current[48];  // tag the game applied with SetCurrent
 
 static int find_tag(const pack_t *p, int n, const char *tag) {
     for (int i = 0; i < n; i++)
-        if (tag_eq(p[i].tag, tag)) return i;
+        if (!p[i].content && tag_eq(p[i].tag, tag)) return i;
     int bl = base_len(tag);  // "de-DE" -> "de" (and the reverse: "de" asked, "de-de" present)
     for (int i = 0; i < n; i++)
-        if (base_len(p[i].tag) == bl && strncasecmp(p[i].tag, tag, (size_t)bl) == 0) return i;
+        if (!p[i].content && base_len(p[i].tag) == bl && strncasecmp(p[i].tag, tag, (size_t)bl) == 0) return i;
     return -1;
 }
 
@@ -411,7 +465,10 @@ static int pick_current(const pack_t *p, int n) {
         int i = find_tag(p, n, env);
         if (i >= 0) return i;
     }
-    return n == 1 ? 0 : -1;
+    int only = -1, langs = 0;
+    for (int i = 0; i < n; i++)
+        if (!p[i].content) only = i, langs++;
+    return langs == 1 ? only : -1;
 }
 
 /* ---------------------------------------------------------------------------------------------------------------
@@ -460,12 +517,19 @@ typedef struct {
     char msg[128];
 } err_t;
 
+typedef struct {
+    u64 id;
+    long long total, done;
+    int completed;
+} update_t;
+
 typedef struct msg {
     struct msg *all_next, *q_next;
     u32 type;
     u64 req;
-    int is_error, has_det, has_res;
+    int is_error, has_det, has_res, has_upd;
     err_t err;
+    update_t upd;
     details_t det;
     lang_t lng;
     result_t res;
@@ -525,6 +589,16 @@ static void fail(msg_t *m, int code, const char *text) {
 }
 
 static void fill_details(details_t *d, lang_t *l, const pack_t *p) {
+    if (p->content) {  // content that comes with the game: Meta's "default" asset type, nothing to buy
+        d->id = p->id;
+        snprintf(d->type, sizeof d->type, "default");
+        snprintf(d->status, sizeof d->status, "installed");
+        snprintf(d->iap, sizeof d->iap, "free");
+        snprintf(d->path, sizeof d->path, "%s", p->path);
+        d->meta[0] = 0;
+        d->lang = NULL;
+        return;
+    }
     d->id = p->id;
     snprintf(d->type, sizeof d->type, "language_pack");
     snprintf(d->status, sizeof d->status, "installed");
@@ -722,6 +796,35 @@ EXPORT u64 ovr_AssetFile_StatusById(u64 id) {
     return o_AssetFile_StatusById(id);
 }
 
+EXPORT u64 ovr_AssetFile_DownloadById(u64 id) {
+    fplog("AssetFile_DownloadById(%llu)%s", (unsigned long long)id, (id >> 48) == 0x4650 ? " (ours)" : "");
+    if ((id >> 48) != 0x4650) return o_AssetFile_DownloadById(id);
+    pack_t packs[MAXP];
+    int n = scan(packs), i = 0;
+    while (i < n && packs[i].id != id) i++;
+    msg_t *m = new_msg(MSG_ASSETFILE_DOWNLOADBYID, 0);
+    if (!m) return 0;
+    u64 req = m->req;
+    if (i == n) {
+        fail(m, 404, "asset file not found");
+        post(m);
+        return req;
+    }
+    // already on the device: a finished download update, then the result with the file's path
+    msg_t *u = new_msg(MSG_NOTIFICATION_DOWNLOADUPDATE, 0);
+    if (u) {
+        u->req = 0;  // notifications carry no request id
+        u->upd = (update_t){packs[i].id, packs[i].size, packs[i].size, 1};
+        u->has_upd = 1;
+        post(u);
+    }
+    m->res.id = packs[i].id;
+    snprintf(m->res.path, sizeof m->res.path, "%s", packs[i].path);
+    m->has_res = 1;
+    post(m);
+    return req;
+}
+
 /* ---------------------------------------------------------------------------------------------------------------
  * Message loop
  * ------------------------------------------------------------------------------------------------------------- */
@@ -813,6 +916,12 @@ EXPORT void *ovr_Message_GetAssetFileDownloadResult(const void *h) {
     return m->has_res ? (void *)&m->res : NULL;
 }
 
+EXPORT void *ovr_Message_GetAssetFileDownloadUpdate(const void *h) {
+    msg_t *m = owner(h);
+    if (!m) return o_Message_GetAssetFileDownloadUpdate(h);
+    return m->has_upd ? (void *)&m->upd : NULL;
+}
+
 EXPORT void *ovr_Message_GetAssetDetailsArray(const void *h) {
     msg_t *m = owner(h);
     if (!m) return o_Message_GetAssetDetailsArray(h);
@@ -901,6 +1010,19 @@ EXPORT u64 ovr_AssetFileDownloadResult_GetAssetId(const void *h) {
 }
 EXPORT const char *ovr_AssetFileDownloadResult_GetFilepath(const void *h) {
     return IS_OURS(h) ? ((const result_t *)h)->path : o_AssetFileDownloadResult_GetFilepath(h);
+}
+
+EXPORT u64 ovr_AssetFileDownloadUpdate_GetAssetFileId(const void *h) {
+    return IS_OURS(h) ? ((const update_t *)h)->id : o_AssetFileDownloadUpdate_GetAssetFileId(h);
+}
+EXPORT u64 ovr_AssetFileDownloadUpdate_GetBytesTotal(const void *h) {
+    return IS_OURS(h) ? (u64)((const update_t *)h)->total : o_AssetFileDownloadUpdate_GetBytesTotal(h);
+}
+EXPORT long long ovr_AssetFileDownloadUpdate_GetBytesTransferred(const void *h) {
+    return IS_OURS(h) ? ((const update_t *)h)->done : o_AssetFileDownloadUpdate_GetBytesTransferred(h);
+}
+EXPORT _Bool ovr_AssetFileDownloadUpdate_GetCompleted(const void *h) {
+    return IS_OURS(h) ? (_Bool)((const update_t *)h)->completed : o_AssetFileDownloadUpdate_GetCompleted(h);
 }
 
 EXPORT int ovr_Error_GetCode(const void *h) { return IS_OURS(h) ? ((const err_t *)h)->code : o_Error_GetCode(h); }

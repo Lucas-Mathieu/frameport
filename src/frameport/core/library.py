@@ -116,12 +116,13 @@ def _refresh_data_fields(g: dict, a: dict) -> bool:
     """Analysis fields read from the game's data folder (cheap, no APK analysis) that newer FramePort versions added:
     filled in for games already in the library, so their patches are offered without a re-analysis."""
     extra = a.setdefault("extra", {})
-    if "lang_packs" in extra or a.get("package", "").startswith("rift."):
+    if ("lang_packs" in extra and "asset_files" in extra) or a.get("package", "").startswith("rift."):
         return False
     from ..analysis import langpacks
 
     try:
-        extra["lang_packs"] = langpacks.find_tags(g.get("data_dir"))
+        extra.setdefault("lang_packs", langpacks.find_tags(g.get("data_dir")))
+        extra.setdefault("asset_files", langpacks.find_content_files(g.get("data_dir")))
     except OSError:
         return False
     return True

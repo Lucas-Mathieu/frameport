@@ -353,6 +353,7 @@ def add_game(src: SourceGame, reporter: Reporter | None = None) -> dict:
         reporter.log(f"analyzing {src.apk.name}")
     a = analyze(src.apk, data_bytes=src.data_bytes())
     a.extra["lang_packs"] = langpacks.find_tags(src.data_dir)
+    a.extra["asset_files"] = langpacks.find_content_files(src.data_dir)
     recipe = engine.suggest(a)
     return library.upsert_game(
         a.package, title=recipe.title or a.label, name=src.name, apk=str(src.apk),
@@ -373,6 +374,7 @@ def reanalyze(package: str, reporter: Reporter | None = None) -> dict:
         reporter.log(f"analyzing {src.apk.name}")
     a = analyze(src.apk, data_bytes=src.data_bytes())
     a.extra["lang_packs"] = langpacks.find_tags(src.data_dir)
+    a.extra["asset_files"] = langpacks.find_content_files(src.data_dir)
     suggested = engine.suggest(a)
     keep = library.recipe_from_dict(entry["recipe"]).source == "user"
     return library.upsert_game(package, analysis=a.to_dict(), suggested=library.recipe_to_dict(suggested),

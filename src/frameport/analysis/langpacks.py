@@ -26,3 +26,22 @@ def find_tags(data_dir: Path | str | None) -> list[str]:
             if dot and ext.lower() == "lang" and TAG.match(stem):
                 seen.setdefault(stem.lower(), stem)
     return sorted(seen.values(), key=str.lower)
+
+
+def find_content_files(data_dir: Path | str | None) -> list[str]:
+    """Names of the content files (*.pak) below `data_dir` that native/langpack lists as installed asset files (the
+    OBB itself is main.<v>.<pkg>.obb, not a .pak), sorted, first file per name."""
+    if not data_dir:
+        return []
+    root = Path(data_dir)
+    if not root.is_dir():
+        return []
+    seen: dict[str, str] = {}
+    base_depth = len(root.parts)
+    for folder, dirs, files in os.walk(root):
+        if len(Path(folder).parts) - base_depth >= MAX_DEPTH:
+            dirs[:] = []
+        for name in files:
+            if name.lower().endswith(".pak") and len(name) < 128:
+                seen.setdefault(name.lower(), name)
+    return sorted(seen.values(), key=str.lower)

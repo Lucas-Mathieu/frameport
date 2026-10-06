@@ -414,3 +414,73 @@ def test_games_already_in_the_library_get_their_language_packs_after_an_app_upda
     assert library._refresh_data_fields(g, g["analysis"])
     assert g["analysis"]["extra"]["lang_packs"] == ["de"]
     assert not library._refresh_data_fields(g, g["analysis"])  # once
+
+
+DOWNLOADBYID, DOWNLOADUPDATE = 0x2D008992, 0x2FDD0CCD
+
+
+def _list(api):
+    api.f("ovr_AssetFile_GetList", C.c_uint64)()
+    m = api.pop()
+    arr = api.f("ovr_Message_GetAssetDetailsArray", VOIDP, VOIDP)(m)
+    get = api.f("ovr_AssetDetailsArray_GetElement", VOIDP, VOIDP, C.c_size_t)
+    items = []
+    for i in range(api.f("ovr_AssetDetailsArray_GetSize", C.c_size_t, VOIDP)(arr)):
+        d = get(arr, i)
+        items.append({**api.details(d), "iap": api.f("ovr_AssetDetails_GetIapStatus", C.c_char_p, VOIDP)(d)})
+    api.free(m)
+    return items
+
+
+def test_content_files_are_listed_only_when_switched_on(api, packs, monkeypatch):
+    (packs / "Season1Taco-Android_ASTC.pak").write_bytes(b"x" * 10)
+    monkeypatch.delenv("FRAMEPORT_ASSET_FILES", raising=False)
+    assert not [i for i in _list(api) if i["type"] == b"default"]  # language-pack builds don't change
+    monkeypatch.setenv("FRAMEPORT_ASSET_FILES", "1")
+    content = [i for i in _list(api) if i["type"] == b"default"]
+    assert content == [{"id": content[0]["id"], "type": b"default", "status": b"installed", "iap": b"free",
+                        "path": str(packs / "Season1Taco-Android_ASTC.pak").encode()}]
+    assert content[0]["id"] >> 48 == 0x4650 and "tag" not in content[0]
+    m = api.ask("ovr_LanguagePack_GetCurrent")  # content files are never a language pack
+    assert api.is_error(m)
+    api.free(m)
+
+
+def test_download_of_a_content_file_completes_at_once(api, packs, monkeypatch):
+    (packs / "WwiseBanksCoreTaco-Android_ASTC.pak").write_bytes(b"y" * 12)
+    monkeypatch.setenv("FRAMEPORT_ASSET_FILES", "1")
+    asset = next(i["id"] for i in _list(api) if i["type"] == b"default")
+    req = api.f("ovr_AssetFile_DownloadById", C.c_uint64, C.c_uint64)(asset)
+    update = api.pop()  # Star Wars Tales waits for the update's "completed", then for the result
+    assert api.msg_type(update) == DOWNLOADUPDATE and api.req_id(update) == 0
+    u = api.f("ovr_Message_GetAssetFileDownloadUpdate", VOIDP, VOIDP)(update)
+    assert api.f("ovr_AssetFileDownloadUpdate_GetAssetFileId", C.c_uint64, VOIDP)(u) == asset
+    assert api.f("ovr_AssetFileDownloadUpdate_GetBytesTotal", C.c_uint64, VOIDP)(u) == 12
+    assert api.f("ovr_AssetFileDownloadUpdate_GetBytesTransferred", C.c_longlong, VOIDP)(u) == 12
+    assert api.f("ovr_AssetFileDownloadUpdate_GetCompleted", C.c_bool, VOIDP)(u)
+    api.free(update)
+    m = api.pop()
+    assert api.msg_type(m) == DOWNLOADBYID and api.req_id(m) == req and not api.is_error(m)
+    res = api.f("ovr_Message_GetAssetFileDownloadResult", VOIDP, VOIDP)(m)
+    assert api.f("ovr_AssetFileDownloadResult_GetFilepath", C.c_char_p, VOIDP)(res) == \
+        str(packs / "WwiseBanksCoreTaco-Android_ASTC.pak").encode()
+    api.free(m)
+    m = api.ask("ovr_AssetFile_DownloadById", asset + 1)  # ours by prefix, but unknown
+    assert api.is_error(m)
+    api.free(m)
+
+
+def test_asset_files_patch_switches_the_library_on(built, tmp_path):
+    lib = built["lib"].read_bytes()
+    on = patch_mod.with_assets(lib)
+    assert len(on) == len(lib) and patch_mod.ASSETS_MARK + b"1" in on and patch_mod.with_assets(on) == on
+    data = tmp_path / "obb"
+    data.mkdir()
+    (data / "main.1.com.x.obb").write_bytes(b"o")
+    (data / "Season1Taco-Android_ASTC.pak").write_bytes(b"p")
+    assert langpacks.find_content_files(data) == ["Season1Taco-Android_ASTC.pak"]
+    p = base.get("frame.asset_files")
+    a = _analysis(libs=["libovrplatformloader.so", "libUE4.so"],
+                  extra={"size": 1, "asset_files": ["Season1Taco-Android_ASTC.pak"], "asset_file_api": True})
+    assert p.applies(a) and p.detect(a)
+    assert not p.detect(_analysis(libs=["libovrplatformloader.so"], extra={"size": 1, "asset_files": ["a.pak"]}))
