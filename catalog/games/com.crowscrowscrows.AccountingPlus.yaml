@@ -1,17 +1,18 @@
 package: com.crowscrowscrows.AccountingPlus
 title: Accounting+
-status: issues
-notes: Starts in VR, but doesn't get past its "press any button" screen.
+status: works
+notes: Plays normally, including the "press any button" screen after choosing to sit or stand.
 details: Unity 2017.4 built-in Oculus support. frame.unity_oculus_check gets VR started (Meta's system-app check and
-  the frame wait its legacy loop never makes, libfp_ovrp.so), ~72 fps. Controller input reaches the game's OVRInput
-  cleanly (both Touch controllers connected, individual button bits, input focus 1 while focused) but the screen
-  doesn't continue; Cpp2IL can't read this Unity version to see what it waits for.
+  the frame wait its legacy loop never makes, libfp_ovrp.so), ~72 fps. The motion warning after the stance selection
+  waits for a mouse click (Input.GetMouseButtonDown), which a Quest delivers for the controller press and Lepton never
+  does; the same library now counts a newly pressed trigger or A/B/X/Y as that click.
 tested_version: 1.24.35
 engine: Unity
 xr: VrApi
 frame:
 - frame.unity_oculus_check
 verified:
-  date: '2026-10-04'
-updated: '2026-10-04'
+  date: '2026-10-06'
+updated: '2026-10-06'
+min_app: 0.10.1
 source_hint: Accounting+
