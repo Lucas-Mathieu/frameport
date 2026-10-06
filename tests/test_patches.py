@@ -216,6 +216,29 @@ def test_swapchain_limit_raises_overport_guard():
     assert raise_swapchain_limit(_fixture("libfakeengine_arm64.so")) == (None, 0)  # no xrCreateSwapchain
 
 
+def test_ovr_microphone_guards_unopened_stream():
+    from frameport.analysis import elf
+    from frameport.patches.frame.ovr_microphone import guard_microphone
+
+    lib = _fixture("libfakemicrophone_arm64.so")
+    out = guard_microphone(lib)
+    assert out is not None and len(out) == len(lib)
+    ins = [(m, o) for a, m, o in elf.text_instructions(out)]
+    start = ins.index(("ldr", "x0, [x0, #0x18]"))
+    assert [m for m, _ in ins[start:start + 7]] == ["ldr", "cbz", "stp", "bl", "ldp", "sxtw", "ret"]
+    calls = lambda data: [o for _, m, o in elf.text_instructions(data) if m == "bl"]  # noqa: E731
+    assert calls(out) == calls(lib)  # still calls AAudioStream_getFramesPerBurst
+    assert guard_microphone(out) is None  # idempotent
+    assert guard_microphone(_fixture("libfakeoverport_arm64.so")) is None  # no such function
+
+
+def test_ovr_microphone_suggested_only_for_microphone_games():
+    p = base.get("frame.ovr_microphone")
+    assert p.detect(_analysis(engine="Unreal", libs=["libUE4.so"], extra={"ovr_microphone": True})).recommended
+    assert p.detect(_analysis(engine="Unreal", libs=["libUE4.so"])) is None
+    assert not p.default_on
+
+
 def test_swapchain_limit_suggested_for_video_players():
     p = base.get("frame.swapchain_limit")
     assert p.detect(_analysis(engine="Other", libs=["libavcodec4x.so", "libvr4p-oculus.so"])).recommended

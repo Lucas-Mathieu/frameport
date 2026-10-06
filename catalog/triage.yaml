@@ -173,6 +173,14 @@ signatures:
     diagnosis: overport's OpenXR dispatcher aborted on a swapchain larger than 4096 px (video players, big textures).
     suggest: [frame.swapchain_limit]
     supersedes: [native-crash]
+  - id: ovr-microphone-crash
+    pattern: 'ovr_Microphone_GetOutputBufferMaxSize\+'
+    severity: fatal
+    diagnosis: The game asked OVRPort's Meta platform library for the microphone buffer size before starting the
+      microphone, and the library read the not-yet-opened audio stream (SIGSEGV in libaaudio.so, e.g. Unreal's Oculus
+      voice chat a few seconds after the logo).
+    suggest: [frame.ovr_microphone]
+    supersedes: [native-crash]
   - id: native-crash
     pattern: 'Fatal signal (\d+) \(SIG[A-Z]+\)'
     severity: fatal
