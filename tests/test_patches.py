@@ -617,3 +617,37 @@ def test_bridge_exports_what_blazerush_imports():
     have = elf.dyn_symbols(artifact("arm64-v8a", "libvrapi.so"), True)
     assert {"vrapi_PollEvent", "vrapi_GetSystemPropertyFloatArray", "vrapi_RecenterPose",
             "vrapi_SetDisplayRefreshRate"} <= have
+
+
+def test_tbxr_vendor_adds_the_valve_loader(tmp_path, quest_manifest):
+    from frameport.analysis import elf
+
+    apk = _apk(tmp_path, quest_manifest)
+    patch = base.get("frame.tbxr_vendor")
+    a = _analysis(libs=["libxash.so", "libopenxr_loader_meta.so"], extra={"size": 1, "tbxr_libs": ["libxash.so"]})
+    assert patch.applies(a) and patch.detect(a) and not patch.applies(_analysis())
+    with ApkWorkspace(apk) as ws:
+        assert patch.apply(base.ApkContext(ws, a, {}, Reporter(), {patch.id: {}}))  # (libxash.so absent here)
+        loader = ws.read_lib("libopenxr_loader_valve.so")
+        assert elf.soname(loader) == "libopenxr_loader_valve.so"  # loadLibrary("openxr_loader_valve") finds it
+        assert not patch.apply(base.ApkContext(ws, a, {}, Reporter(), {patch.id: {}}))
+
+
+def test_tbxr_vendor_on_lambda1vr():
+    """With the real APK (FRAMEPORT_GAMES): the six "meta" checks of libxash.so now match "valve"."""
+    import os
+    from pathlib import Path
+
+    import pytest
+
+    from frameport.analysis import elf
+
+    root = os.environ.get("FRAMEPORT_GAMES")
+    apks = list(Path(root).glob("Half Life 1 VR*/com.drbeef.lambda1vr.apk")) if root else []
+    if not apks:
+        pytest.skip("Lambda1VR not in FRAMEPORT_GAMES")
+    with zipfile.ZipFile(apks[0]) as z:
+        xash = z.read("lib/arm64-v8a/libxash.so")
+    assert b"\0OPENXR_HMD\0" in xash and b"\0meta\0" in xash
+    fixed, count = elf.replace_rodata_string(xash, "meta", "alve")
+    assert count == 1 and b"\0alve\0" in fixed and len(fixed) == len(xash)

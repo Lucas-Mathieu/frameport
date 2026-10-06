@@ -64,6 +64,7 @@ SUMMARIES = {
     "frame.swapchain_limit": "Allows very large pictures (8K video, theatres) instead of quitting.",
     "frame.vrapi_stub": "Stops Meta's leftover VrApi library from closing the game at start (e.g. Jurassic World "
                         "Aftermath).",
+    "frame.tbxr_vendor": "Lets Team Beef ports (e.g. Lambda1VR) start on the Frame and use their Meta Quest setup.",
     "frame.vrapi_bridge": "Translator for games built on Meta's oldest VR interface.",
     "frame.gl_shim": "Fixes graphics code that the Frame's drivers reject (black screen with sound).",
     "frame.metaxr_telemetry": "Skips a Quest-only reporting step in Meta's audio library that crashes some games.",
