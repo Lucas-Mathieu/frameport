@@ -589,6 +589,21 @@ the second Lepton stop the first one's container ("Waiting for steamlaunch-<appi
 `9>&-`); a second launch exits 0 and logs to `<base>/launch-dup.log`. `upgrade_launchers` adds it to existing
 launchers. Verified on the device (second launch during boot: ignored, the first kept running). Vader on its loading
 card ignores input too (owner pressed/held every button: presses reach the runtime, the card never changes).
+**Issue triage round (2026-10-06, owner's headset):** vibration in OVRPlugin games = 2 s vibrations updated per frame and
+stopped with amplitude 0; FrameBridge turns amplitude 0 into xrStopHapticFeedback (else each buzz ran 2 s), haptic_fix
+uses the envelope RMS (was its peak), per-game `haptic_scale` → Creed/The Boys/Jurassic World fine. Lambda1VR (TBXR):
+loader named by Build.MANUFACTURER (`frame.tbxr_vendor`), no graphics extension enabled (FrameBridge adds
+XR_KHR_opengl_es_enable + asks for the requirements on -50), always multisampled render-to-texture (GL shim gives
+single-sampled stand-ins when GL_EXT_multisampled_render_to_texture is hidden) + its xash/ data → works. Jurassic World:
+`frame.vrapi_stub`. Metro Awakening: contributor's vkshim fixes + hide_space_warp + no VALVE_rpo (jumping polygons like
+ITR2). Pinball FX VR: hide_space_warp (stutters). Eleven: a Meta online request fails after platform init → needs Meta
+services. Star Wars Tales: top half black + freeze after loading; ruled out: asset-file paks (never requested), Valve
+foveation (off: no change), GL errors (MESA_DEBUG=1: none), EGL_BAD_ACCESS once in OVRPlugin init (harmless); the game's
+eye image reads back black. BlazeRush: VrApi bridge exports + ovr*_ToString stubs + avatar stub get it to the menu room
+at 72 fps, full input reaches it (diagnostics `input 5s`: Touch type only, sticks 1.0, buttons, poses 0x8f), but the room
+draws no controllers and ignores input; avatar loader forced to its "Failed" path (no logged-in user) changed nothing.
+`frame.ovr_trace` can't trace Unity games (P/Invoke dlsym; nothing imports ovr_*). Headless: the VrApi bridge's 30 s
+head-pose deadline ends VR mode without a worn headset (not a game bug).
 **Lepton storage (2026-09-30):** each app's /sdcard (= /storage/emulated/0 → `<base>/lepton-data/external`) has `Movies`/`Download`/`Documents` symlinked to the Frame's `~/Videos`/`~/Downloads`/`~/Documents` (liblepton/mounting.sh, only if they exist at start); agent v24 `storage_targets` reads that mapping. Android's MediaProvider canonicalises paths to /home/steamos/... and rejects every file ("doesn't appear under [/system/media...]"), `sm list-volumes` is empty: the media index never works, apps must browse folders. Lepton installs with `adb install -g` (runtime permissions granted, MANAGE_EXTERNAL_STORAGE too). Files: `install/files.py`, `frameport frame send|storage`, GUI Files tab (formerly Frame → Send files).
 **SteamVR per-app settings (2026-09-30):** editing steamvr.vrsettings while SteamVR runs is lost; the web API (127.0.0.1:27062 /app/setsettings) needs `x-steamvr-secret`. `native/vrsettings` = `fp_vrsettings.exe` (freestanding, OpenVR `FnTable:IVRSettings_003` as a Utility app, loads SteamVR's bin/win64/openvr_api.dll) sets them live and SteamVR persists them: section `steam.app.<shortcut appid>`, keys `preferredRefreshRate` (float) and `motionSmoothingOverride` (0 global, 1 on, 2 off, 3 always). Steam Link (vrlink) lists the Frame's rates 72/80/90/96/108/120/144 in vrserver.txt and follows the per-app preference ("host preferred N Hz"; whether the key is honoured is unverified in-headset yet). Judder metric: vrcompositor.txt session summary dropped + "Timed out. N total" (Stormland: 0 dropped but 313 timeouts in 2 min); fpsVR (`%LOCALAPPDATA%\fpsVR\*.json`, 0.1 ms histograms) gives p99 CPU/GPU ms. `pcvr.steamvr_tuning` (default on, PC only) applies on Play: highest rate whose budget ≥ p99×1.05, at least one step down, smoothing on.
 
