@@ -1,0 +1,21 @@
+package: com.beatgames.beatsaber.lj369vr
+title: Beat Saber
+status: works
+tested_version: 1.40.8_7379
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.unity_gl_shim
+device:
+- device.text_input_window
+verified:
+  date: '2026-10-06'
+  known_good_sha256: 6366a5411328b21de9e2da034af78290882b3c27b7a8f0c61688196e91320055
+  app: 0.11.0
+  overport_cli: 1.2.5
+  frame_build: '20261005.6135832'
+  agent: 56
+  issue: 68
+source_hint: Beat Saber

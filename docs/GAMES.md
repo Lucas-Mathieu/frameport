@@ -16,6 +16,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | BattleGlide | Quest | ✅ Works |  |
 | BattleSisters | Quest | ✅ Works |  |
 | Beat Saber | Quest | ✅ Works |  |
+| Beat Saber | Quest | ✅ Works |  |
 | Beat Saber (co-existence build) | Quest | ✅ Works |  |
 | Blade & Sorcery: Nomad | Quest | ✅ Works |  |
 | BodyCombat | Quest | ✅ Works |  |
