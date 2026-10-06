@@ -1186,8 +1186,8 @@ def test_dashboard_worker_hides_dashboard_after_first_frames(monkeypatch, tmp_pa
     clock = iter(range(0, 10000))
     monkeypatch.setattr(a.time, "time", lambda: next(clock))
     log.write_text("Lepton starting\nI FrameBridge: pacing: 72.0 fps\n")
-    a.dashboard_worker(str(log), os.getpid(), wait_start=10, window=8)
-    assert calls.count("SteamClient.OpenVR.VROverlay.HideDashboard()") == 3  # at most three times
+    a.dashboard_worker(str(log), os.getpid(), wait_start=10, window=8, max_hides=3)
+    assert calls.count("SteamClient.OpenVR.VROverlay.HideDashboard()") == 3  # at most max_hides times
 
 
 def test_dashboard_worker_starts_at_the_first_submitted_frame(monkeypatch, tmp_path):
@@ -1450,3 +1450,12 @@ def test_upgrade_launchers_adds_the_single_launch_lock(monkeypatch, tmp_path):
     assert text.count(".launch.lock") == 1
     a.upgrade_launchers()
     assert (anchor / "launch.sh").read_text().count(".launch.lock") == 1
+
+
+def test_dashboard_worker_keeps_watching_for_two_minutes(monkeypatch, tmp_path):
+    """Agent 59: Steam's menu came back after the first 30 s in headset sessions (The Boys, BONELAB)."""
+    a = load_agent(monkeypatch, tmp_path)
+    import inspect
+
+    sig = inspect.signature(a.dashboard_worker)
+    assert sig.parameters["window"].default == 120 and sig.parameters["max_hides"].default == 10

@@ -36,7 +36,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 58
+AGENT_VERSION = 59
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -3718,10 +3718,11 @@ def user_opened_dashboard(log, pos):
         return False, pos
 
 
-def dashboard_worker(log, parent, wait_start=240, window=30, poll=0.5, ui_log=None):
+def dashboard_worker(log, parent, wait_start=240, window=120, poll=0.5, ui_log=None, max_hides=10):
     """Close SteamVR's dashboard (Steam's "Resume game" frame menu) that opens when the game submits its first VR
     frame: watch from FrameBridge's first "new layer:" line (the first submitted frame; Steam showed the menu ~0.3 s
-    later with ITR2), checking every `poll` s for `window` s after it (at most 3 hides). Waiting for the first
+    later with ITR2), checking every `poll` s for `window` s after it (at most `max_hides`; agent 59: 120 s / 10, the
+    menu came back after the first 30 s in the owner's sessions). Waiting for the first
     "pacing:" summary (agent 44-51) was ~8 s too late: the owner had pressed Resume by then. Stops for good once the
     player opens the dashboard with the controller (agent 52 closed it 60 ms after each press: the game had paused
     for it and stayed paused). Ends with the launcher."""
@@ -3753,7 +3754,7 @@ def dashboard_worker(log, parent, wait_start=240, window=30, poll=0.5, ui_log=No
         return
     print(f"{time.strftime('%H:%M:%S')} first VR frame")
     hidden, end = 0, time.time() + window
-    while time.time() < end and hidden < 3 and alive():
+    while time.time() < end and hidden < max_hides and alive():
         user, ui_pos = user_opened_dashboard(ui_log, ui_pos)
         if user:  # the player wants the dashboard (or the game's menu button opened it): never close it on them
             print(f"{time.strftime('%H:%M:%S')} dashboard opened with the controller: leaving it to the player")
