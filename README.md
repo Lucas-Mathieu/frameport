@@ -32,6 +32,7 @@ Install games that target the Meta Quest, Android, or general PCVR onto your **V
   shortcut; they run natively on SteamOS.
 - **Screenshots tab:** the screenshots you took in the headset, sorted by game (matched by play time) and day;
   view them and download them to your computer.
+- **Live view tab:** watch what the headset shows, with sound, in a browser window on your computer.
 - **Self-updating** releases, redacted diagnostics, one-click problem reports and working-config sharing.
 
 ## Quick start
@@ -77,6 +78,14 @@ your computer.
 ![Screenshots](docs/images/screenshots.png)
 
 ![Screenshot viewer](docs/images/screenshot-viewer.png)
+
+## Live view
+
+The **Live view** tab streams what the headset shows, with its sound, to your computer: click **Start live view** and
+it opens in your default web browser (full screen with a double-click; click **Sound on** to hear it, as browsers start
+videos muted). Pick 360p to 1080p, or the headset view's full size. The picture comes from SteamVR's built-in headset
+view on the Frame and is encoded there while you watch (about one CPU core), so stop it when you're done. It's black
+while the headset sleeps.
 
 ## Compatibility
 
