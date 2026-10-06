@@ -1,7 +1,8 @@
 package: com.StressLevelZero.BONELAB
 title: BONELAB
-status: works
-notes: Head tracking and controls work with frame.unity_user_presence (tested with 1.2068.34555).
+status: issues
+notes: Build 1.2068 plays (head tracking and controls work with frame.unity_user_presence); the newer build
+  1.2974 crashes at start (Vulkan), no fix yet.
 details: The game runs (72 fps), but its player body stayed frozen - no head tracking, the controllers stuck to the
   model, no buttons - although OpenXR input and OVRPlugin's poses were fine. A few seconds after start (when Unity
   switches XR loaders) OVRPlugin reports the worn headset as not worn (ovrp_GetUserPresent2 -> 0), and BONELAB's
