@@ -22,15 +22,38 @@ def _path() -> Path:
     return user_data_dir() / "library.json"
 
 
+_updating = threading.local()  # set while load() runs the migrations/catalog step (see load)
+
+
 def load() -> dict:
     with _lock:
         try:
             data = json.loads(_path().read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {"games": {}, "settings": {}}
-        if _migrate(data) | _follow_catalog(data):
+        # The catalog step loads the catalog, whose first load reads a setting: that nested load() must not run the
+        # step again (GitHub #58: ~140 nested loads and a 30 s blank window, or a crash at start-up)
+        if getattr(_updating, "active", False):
+            return data
+        _updating.active = True
+        try:
+            changed = _migrate(data) | _follow_catalog(data)
+        finally:
+            _updating.active = False
+        if changed:
             save(data)
         return data
+
+
+def peek_setting(key: str, default=None):
+    """A setting as stored, without migrations or the catalog step (for code that load() itself runs)."""
+    with _lock:
+        try:
+            data = json.loads(_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return default
+    settings = data.get("settings") if isinstance(data, dict) else None
+    return settings.get(key, default) if isinstance(settings, dict) else default
 
 
 @contextmanager

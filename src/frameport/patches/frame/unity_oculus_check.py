@@ -16,6 +16,8 @@ ALWAYS_THERE = "android"
 # Unity's legacy frame loop never calls ovrp_WaitToBeginFrame: its ovrp_Update2 lookup goes to native/ovrpshim
 SHIM = "libfp_ovrp.so"
 UPDATE, SHIM_UPDATE = "ovrp_Update2", "fpov_Update2"
+# Unity creates its XR controller devices for the hand nodes OVRPlugin reports present (logged/fixed by the shim)
+NODE, SHIM_NODE = "ovrp_GetNodePresent", "fpov_GetNodePresent"
 # input diagnostics (off): the C# P/Invoke names in libil2cpp.so pointed at the shim's wrappers, which log what they
 # return, report input focus as true and release buttons held > 2 s. Accounting+ still didn't pass "press any button"
 # with them (input reached the game cleanly), so they stay off; switch on to investigate another game.
@@ -74,6 +76,10 @@ class UnityOculusCheck(Patch):
             return False
         data, loops = elf.replace_rodata_string(data, UPDATE, SHIM_UPDATE) if self.legacy_loop(ctx.analysis) \
             else (data, 0)
+        if loops:
+            data, nodes = elf.replace_rodata_string(data, NODE, SHIM_NODE)
+            if nodes:
+                ctx.notes.append(f"libunity.so: {NODE} -> {SHIM_NODE}")
         plugin = ws.lib("libOVRPlugin.so")
         if loops and ws.abi == "arm64-v8a" and ws.has(plugin):
             ovrp = ws.read(plugin)

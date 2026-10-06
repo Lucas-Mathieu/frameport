@@ -71,3 +71,26 @@ def test_turned_off(github, monkeypatch):
     assert catalog.refresh_remote(force=True) == 0
     assert "com.x.good" not in catalog.load(refresh=True)
     assert json.dumps(catalog.remote_status())  # still reports (never checked)
+
+
+def test_library_load_with_a_cold_catalog_does_not_recurse(monkeypatch):
+    """GitHub #58: library.load() refreshes recipes from the catalog; the catalog's first load read a setting through
+    library.load(), which refreshed recipes again before the catalog was cached (~140 nested loads, blank window or a
+    crash at start-up)."""
+    from frameport.core import library
+
+    monkeypatch.delenv("FRAMEPORT_NO_CATALOG_UPDATE", raising=False)  # remote_enabled() must read the setting
+    monkeypatch.setattr(library, "REFRESH_ON_UPDATE", True)
+    library.save({"games": {"com.x.mine": {"recipe": {"source": "user", "patches": {}}, "analysis": {"package": "x"}}},
+                  "settings": {"catalog.auto_update": False}})
+    catalog._cache = None
+    loads = []
+    real = library.load
+
+    def counting():
+        loads.append(1)
+        assert len(loads) < 10, "library.load() recursed"
+        return real()
+    monkeypatch.setattr(library, "load", counting)
+    library.load()
+    assert catalog.remote_enabled() is False and len(loads) <= 2

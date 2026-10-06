@@ -119,7 +119,8 @@ def remote_enabled() -> bool:
     if os.environ.get("FRAMEPORT_NO_CATALOG_UPDATE"):
         return False
     try:
-        return bool(library.setting("catalog.auto_update", True))
+        # never library.setting(): load() refreshes recipes from the catalog, which would load the catalog again
+        return bool(library.peek_setting("catalog.auto_update", True))
     except Exception:  # noqa: BLE001 - no library yet
         return True
 
