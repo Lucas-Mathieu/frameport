@@ -273,3 +273,21 @@ def test_user_recipes_get_a_catalog_update_offer(tmp_path, monkeypatch):
     assert "catalog_update" not in g and g["recipe"]["patches"]["adapter.scale"] == {"value": 0.9}
     assert g["recipe"].get("source") != "user" and "adapter.vk_shader_fix" in g["recipe"]["patches"]
 
+
+
+def test_oculus_model_checks_accept_any_device_but_the_go():
+    import struct
+
+    from frameport.patches.frame import unity_oculus_check as C
+
+    # .text: adrp x1, page(0x1000); add x1, x1, #0x10; orr w2, wzr, #6; bl ...  -> strncmp(model, "Oculus", 6)
+    code = struct.pack("<4I", 0xB0000001, 0x91004021, C.ORR_W2_6, 0x94000000)
+    other = struct.pack("<4I", 0xB0000001, 0x91008021, C.ORR_W2_6, 0x94000000)  # a different string: untouched
+    data = bytearray(0x2000)
+    data[0:16], data[16:32] = code, other
+    data[0x100F:0x1017] = b"\0Oculus\0"  # the literal at 0x1010
+    data[0x1020:0x1028] = b"OculusX\0"
+    out, n = C.oculus_model_checks(bytes(data))
+    assert n == 1
+    assert struct.unpack_from("<I", out, 8)[0] == C.MOV_W2_0 and struct.unpack_from("<I", out, 24)[0] == C.ORR_W2_6
+    assert out[0x1010:0x1016] == b"Oculus"  # the string itself stays (Unity's VR device name)

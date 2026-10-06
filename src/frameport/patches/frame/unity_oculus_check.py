@@ -27,6 +27,46 @@ INPUT_CALLS = ("ovrp_GetConnectedControllers", "ovrp_GetControllerState4", "ovrp
 UNITY_INPUT_CALLS = ("ovrp_GetControllerState", "ovrp_GetControllerState2")
 
 
+ORR_W2_6 = 0x321F07E2  # orr w2, wzr, #6   (strncmp length 6)
+MOV_W2_0 = 0x52800002  # mov w2, #0        (strncmp length 0: always equal)
+
+
+def oculus_model_checks(data: bytes) -> tuple[bytes, int]:
+    """Unity's built-in Oculus input only reports controllers on a device whose model starts with "Oculus"
+    (strncmp(SystemInfo.deviceModel, "Oculus", 6), next to its Oculus Go check "Oculus Pacific"). Lepton's Android is
+    "Valve Lepton", so BattleSisters got no controller buttons. Every such compare (the literal loaded with adrp/add
+    right before `orr w2, wzr, #6`) gets length 0, so any device but the Go counts as an Oculus one. The "Oculus"
+    string itself stays: Unity also uses it as its VR device name."""
+    import struct
+
+    literal = data.find(b"\0Oculus\0") + 1
+    if literal <= 0:
+        return data, 0
+    buf, count = bytearray(data), 0
+    end = len(data) - len(data) % 4
+    for at in range(0, end, 4):
+        if struct.unpack_from("<I", data, at)[0] != ORR_W2_6:
+            continue
+        # look back for `adrp xA, page` + `add x1, xA, #off` that computes the literal's address
+        for back in range(4, 16, 4):
+            add = struct.unpack_from("<I", data, at - back)[0] if at >= back else 0
+            if add & 0xFFC00000 != 0x91000000 or add & 0x1F != 1:  # add x1, xN, #imm (no shift)
+                continue
+            rn, imm12 = (add >> 5) & 0x1F, (add >> 10) & 0xFFF
+            adrp_at = at - back - 4
+            adrp = struct.unpack_from("<I", data, adrp_at)[0] if adrp_at >= 0 else 0
+            if adrp & 0x9F000000 != 0x90000000 or adrp & 0x1F != rn:
+                continue
+            imm = ((adrp >> 5) & 0x7FFFF) << 2 | (adrp >> 29) & 3
+            if imm & (1 << 20):
+                imm -= 1 << 21
+            if (adrp_at & ~0xFFF) + (imm << 12) + imm12 == literal:
+                struct.pack_into("<I", buf, at, MOV_W2_0)
+                count += 1
+            break
+    return bytes(buf), count
+
+
 class UnityOculusCheck(Patch):
     id = "frame.unity_oculus_check"
     title = "Unity: start VR without Meta's system apps"
@@ -40,8 +80,9 @@ class UnityOculusCheck(Patch):
                    "mouse click (Input.GetMouseButtonDown), which Go-era screens wait for (e.g. Accounting+'s motion "
                    "warning) and which Lepton never delivers.")
     order = 45
-    # 2: frame wait also for Unity 2019 without the Oculus XR Plugin; 3: controller presses as mouse clicks (ovrpshim)
-    revision = 3
+    # 2: frame wait also for Unity 2019 without the Oculus XR Plugin; 3: controller presses as mouse clicks
+    # (ovrpshim); 4: Unity 2019's Oculus device-model checks (Touch controllers on Lepton)
+    revision = 4
 
     @staticmethod
     def _major(a) -> int:
@@ -76,7 +117,10 @@ class UnityOculusCheck(Patch):
             return False
         data, loops = elf.replace_rodata_string(data, UPDATE, SHIM_UPDATE) if self.legacy_loop(ctx.analysis) \
             else (data, 0)
-        if loops:
+        if loops and self._major(ctx.analysis) >= 2019:  # Accounting+ (2017) reads OVRInput: works without
+            data, models = oculus_model_checks(data)
+            if models:
+                ctx.notes.append(f"libunity.so: {models} Oculus device-model checks accept Lepton's model")
             data, nodes = elf.replace_rodata_string(data, NODE, SHIM_NODE)
             if nodes:
                 ctx.notes.append(f"libunity.so: {NODE} -> {SHIM_NODE}")

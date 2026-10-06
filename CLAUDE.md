@@ -554,11 +554,15 @@ passes stance selection (NewtonVR grip/trigger) but its motion warning waits for
 which Lepton never delivers (no focused Android window) → ovrpshim registers its own
 `UnityEngine.Input::GetMouseButtonDown(System.Int32)` icall (il2cpp_add_internal_call, after Unity's: resolve first)
 that adds a click in the frame a Touch trigger or A/B/X/Y is newly pressed (`unity_oculus_check` revision 3).
-BattleSisters (Unity 2019 InputSystem/XR InputDevices; libunity polls only Go masks 0x8000000/0x1000000/0x2000000;
-device model "Oculus Quest" vs Lepton's "Valve Lepton", ovrp_GetSystemProductName (already "Oculus Quest"),
-ovrp_GetNodePresent (hands present after ~2 s, logged by the shim) and missing ovrp_GetControllerState exports were
-all ruled out in the headset): buttons still dead; next = find what makes libunity's Oculus input poll only Go
-controllers. Accounting+ works (owner, 2026-10-06).
+BattleSisters (Unity 2019 InputSystem/XR InputDevices via `VrHandInput`): libunity's Oculus module (OVRPlugin
+function table: a global pointer at 0x16b57c0 in this build, slots filled by name, e.g. +0x160 GetControllerState,
++0x168 State2, +0xe8 GetNodePresent) only reports controllers when `strncmp(deviceModel, "Oculus", 6) == 0` (next to
+the Go check `deviceModel == "Oculus Pacific"`); Lepton's model is "Valve Lepton" → Go/unknown → only Go masks polled,
+buttons dead. `unity_oculus_check` revision 4 (`oculus_model_checks`, Unity 2019 only) turns the 17 compares' length
+into 0 (`orr w2, wzr, #6` → `mov w2, #0` after the adrp/add of the "Oculus" literal; the string stays: it is also
+Unity's VR device name). Device result: libunity now polls `ovrp_GetControllerState(0x3)` (Touch); buttons in the
+headset not yet confirmed. Ruled out before: ProductName, GetNodePresent, the device-model string itself, exports.
+Accounting+ works (owner, 2026-10-06).
 **Vader Immortal (UE4, GitHub #49, 2026-10-06, headless):** stuck after the intro on an in-game image (the splash
 quad ends ~6 s in; then the game's own projection frames, 72 fps, balanced xrBeginFrame/xrEndFrame). Not the Platform
 SDK (`frame.ovr_trace`: only user + entitlement, both answered) and not the repack's Frida gadget (OVRPort's
