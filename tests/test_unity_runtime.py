@@ -151,8 +151,13 @@ def test_unity_oculus_check_for_unity_with_the_check():
     assert p.applies(old) and p.detect(old).recommended
     new = _analysis(libs=["libunity.so", "libOVRPlugin.so"],
                     extra={"unity_version": "2019.4.35f1", "unity_oculus_check": True})
-    # 2019 too (BattleSisters, Unity 2019.4, stayed a 2D app without it); only the frame-wait shim is for < 2019
+    # 2019 too (BattleSisters, Unity 2019.4, stayed a 2D app without it)
     assert p.applies(new) and p.detect(new).recommended
+    # the frame-wait shim: Unity's built-in VR loop (2017-2018, 2019 without the Oculus XR Plugin), not XR Plugin games
+    assert p.legacy_loop(old) and p.legacy_loop(new)
+    assert not p.legacy_loop(_analysis(libs=["libunity.so", "libOVRPlugin.so", "libOculusXRPlugin.so"],
+                                       extra={"unity_version": "2019.4.35f1"}))
+    assert not p.legacy_loop(_analysis(libs=["libunity.so"], extra={"unity_version": "2022.3.19f1"}))
     none = _analysis(libs=["libunity.so", "libOVRPlugin.so"], extra={"unity_version": "2019.4.35f1"})
     assert not p.applies(none) and p.detect(none) is None  # no check in libunity.so: nothing to change
     log = "10-04 15:08:01.000  1213  1235 I Unity   : [NewtonVR] Critical Error: Oculus / SteamVR not setup properly"

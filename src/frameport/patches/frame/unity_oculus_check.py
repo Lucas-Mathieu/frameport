@@ -29,14 +29,24 @@ class UnityOculusCheck(Patch):
     description = ("Unity's built-in Oculus support (Unity 2017–2019) only starts VR when Android has Meta's "
                    "com.oculus.systemactivities package; without it the game runs as a 2D app (the Android home "
                    "screen or a black window, e.g. Accounting+, BattleSisters). Points that package name in "
-                   "libunity.so at \"android\", which always exists. Unity 2017–2018 also get the frame wait their "
-                   "legacy frame loop never makes (libfp_ovrp.so calls ovrp_WaitToBeginFrame before ovrp_Update2; "
-                   "without it no frame starts and the dashboard freezes).")
+                   "libunity.so at \"android\", which always exists. Games on Unity's built-in VR (2017–2018, and 2019 "
+                   "without the Oculus XR Plugin) also get the frame wait their legacy frame loop never makes "
+                   "(libfp_ovrp.so calls ovrp_WaitToBeginFrame before ovrp_Update2; without it no frame starts, the "
+                   "dashboard freezes or the GPU hangs).")
     order = 45
+    revision = 2  # 2: frame wait also for Unity 2019 without the Oculus XR Plugin
 
     @staticmethod
     def _major(a) -> int:
         return int(str((a.extra or {}).get("unity_version") or "0").split(".")[0] or 0)
+
+    @classmethod
+    def legacy_loop(cls, a) -> bool:
+        """Unity's built-in Oculus VR drives OVRPlugin without waiting for frames: Unity 2017-2018, and 2019 games
+        without the Oculus XR Plugin (BattleSisters flooded "outside of frame bounds" and hung the GPU). With
+        libOculusXRPlugin.so (XR Plugin Management, e.g. Lucky's Tale) the plugin waits itself."""
+        major = cls._major(a)
+        return 0 < major < 2019 or (major == 2019 and "libOculusXRPlugin.so" not in a.libs)
 
     def applies(self, a):
         # any Unity with built-in Oculus support whose libunity.so has the check (BattleSisters, Unity 2019.4, stayed
@@ -57,9 +67,8 @@ class UnityOculusCheck(Patch):
         data, count = elf.replace_rodata_string(ws.read(name), PACKAGE, ALWAYS_THERE)
         if not count:
             return False
-        # Unity 2019+ frame loops wait for frames themselves (BattleSisters, Lucky's Tale): no shim there
-        major = self._major(ctx.analysis)
-        data, loops = elf.replace_rodata_string(data, UPDATE, SHIM_UPDATE) if 0 < major < 2019 else (data, 0)
+        data, loops = elf.replace_rodata_string(data, UPDATE, SHIM_UPDATE) if self.legacy_loop(ctx.analysis) \
+            else (data, 0)
         plugin = ws.lib("libOVRPlugin.so")
         if loops and ws.abi == "arm64-v8a" and ws.has(plugin):
             ovrp = ws.read(plugin)

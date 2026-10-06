@@ -23,12 +23,14 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Espire 2 | Quest | ✅ Works |  |
 | Genotype | Quest | ✅ Works |  |
 | H.U.N.T | Quest | ✅ Works |  |
+| I Am Cat | Quest | ✅ Works |  |
 | I Am Monkey | Quest | ✅ Works |  |
 | In Death: Unchained | Quest | ✅ Works |  |
 | Into The Radius 2 | Quest | ✅ Works |  |
 | Job Simulator | Quest | ✅ Works |  |
 | Keep Talking and Nobody Explodes | Quest | ✅ Works |  |
 | LEGO® Bricktales | Quest | ✅ Works |  |
+| Lucky's Tale | Quest | ✅ Works |  |
 | Marvel's Deadpool VR | Quest | ✅ Works |  |
 | Marvel's Iron Man VR | Quest | ✅ Works |  |
 | Medieval Dynasty New Settlement | Quest | ✅ Works |  |
@@ -50,6 +52,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | SUPERHOT VR | Quest | ✅ Works |  |
 | TetrisEffect | Quest | ✅ Works |  |
 | The Climb 2 | Quest | ✅ Works |  |
+| The Room VR | Quest | ✅ Works |  |
 | Toy Master | Quest | ✅ Works |  |
 | Under Cover | Quest | ✅ Works |  |
 | VR4 | Quest | ✅ Works |  |
@@ -59,8 +62,6 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Accounting+ | Quest | ⚠️ Works with issues | Starts in VR, but doesn't get past its "press any button" screen. |
 | Arcsmith | Quest | ⚠️ Works with issues | Right eye distorts during movement (unresolved; swap, tracking, Valve layers, depth and pacing ruled out). |
 | Assassin's Creed Nexus | Quest | ⚠️ Works with issues | Some launch warning text is still upside down; the rest of the UI is fixed by flip emulation. |
-| I Am Cat | Quest | ⚠️ Works with issues | The view vibrates slightly, even when holding still. |
-| Lucky's Tale | Quest | ⚠️ Works with issues | Runs out of memory within a few minutes and freezes the Frame until the game is killed. |
 | Myst | Quest | ⚠️ Works with issues | Minor graphical glitches on some objects. |
 | Phantom: Covert Ops | Quest | ⚠️ Works with issues | DLC/store button crashes (no Meta store). |
 | Silhouette | Quest | ⚠️ Works with issues | Hand-tracking game; the Frame synthesizes hands from controllers, so it is janky. |

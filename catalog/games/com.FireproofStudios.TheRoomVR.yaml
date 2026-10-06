@@ -1,0 +1,25 @@
+package: com.FireproofStudios.TheRoomVR
+title: The Room VR
+status: works
+notes: Plays normally (it used to stay on a grey screen).
+details: Unity 2018.4 with built-in Oculus support. It started VR only with frame.unity_oculus_check, then Unity's
+  render thread crashed in the GL driver (Zink) when OVROverlay copied a 4x4 fade texture into its overlay layer;
+  frame.unity_no_overlay_copy skips that copy (the fade still works). frame.unity_runtime_msaa_off keeps the eye buffer
+  at one sample (also GitHub issue 38).
+tested_version: '1.02'
+engine: Unity
+xr: VrApi
+frame:
+- frame.unity_no_msaa
+- frame.unity_oculus_check
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.unity_no_overlay_copy
+device:
+- device.text_input_window
+verified:
+  date: '2026-10-05'
+  issue: 38
+updated: '2026-10-05'
+min_app: 0.10.1
+source_hint: The Room VR

@@ -52,6 +52,8 @@ SUMMARIES = {
     "frame.ovrstubs": "Provides stand-ins for Meta store functions the game expects, so it doesn't crash at start.",
     "frame.langpacks": "Lets the game find language files (like de.lang) that are already in its data, instead of "
                        "waiting for a download that never comes.",
+    "frame.ovr_trace": "For troubleshooting: records the game's requests to Meta's platform services and which ones "
+                       "never get an answer.",
     "frame.unity_no_msaa": "Turns off a smoothing setting that crashes some older Unity games on the Frame.",
     "frame.unity_runtime_msaa_off": "Keeps a smoothing setting off that the game turns on itself and that can freeze "
                                     "the Frame.",

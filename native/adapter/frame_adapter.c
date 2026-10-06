@@ -114,8 +114,8 @@ static int sync_guard;       // xrSyncActions one at a time with xrPollEvent, pa
 static int profile_remap = 1; // Meta's newer controller profiles (rejected by the Frame) -> oculus/touch_controller
 static int layer_debug;      // diagnostics: layers, swapchains, session states, spaces, aim/grip, refresh rates
 static int stable_local;     // keep every LOCAL space the app creates on the session-start origin
-static int focus_hold;       // hide brief focus dips once the session has been focused for a while
-static float focus_hold_ms = 1000;  // longest focus dip focus_hold hides
+static int focus_hold = 1;   // hide brief focus dips once the session has been focused for a while
+static float focus_hold_ms = 5000;  // longest focus dip focus_hold hides
 static float aim_pitch, aim_yaw, aim_forward;  // aim pose correction (degrees, degrees, metres)
 static float refresh_rate;   // requested display refresh rate (Hz), 0 = the app's choice
 static int equirect_emul;    // show 360 layers as cube faces (GLES)

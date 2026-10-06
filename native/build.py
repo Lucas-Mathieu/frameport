@@ -10,7 +10,7 @@ timefix OpenXR layer for Proton games (linux-arm64, glibc; the NDK's clang build
 OculusHMDConnected helper for Rift games under Proton (win-x64 PE; the NDK's clang + lld-link, no Windows SDK), and
 rewrites artifacts/SHA256SUMS. Run `frameport parity` afterwards to see which games change.
 
-    python native/build.py [--only adapter,bridge,compat,langpack,glshim,eglfmt,dex,xrlayer,oculushmd,xrshim,vkshim,ovrpshim,vrsettings] [--ndk PATH]
+    python native/build.py [--only adapter,bridge,compat,langpack,glshim,eglfmt,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,ovrpshim,vrsettings] [--ndk PATH]
 """
 from __future__ import annotations
 
@@ -249,6 +249,14 @@ def build_eglfmt(tc: Path):
          "-Wl,--no-as-needed", "-lEGL", "-Wl,--as-needed", "-ldl", "-llog", "-o", ART / "arm64-v8a/libfpg.so"], cwd=src)
 
 
+def build_ovrtrace(tc: Path):
+    """Meta Platform SDK tracer (see ovrtrace/ovrtrace.c): diagnostics, the game's engine library loads it first."""
+    src = HERE / "ovrtrace"
+    run([exe(tc, "aarch64-linux-android29-clang"), "-shared", "-fPIC", "-O2", "-Wall", "-Wextra", "-Werror",
+         "-Wl,-soname,libfp_ovrtrace.so", "-Wl,-z,max-page-size=16384", "ovrtrace.c", "-ldl", "-llog",
+         "-o", ART / "arm64-v8a/libfp_ovrtrace.so"], cwd=src)
+
+
 def build_xrshim(tc: Path):
     """FrameBridge extension shim (see xrshim/xrshim.c): DT_NEEDED-injected in front of overport's libopenxr_loader.so."""
     src = HERE / "xrshim"
@@ -318,7 +326,7 @@ def write_sums():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", default="adapter,bridge,compat,langpack,glshim,eglfmt,dex,xrlayer,oculushmd,xrshim,vkshim,ovrpshim,vrsettings")
+    ap.add_argument("--only", default="adapter,bridge,compat,langpack,glshim,eglfmt,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,ovrpshim,vrsettings")
     ap.add_argument("--ndk")
     args = ap.parse_args()
     parts = set(args.only.split(","))
@@ -327,11 +335,11 @@ def main():
     tc = clang_dir(ndk(args.ndk)) if parts - {"dex"} else None
     steps = {"adapter": lambda: build_adapter(tc), "bridge": lambda: build_bridge(tc), "compat": lambda: build_compat(tc),
              "langpack": lambda: build_langpack(tc),
-             "glshim": lambda: build_glshim(tc), "eglfmt": lambda: build_eglfmt(tc), "xrshim": lambda: build_xrshim(tc), "dex": build_dex, "xrlayer": lambda: build_xrlayer(tc),
+             "glshim": lambda: build_glshim(tc), "eglfmt": lambda: build_eglfmt(tc), "ovrtrace": lambda: build_ovrtrace(tc), "xrshim": lambda: build_xrshim(tc), "dex": build_dex, "xrlayer": lambda: build_xrlayer(tc),
              "oculushmd": lambda: build_oculushmd(tc), "vkshim": lambda: build_vkshim(tc),
              "ovrpshim": lambda: build_ovrpshim(tc),
              "vrsettings": lambda: build_vrsettings(tc)}
-    for name in ("adapter", "bridge", "compat", "langpack", "glshim", "eglfmt", "xrshim", "vkshim", "ovrpshim", "dex", "xrlayer", "oculushmd", "vrsettings"):
+    for name in ("adapter", "bridge", "compat", "langpack", "glshim", "eglfmt", "ovrtrace", "xrshim", "vkshim", "ovrpshim", "dex", "xrlayer", "oculushmd", "vrsettings"):
         if name in parts:
             log(f"build {name}")
             steps[name]()

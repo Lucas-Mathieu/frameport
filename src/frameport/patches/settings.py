@@ -61,10 +61,11 @@ SETTINGS = [
     ("stable_local", "int", 0, "Keep the play space still",
      "Every 'local' play space the game creates lines up with the one at the start. For games whose menus or screens "
      "jump to where you look on the Frame."),
-    ("focus_hold", "int", 0, "Ignore brief focus dips",
-     "Hides the Frame's brief focus dips (up to a second) once the game has been focused for a second. For "
-     "games that recentre or pause every time focus returns."),
-    ("focus_hold_ms", "float", 1000.0, "Longest focus dip to ignore (ms)",
+    ("focus_hold", "int", 1, "Ignore brief focus dips",
+     "Hides the Frame's brief focus dips (up to focus_hold_ms) once the game has been focused for a second. On by "
+     "default: the Frame's wear sensor flickers \"HMD off\" for 0.5-2 s while worn, and many games pause or recentre "
+     "every time (e.g. Blade & Sorcery, Lucky's Tale)."),
+    ("focus_hold_ms", "float", 5000.0, "Longest focus dip to ignore (ms)",
      "focus_hold hides focus dips up to this long (100-5000). Longer for a headset whose wear sensor flickers "
      "(\"HMD off\" for 0.5-2 s while worn, e.g. Blade & Sorcery pausing); taking the headset off or the system menu "
      "pauses the game only after this long."),

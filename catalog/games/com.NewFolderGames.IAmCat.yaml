@@ -1,13 +1,14 @@
 package: com.NewFolderGames.IAmCat
 title: I Am Cat
-status: issues
-notes: The view vibrates slightly, even when holding still.
+status: works
+notes: Steady view with pose_consistency (the judder is gone).
 details: Unity 2022.3 with the Oculus XR Plugin falls back to GLES (Zink) on the Frame, where its single-pass
   (multiview) rendering drew the right eye wrong (GitHub issue 8); frame.unity_multipass renders each eye in its own
   pass (OculusSettings.GetStereoRenderingMode + its inlined read in OculusLoader.Initialize). Poses and frame times
   are consistent, but every frame reaches the runtime one display period late (two passes on Zink) and the game
-  clamps its physics step to 10 ms, so the view judders; scale 0.8 didn't change it. Possible next steps are fixing the
-  multiview path instead or the game's fixed timestep.
+  clamps its physics step to 10 ms. The judder came from the game locating its views about three times per frame and
+  getting slightly different poses each time; FrameBridge pose_consistency returns the same views for repeated
+  queries of one display time (proposed in GitHub issue 8). The grey right eye on the loading screen is still open.
 tested_version: 1.4.0.0
 engine: Unity
 xr: OpenXR
@@ -16,8 +17,11 @@ frame:
 - frame.unity_multipass
 device:
 - device.text_input_window
+adapter:
+  pose_consistency: 1
 verified:
-  date: '2026-10-03'
+  date: '2026-10-05'
   issue: 8
-updated: '2026-10-04'
+updated: '2026-10-05'
+min_app: 0.10.1
 source_hint: I Am Cat

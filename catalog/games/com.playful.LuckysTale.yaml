@@ -1,11 +1,12 @@
 package: com.playful.LuckysTale
 title: Lucky's Tale
-status: issues
-notes: Runs out of memory within a few minutes and freezes the Frame until the game is killed.
-details: Unity's asset loading thread (Loading.PreloadManager) grows the game's native heap by about 1 GB/s
-  shortly after start (10+ GB plus all swap, then the kernel kills it; perf page-fault profile, 2026-10-04). The text
-  window and the MSAA patch aren't the cause (same with the window off); the OBB is byte-identical to the original.
-  The earlier "headset restarted in a menu" reports (GitHub issue 9) were most likely this. No fix yet.
+status: works
+notes: Plays normally; touching a save slot no longer freezes the Frame (haptic_fix).
+details: Touching a save slot vibrates the controller through XR_FB_haptic_amplitude_envelope; OVRPort's OpenXR
+  loader converts that envelope with the duration in nanoseconds read as seconds and allocates an enormous buffer, so
+  the Frame ran out of memory and froze (found by the GitHub issue 9 reporter). FrameBridge's extension shim turns the
+  envelope into a plain vibration before OVRPort's loader sees it (haptic_fix). Brief pauses came from the headset's
+  wear sensor flickering, now hidden by focus_hold (on by default).
 tested_version: 1.0.55
 engine: Unity
 xr: VrApi
@@ -14,8 +15,11 @@ frame:
 - frame.unity_runtime_msaa_off
 device:
 - device.text_input_window
+adapter:
+  haptic_fix: 1
 verified:
-  date: '2026-10-03'
+  date: '2026-10-05'
   issue: 9
-updated: '2026-10-04'
+updated: '2026-10-05'
+min_app: 0.10.1
 source_hint: Luckys Tale
