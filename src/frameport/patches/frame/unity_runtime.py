@@ -32,7 +32,7 @@ class UnityRuntimeMsaa(Il2cppReturnPatch):
                # the game's own code can raise MSAA too (The Room VR: QualitySettingsManager.SetMSAA with its
                # platform's default 4): Unity's setter does nothing, the quality settings' 0 stays
                "UnityEngine.CoreModule/UnityEngine/QualitySettings.cs": {"set_antiAliasing": RET_ZERO}}
-    revision = 2  # 0.10.1: also QualitySettings.set_antiAliasing (the game's own runtime MSAA crashed Zink)
+    revision = 2  # 0.11.0: also QualitySettings.set_antiAliasing (the game's own runtime MSAA crashed Zink)
     check_name = "Unity MSAA"
 
     def applies(self, a):

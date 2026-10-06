@@ -21,7 +21,7 @@ signatures:
   - id: swapchain-rect-invalid
     pattern: 'xrEndFrame failed -25\b'
     severity: fatal
-    diagnosis: The runtime rejects the game's frames because an image rect reaches past its swapchain (by a few pixels on some Frames); the game stops drawing (e.g. stuck at a "Waiting" box). FrameBridge from FramePort 0.10.1 clamps the rects - rebuild and reinstall the game.
+    diagnosis: The runtime rejects the game's frames because an image rect reaches past its swapchain (by a few pixels on some Frames); the game stops drawing (e.g. stuck at a "Waiting" box). FrameBridge from FramePort 0.11.0 clamps the rects - rebuild and reinstall the game.
     suggest: [frame.adapter]
   - id: missing-ovr-symbol
     pattern: '(UnsatisfiedLinkError|cannot locate symbol) .*"?(ovr_[A-Za-z0-9_]+|ovrMessageType_ToString)'
