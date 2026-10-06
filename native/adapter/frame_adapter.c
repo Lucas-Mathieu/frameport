@@ -292,7 +292,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo *info
     }
 
     XrInstanceCreateInfo fixed = *info;
-    const char **names = calloc(info->enabledExtensionCount + 2, sizeof(*names));
+    const char **names = calloc(info->enabledExtensionCount + 3, sizeof(*names));
     if (!names) { free(available); return XR_ERROR_OUT_OF_MEMORY; }
     uint32_t kept = 0;
     for (uint32_t i = 0; i < info->enabledExtensionCount; ++i) {
@@ -320,6 +320,19 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo *info
         names[kept++] = "XR_KHR_android_create_instance";
         LOG("added %s", "XR_KHR_android_create_instance");
     }
+    {   // no graphics API extension at all: Meta's runtime still accepts a GLES session, the Frame's doesn't
+        // (Lambda1VR's TBXR enables only XR_EXT_local_floor). Add GLES, which every such app uses, if offered.
+        int graphics = 0, gles_offered = 0;
+        for (uint32_t i = 0; i < kept; ++i)
+            graphics |= !strcmp(names[i], "XR_KHR_opengl_es_enable") || !strcmp(names[i], "XR_KHR_vulkan_enable") ||
+                        !strcmp(names[i], "XR_KHR_vulkan_enable2");
+        for (uint32_t j = 0; available && j < available_count; ++j)
+            gles_offered |= !strcmp(available[j].extensionName, "XR_KHR_opengl_es_enable");
+        if (!graphics && gles_offered) {
+            names[kept++] = "XR_KHR_opengl_es_enable";
+            LOG("added XR_KHR_opengl_es_enable (the app enabled no graphics API extension)");
+        }
+    }
     if (refresh_rate > 0) {  // the refresh_rate setting needs XR_FB_display_refresh_rate even if the app doesn't use it
         int requested = 0, offered = 0;
         for (uint32_t i = 0; i < kept; ++i) requested |= !strcmp(names[i], "XR_FB_display_refresh_rate");
@@ -328,6 +341,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo *info
     }
     fixed.enabledExtensionNames = names;
     fixed.enabledExtensionCount = kept;
+    {   // what the runtime gets (diagnostics: e.g. a graphics extension the app forgot)
+        char list[1024] = "";
+        for (uint32_t i = 0; i < kept; ++i) {
+            size_t len = strlen(list);
+            snprintf(list + len, sizeof list - len, "%s%s", i ? " " : "", names[i] + (strncmp(names[i], "XR_", 3) ? 0 : 3));
+        }
+        LOG("xrCreateInstance with %u extension(s): %s", kept, list);
+    }
     for (uint32_t j = 0; available && j < available_count; ++j)
         if (!strcmp(available[j].extensionName, "XR_FB_composition_layer_image_layout")) runtime_has_image_layout = 1;
     // Layer types are only valid if their extension ends up enabled; some apps submit them regardless.
