@@ -518,3 +518,31 @@ def test_haptic_fix_suggested_for_ovrplugin_games():
     s = p.detect(_analysis(libs=["libunity.so", "libOVRPlugin.so"]))
     assert s and s.recommended and s.params == {"value": 1}
     assert p.detect(_analysis(libs=["libunity.so"])) is None
+
+
+def test_foveation_choice_sets_the_launcher_env_and_wins_over_lepton_env():
+    from frameport.install.installer import install_context
+
+    assert base.get("device.foveation").CHOICES[0][0] == ""  # Valve's default needs no patch
+    r = Recipe("com.x.game", patches={"device.foveation": {"mode": "off"},
+                                      "device.lepton_env": {"env": {"VK_INSTANCE_LAYERS": "VK_LAYER_x"}}})
+    assert install_context(r).env["VK_INSTANCE_LAYERS"] == ""  # applied last, whatever the recipe's order
+    r = Recipe("com.x.game", patches={"device.foveation": {"mode": "fixed"}})
+    assert install_context(r).env == {"FDM_DEBUG": "disable_offsets"}
+
+
+def test_catalog_foveation_reaches_the_recipe(monkeypatch):
+    from frameport.recommend import catalog, engine
+
+    entry = catalog.CatalogEntry(package="com.drbeef.rtcwquest", title="RTCWQuest", status="works", foveation="off")
+    assert catalog.CatalogEntry.from_dict(yaml_load(catalog.to_yaml(entry)), "bundled").foveation == "off"
+    monkeypatch.setattr(catalog, "lookup", lambda package: entry)
+    r = engine.suggest(_analysis(package="com.drbeef.rtcwquest", engine="Other", libs=["libopenxr_loader.so"],
+                                 extra={"size": 1}))
+    assert r.params("device.foveation") == {"mode": "off"}
+
+
+def yaml_load(text):
+    import yaml
+
+    return yaml.safe_load(text)

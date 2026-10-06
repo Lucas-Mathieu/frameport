@@ -74,6 +74,7 @@ SUMMARIES = {
     "device.text_input_window": "Lets typing reach this app: Steam's on-screen keyboard or your computer's keyboard "
                                 "(VR is unaffected).",
     "device.lepton_env": "Extra settings for the Android container (for testing).",
+    "device.foveation": "Try \"Fixed\" or \"Off\" if one eye shimmers or jitters while menus look fine.",
     # PC VR
     "pcvr.repack_launcher": "Starts the game with the launcher that came with your copy.",
     "pcvr.launch_args": "Starts the game with options, e.g. to choose SteamVR or OpenXR.",

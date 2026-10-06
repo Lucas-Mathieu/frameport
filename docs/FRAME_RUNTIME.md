@@ -55,6 +55,10 @@
 ## Graphics stack
 - Vulkan: freedreno (Mesa Turnip); Valve injects `VK_LAYER_VALVE_rpo` and `VALVE_fdm_injection` via
   VK_INSTANCE_LAYERS (set `VK_INSTANCE_LAYERS=""` through `device.lepton_env` to test without them).
+  The FDM layer follows each eye's gaze; one-eye jitter in some games (GitHub #69) is fixed per game with
+  `device.foveation`: `fixed` = `FDM_DEBUG=disable_offsets`, `off` = `VK_INSTANCE_LAYERS=""`. Lepton passes `FDM`,
+  `FDM_DEBUG`, `FOVE_LEVEL` and `FDM_SWAPCHAIN_SIZE` through to the container (liblepton/mounting.sh PASSTHROUGH_VARS);
+  the layers are chosen on the host, so setting them inside the game does nothing.
 - GL ES: Zink (Mesa GL on Vulkan). Strict GLSL (see PLAYBOOK) and occasional `DEVICE LOST` with MSAA render-to-texture.
 
 ## Proton / Windows games (surveyed 2026-09-29; running a Rift game under it not yet verified)

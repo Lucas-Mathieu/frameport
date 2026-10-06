@@ -42,6 +42,7 @@ class CatalogEntry:
     adapter: dict = field(default_factory=dict)
     device_files: dict = field(default_factory=dict)
     lepton_env: dict = field(default_factory=dict)
+    foveation: str = ""  # device.foveation: fixed / off (Valve's eye-tracked foveation layer)
     pcvr_alternative: str | None = None
     # Rift (PC VR) recipes: package is "rift.<slug>"; kind "rift"
     kind: str = "quest"
@@ -348,7 +349,8 @@ def entry_from_library(g: dict, status: str | None = None, notes: str | None = N
         frame=[p for p in r.patches if (c := cat(p)) and c.category == "frame" and not c.default_on],
         device=[p for p in r.patches if p in TOGGLED_DEVICE],
         adapter={p.split(".", 1)[1]: v.get("value") for p, v in r.patches.items() if p.startswith("adapter.")},
-        device_files=r.params("device.files").get("files", {}))
+        device_files=r.params("device.files").get("files", {}),
+        foveation=r.params("device.foveation").get("mode") or "")
 
 
 def generic_source_hint(name: str) -> str:

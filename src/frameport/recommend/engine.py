@@ -63,6 +63,9 @@ def suggest(analysis: Analysis, use_catalog: bool = True) -> Recipe:
             recipe.reasons["device.files"] = why
         if entry.lepton_env:
             recipe.patches["device.lepton_env"] = {"env": dict(entry.lepton_env)}
+        if entry.foveation:
+            recipe.patches["device.foveation"] = {"mode": entry.foveation}
+            recipe.reasons["device.foveation"] = why
         recipe.alt_patches = list(entry.alt_overport)
         recipe.use_alt = entry.use_alt
     else:

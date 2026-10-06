@@ -419,6 +419,25 @@ class HideNavBar(Patch):
         ctx.env.update(self.ENV)
 
 
+class Foveation(Patch):
+    id = "device.foveation"
+    title = "Eye-tracked foveation (Valve)"
+    description = ("Valve's foveation layer (VALVE_fdm_injection) lowers the image density away from where you look, "
+                   "following each eye's gaze. In some games one eye then shimmers or jitters while menus look fine "
+                   "(the right eye's gaze filter restarts often). \"Fixed\" keeps the foveation but stops it "
+                   "following the gaze (FDM_DEBUG=disable_offsets); \"Off\" loads none of Valve's Vulkan layers "
+                   "(VK_INSTANCE_LAYERS=\"\"; costs GPU time in heavy games).")
+    category = "device"
+    stage = "install"
+    params = [Param("mode", "str", "", "fixed or off (empty = Valve's default)")]
+    CHOICES = (("", "Default"), ("fixed", "Fixed (doesn't follow the eyes)"), ("off", "Off"))
+    ENV = {"fixed": {"FDM_DEBUG": "disable_offsets"}, "off": {"VK_INSTANCE_LAYERS": ""}}
+
+    def install(self, ctx: InstallContext) -> None:
+        # runs after device.lepton_env (install_context), so this choice wins over a recipe's VK_INSTANCE_LAYERS
+        ctx.env.update(self.ENV.get(ctx.params.get("mode") or "", {}))
+
+
 class TextInputWindow(Patch):
     id = "device.text_input_window"
     title = "Show the app's Android window (for typing)"
@@ -449,3 +468,4 @@ register(DeviceFiles)
 register(LeptonEnv)
 register(HideNavBar)
 register(TextInputWindow)
+register(Foveation)
