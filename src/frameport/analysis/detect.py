@@ -185,7 +185,8 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
                                   if n != "libovrplatformloader.so"),
             "tbxr_libs": sorted(n for n, d in lib_bytes.items() if b"\0OPENXR_HMD\0" in d and b"\0meta\0" in d),
             "missing_ovr_symbols": sorted(missing_ovr_symbols(lib_bytes)), "size": path.stat().st_size,
-            # the game sizes Meta's microphone buffer (Unreal's Oculus voice): OVRPort crashes there (frame.ovr_microphone)
+            # the game sizes Meta's microphone buffer (Unreal's Oculus voice): OVRPort crashes there
+            # (frame.ovr_microphone)
             "ovr_microphone": any(b"ovr_Microphone_GetOutputBufferMaxSize\0" in d for n, d in lib_bytes.items()
                                   if not n.startswith("libovrplatformloader")),
             "data_bytes": data_bytes or 0,
