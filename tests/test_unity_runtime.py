@@ -227,6 +227,32 @@ def test_uninstall_can_delete_the_games_files_on_this_pc(tmp_path):
     assert key.exists() and shared.exists()  # signing keys and other games' files stay
 
 
+def test_deleting_a_games_files_takes_its_download_manifest(tmp_path):
+    from frameport import pipeline
+    from frameport.core import library
+
+    def release(name, extra=""):
+        d = tmp_path / name
+        (d / "com.x.game").mkdir(parents=True)
+        (d / "com.x.game.apk").write_bytes(b"PK")
+        (d / "com.x.game/main.1.com.x.game.obb").write_bytes(b"o")
+        (d / "release.manifest").write_text(
+            "﻿#VRPRELEASEMANIFEST 1.0\nGame Name;Release Name\nGame;Game v1\n\n#filelist\ntype;name;size\n"
+            "f;./com.x.game.apk;2\nd;./com.x.game;0\nf;./com.x.game/main.1.com.x.game.obb;1\n" + extra,
+            encoding="utf-8")
+        return d
+
+    game = release("Game v1")
+    library.upsert_game("com.x.game", apk=str(game / "com.x.game.apk"), data_dir=str(game / "com.x.game"))
+    assert game / "release.manifest" in pipeline.local_game_files("com.x.game")
+    pipeline.delete_local_files("com.x.game")
+    assert not game.exists()  # the folder went too: a download manager no longer lists the game
+
+    other = release("Game v2", extra="f;./notes.txt;5\n")  # lists a file that isn't the game's: stays
+    library.upsert_game("com.x.game", apk=str(other / "com.x.game.apk"), data_dir=str(other / "com.x.game"))
+    assert other / "release.manifest" not in pipeline.local_game_files("com.x.game")
+
+
 def test_scan_finds_games_in_download_manager_layouts(tmp_path, monkeypatch):
     import zipfile
 

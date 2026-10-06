@@ -589,7 +589,33 @@ def local_game_files(package: str) -> list[Path]:
     def shared(p: Path) -> bool:  # the same path, a path inside it, or a folder around it belongs to another game
         rp = p.resolve()
         return any(u == rp or rp in u.parents or u in rp.parents for u in used)
-    return [p for p in dict.fromkeys(paths) if p.exists() and not shared(p)]
+    files = [p for p in dict.fromkeys(paths) if p.exists() and not shared(p)]
+    if g.get("kind") != "rift" and not is_linux(g):
+        files += [m for m in _download_manifests(files) if not shared(m)]
+    return files
+
+
+def _download_manifests(files: list[Path]) -> list[Path]:
+    """Download managers leave a manifest next to the game (e.g. "release.manifest": a "#filelist" section of
+    "f;./name;size" / "d;./name;0" lines). It goes with the game when it lists nothing but files that are deleted
+    anyway; otherwise the folder survives and the download manager still shows the game."""
+    gone = [p.resolve() for p in files]
+    found = []
+    for folder in dict.fromkeys(p.parent for p in files if p.is_file()):
+        for m in folder.glob("*.manifest"):
+            try:
+                lines = m.read_text(encoding="utf-8-sig", errors="replace").splitlines()
+            except OSError:
+                continue
+            start = next((i for i, line in enumerate(lines) if line.strip().lower() == "#filelist"), None)
+            if start is None:
+                continue
+            listed = [line.split(";")[1] for line in lines[start + 1:]
+                      if line.count(";") >= 2 and line.split(";")[0] in ("f", "d")]
+            targets = [(folder / name).resolve() for name in listed]
+            if targets and all(t in gone or any(d in t.parents for d in gone) for t in targets):
+                found.append(m)
+    return found
 
 
 def linux_local_files(g: dict) -> list[Path]:
