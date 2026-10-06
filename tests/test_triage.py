@@ -132,3 +132,8 @@ def test_unreal_vulkan_driver_crash_and_missing_fdm():
               "the game\n")
     found = triage(LOG_OK + hidden + fdm, "RUNNING", "com.example.game").findings
     assert "unreal-fdm-missing" not in [f.id for f in found]
+
+
+def test_session_without_graphics_requirements():
+    log = "10-06 18:13:02.714  1115  1157 E TBXR    : Failed to create XR session: -50.\n"
+    assert "graphics-requirements-missing" in {f.id for f in triage(log, "EXITED", "com.drbeef.lambda1vr").findings}

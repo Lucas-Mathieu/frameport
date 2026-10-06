@@ -803,10 +803,40 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySpace(XrSpace space) {
 #include "surface_swapchain.c"
 #include "eye_debug.c"
 
+// OpenXR requires xrGet*GraphicsRequirementsKHR before xrCreateSession; Meta's runtime doesn't enforce it, the Frame's
+// does (XR_ERROR_GRAPHICS_REQUIREMENTS_CALL_MISSING, e.g. Lambda1VR's TBXR). Ask on the app's behalf, once, and retry.
+static int ask_graphics_requirements(XrInstance instance, const XrSessionCreateInfo *info) {
+    const XrBaseInStructure *binding = info ? (const XrBaseInStructure *)info->next : NULL;
+    for (; binding; binding = binding->next) {
+        const char *name = NULL;
+        XrStructureType type = 0;
+        if (binding->type == (XrStructureType)1000024001) {  // XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR
+            name = "xrGetOpenGLESGraphicsRequirementsKHR";
+            type = (XrStructureType)1000024003;               // XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR
+        } else if (binding->type == (XrStructureType)1000025000) {  // XR_TYPE_GRAPHICS_BINDING_VULKAN_KHR
+            name = "xrGetVulkanGraphicsRequirementsKHR";
+            type = (XrStructureType)1000025002;               // XR_TYPE_GRAPHICS_REQUIREMENTS_VULKAN_KHR
+        }
+        if (!name) continue;
+        // XrGraphicsRequirementsOpenGLESKHR and ...VulkanKHR share this layout
+        struct { XrStructureType type; void *next; XrVersion min, max; } req = {type, NULL, 0, 0};
+        typedef XrResult (XRAPI_PTR *PFN_requirements)(XrInstance, XrSystemId, void *);
+        PFN_requirements get = (PFN_requirements)lookup(instance, name);
+        if (!get && type == (XrStructureType)1000025002)  // XR_KHR_vulkan_enable2 apps: same struct and call
+            get = (PFN_requirements)lookup(instance, "xrGetVulkanGraphicsRequirements2KHR");
+        XrResult r = get ? get(instance, info->systemId, &req) : XR_ERROR_FUNCTION_UNSUPPORTED;
+        LOG("xrCreateSession: the app skipped %s; asked for it (result=%d)", name, (int)r);
+        return XR_SUCCEEDED(r);
+    }
+    return 0;
+}
+
 XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance instance, const XrSessionCreateInfo *info, XrSession *session) {
     PFN_xrCreateSession fn = (PFN_xrCreateSession)lookup(instance, "xrCreateSession");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
     XrResult result = fn(instance, info, session);
+    if (result == XR_ERROR_GRAPHICS_REQUIREMENTS_CALL_MISSING && ask_graphics_requirements(instance, info))
+        result = fn(instance, info, session);
     if (XR_SUCCEEDED(result)) {
         flip_emul = flip_emul_setting;
         flip_on_create_session(info);

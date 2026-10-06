@@ -101,6 +101,14 @@ signatures:
     severity: error
     diagnosis: The game submits a VrApi layer type the bridge can't show; whole frames are dropped (black screen).
     suggest: []
+  - id: graphics-requirements-missing
+    pattern: '(XR_ERROR_GRAPHICS_REQUIREMENTS_CALL_MISSING|Failed to create XR session: -50\b|xrCreateSession[^\n]*-50\b)'
+    severity: fatal
+    diagnosis: The game creates its OpenXR session without asking for the graphics requirements first; Meta's runtime
+      allows that, the Frame's doesn't (e.g. Lambda1VR). Current FrameBridge builds ask on the game's behalf and retry -
+      rebuild the game.
+    suggest: [frame.adapter]
+    supersedes: [native-crash]
   - id: vrapi-symbol-missing
     pattern: 'cannot locate symbol "vrapi_\w+"'
     severity: fatal
