@@ -16,6 +16,10 @@ SETTINGS = [
     ("scale", "float", 1.0, "Resolution scale",
      "Multiplies the recommended eye-buffer width and height (0.5–2.0). 1.5 ≈ 2.25× pixels."),
     ("foveation_fix", "int", 1, "Hide Quest foveation", "Hides Quest foveation extensions the Frame runtime lacks."),
+    ("snapshot", "int", 0, "Eye-image snapshots (diagnostics)",
+     "Every N seconds, saves the left-eye image the game submits (a quarter of its size) as fb_snap_0-7.ppm in the "
+     "game's files folder on the Frame. Launch tests run without anyone wearing the headset, so the headset view stays "
+     "black; this shows what the game itself draws. OpenGL ES games only."),
     ("strip_color_bias", "int", 0, "Drop layer color fades",
      "Removes the color scale/bias (XR_KHR_composition_layer_color_scale_bias) from the game's layers, so the runtime "
      "doesn't apply it. The Frame's runtime allocates GPU memory for it every frame without freeing it, e.g. Vader "
@@ -259,7 +263,7 @@ UI: dict[str, dict] = {
                             control=("choice", [(0, "As the game sends it"), (2, "Flat")])),
     **{key: dict(group="troubleshooting", level="advanced", control=("switch",)) for key in (
         "foveation_fix", "hide_space_warp", "swapchain_fix", "layer_fix", "gl_hide_multiview", "mutable_fix",
-        "flip_quads", "swap_eyes", "vk_validation", "rect_clamp", "gl_hide_msrtt", "strip_color_bias",
+        "flip_quads", "swap_eyes", "vk_validation", "rect_clamp", "gl_hide_msrtt", "strip_color_bias", "snapshot",
         "strip_depth", "respace_kick", "layer_debug", "eye_debug", "release_wait")},
 }
 

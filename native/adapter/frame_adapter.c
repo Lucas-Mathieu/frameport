@@ -87,6 +87,13 @@ static int foveation_fix = 1;
 // e.g. Into The Radius 2; OVRPort's patch_disable_space_warp doesn't reach UE5's OpenXR plugin)
 static int hide_space_warp = 0;
 static int strip_color_bias = 0;
+static int snapshot = 0;  // seconds between eye-image snapshots (snapshot_gl.c; 0 = off)
+static char snap_dir[256];
+static void snap_on_create(XrSwapchain handle, const XrSwapchainCreateInfo *info);
+static void snap_on_destroy(XrSwapchain handle);
+static void snap_on_enumerate(XrSwapchain handle, uint32_t count, const XrSwapchainImageBaseHeader *images);
+static void snap_on_acquire(XrSwapchain handle, uint32_t index);
+static void snap_end_frame(const XrFrameEndInfo *info);
 static int frame_balance = 0;  // end a still-open frame before the next xrBeginFrame
 static int frame_begins, frame_discarded, frame_ends, frame_balanced;  // per pacing period (layer_debug)
 static int frame_open;
@@ -143,6 +150,7 @@ static void read_settings(const char *path) {
         if (sscanf(line, "hide_space_warp=%f", &value) == 1) hide_space_warp = value != 0;
         if (sscanf(line, "strip_color_bias=%f", &value) == 1) strip_color_bias = (int)value;
         if (sscanf(line, "frame_balance=%f", &value) == 1) frame_balance = value != 0;
+        if (sscanf(line, "snapshot=%f", &value) == 1) snapshot = value > 0 ? (int)value : 0;
         if (sscanf(line, "controller_fix=%f", &value) == 1) controller_fix = value != 0;
         if (sscanf(line, "swapchain_fix=%f", &value) == 1) swapchain_fix = value != 0;
         if (sscanf(line, "rect_clamp=%f", &value) == 1) rect_clamp = value != 0;
@@ -216,6 +224,10 @@ static void initialize(void) {
     }
     const char *env = getenv("FRAMEBRIDGE_CONFIG");
     if (env && *env) read_settings(env);
+    if (snapshot && *process && !strchr(process, '/')) {
+        snprintf(snap_dir, sizeof(snap_dir), "/sdcard/Android/data/%s/files", process);
+        LOG("per-game: snapshot every %d s to %s/fb_snap_N.ppm", snapshot, snap_dir);
+    }
     if (eye_debug && *process && !strchr(process, '/')) {
         snprintf(path, sizeof(path), "/sdcard/Android/data/%s/files/framebridge.log", process);
         log_file = fopen(path, "a");
@@ -483,6 +495,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
     if (equirect_emul && swapchain && emul_virtual_create(session, &fixed, swapchain)) {
         remember_swapchain(*swapchain);
         emul_on_create_swapchain(*swapchain, &fixed);
+        snap_on_create(*swapchain, &fixed);
         return XR_SUCCESS;
     }
     XrResult result = fn(session, &fixed, swapchain);
@@ -494,6 +507,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
         note_swapchain_size(*swapchain, fixed.width, fixed.height);
         flip_on_create_swapchain(*swapchain, &fixed);
         emul_on_create_swapchain(*swapchain, &fixed);
+        snap_on_create(*swapchain, &fixed);
         return result;
     }
     if (!swapchain_fix) return result;
@@ -517,6 +531,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
         note_swapchain_size(*swapchain, fixed.width, fixed.height);
         flip_on_create_swapchain(*swapchain, &fixed);
         emul_on_create_swapchain(*swapchain, &fixed);
+        snap_on_create(*swapchain, &fixed);
     }
     return result;
 }
@@ -532,6 +547,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySwapchain(XrSwapchain swapchain) {
     surf_on_destroy(swapchain);
     flip_on_destroy(swapchain);
     emul_on_destroy_swapchain(swapchain);
+    snap_on_destroy(swapchain);
     if (equirect_emul && emul_is_virtual(swapchain)) { emul_virtual_destroy(swapchain); return XR_SUCCESS; }
     return fn(swapchain);
 }
@@ -783,6 +799,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySpace(XrSpace space) {
 
 #include "session_fixes.c"
 #include "layer_emul_gl.c"
+#include "snapshot_gl.c"
 #include "surface_swapchain.c"
 #include "eye_debug.c"
 
@@ -809,6 +826,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateSwapchainImages(XrSwapchain swapchain,
     if (XR_SUCCEEDED(result) && images && capacity && count) {
         flip_on_enumerate_images(swapchain, *count, images);
         emul_on_enumerate(swapchain, *count < capacity ? *count : capacity, images);
+        snap_on_enumerate(swapchain, *count < capacity ? *count : capacity, images);
     }
     return result;
 }
@@ -842,7 +860,11 @@ XRAPI_ATTR XrResult XRAPI_CALL xrAcquireSwapchainImage(XrSwapchain swapchain, co
     }
     XrResult result = fn(swapchain, info, index);
     __atomic_add_fetch(&sc_acquires, 1, __ATOMIC_RELAXED);
-    if (XR_SUCCEEDED(result) && index) { flip_on_acquire(swapchain, *index); emul_on_acquire(swapchain, *index); }
+    if (XR_SUCCEEDED(result) && index) {
+        flip_on_acquire(swapchain, *index);
+        emul_on_acquire(swapchain, *index);
+        snap_on_acquire(swapchain, *index);
+    }
     return result;
 }
 
@@ -1083,6 +1105,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
     frame_open = 0;
     __atomic_add_fetch(&frame_ends, 1, __ATOMIC_RELAXED);
+    snap_end_frame(info);
     if (eye_debug) eye_debug_end_frame(session, info);
     {   // frame pacing statistics every ~5 s: fps and submitted-vs-predicted display time
         static struct timespec start;
