@@ -21,6 +21,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | BodyCombat | Quest | ✅ Works |  |
 | Carve Snowboarding | Quest | ✅ Works |  |
 | Cook-Out | Quest | ✅ Works |  |
+| Creed | Quest | ✅ Works |  |
 | Demeter | Quest | ✅ Works |  |
 | Dinosaur Island | Quest | ✅ Works |  |
 | Espire 2 | Quest | ✅ Works |  |

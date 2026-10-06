@@ -1,0 +1,17 @@
+package: com.survios.Creed
+title: Creed
+status: works
+tested_version: CRU-386950
+engine: Unreal
+xr: OpenXR
+alt_overport:
+- patch_remove_unreal_force_quit
+verified:
+  date: '2026-10-05'
+  known_good_sha256: c319dd95198a0a96a883aa70f6be9c843da0a265967fa4a7343ce7e6f4bfdc87
+  app: 0.10.0
+  overport_cli: 1.2.5
+  frame_build: '20260930.6234839'
+  agent: 54
+  issue: 60
+source_hint: Creed Rise to Glory
