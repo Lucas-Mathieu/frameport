@@ -36,7 +36,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 57
+AGENT_VERSION = 58
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -1072,6 +1072,16 @@ def _shortcuts_worker(payload):
     os.makedirs(os.path.dirname(STATUS_FILE), exist_ok=True)
     try:
         users = library_users()
+        # games Steam only knows through their devkit entry (this Frame's Steam drops FramePort's shortcuts.vdf
+        # entries, GitHub #41/#42): rewriting the vdf changes nothing for them, and the Steam restart would drop the
+        # live devkit entry too. They get their art only; Play re-adds a lost devkit entry live.
+        devkit = [p for p in args["packages"] if devkit_gameid(p)]
+        for pkg in devkit:
+            appid = devkit_appid(devkit_gameid(pkg))
+            if appid:
+                copy_grid_art(pkg, appid)
+        args["packages"] = [p for p in args["packages"] if p not in devkit]
+        result["devkit"] = devkit
         if not args.get("remove") and not library_changes(users, args["packages"]):
             # nothing to change in shortcuts.vdf (e.g. a reinstall): only the artwork, no Steam restart
             for user in users:
@@ -1412,6 +1422,13 @@ def cmd_launch(args):
         raise AgentError("Steam isn't running on the Frame")
     devkit = devkit_gameid(pkg)
     appid = devkit_appid(devkit) if devkit else None  # this Frame needed the fallback entry before: use it
+    if devkit and not appid:
+        # Steam forgot the devkit entry (it never saves it on some Frames, and a restart drops it, GitHub #41): add it
+        # again live instead of reporting NOT_IN_LIBRARY, whose repair restarts Steam
+        try:
+            appid = devkit_register(pkg)
+        except AgentError:
+            appid = None
     via = "devkit" if appid else "shortcut"
     appid = appid or shortcut_appid_for(f'"{os.path.join(ANCHORS, pkg)}/launch.sh"')
     if appid is None:  # Steam would only say "Game configuration unavailable"

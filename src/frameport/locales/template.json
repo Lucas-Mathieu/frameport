@@ -1309,6 +1309,8 @@
  "{remaining} more after this": "",
  "{title} couldn't be added to the Frame's Steam library: {why}": "",
  "{title} failed: {error}": "",
+ "{title} is already running on the Frame — put the headset on": "",
+ "{title} is already starting — put the headset on": "",
  "{title} isn't in the Frame's Steam library yet: adding it (Steam restarts once)": "",
  "{title} will be in the Frame's Steam library when the game that's running is closed": "",
  "{title} will be in the Frame's Steam library when you're back in Gaming Mode: start it from there": "",

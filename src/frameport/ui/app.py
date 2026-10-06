@@ -592,14 +592,23 @@ class FramePortApp:
                         tr("Starts the game through Steam on this PC (SteamVR + Revive)")))
         return out
 
+    PLAY_COOLDOWN = 20  # s: a second Play while Steam/Lepton still start the game only gets Steam's AppError_16
+
     def play(self, pkg: str, to: str = "frame") -> None:
         title = self._title(pkg)
+        started = getattr(self, "_play_started", {})
+        self._play_started = started
+        if time.time() - started.get((pkg, to), 0) < self.PLAY_COOLDOWN:
+            self.toast(tr("{title} is already starting — put the headset on").format(title=title))
+            return
+        started[(pkg, to)] = time.time()
 
         def work():
             try:
                 res = self._target_for(to).launch(pkg) or {}
-            except AgentFailed as exc:
-                if to != "frame" or NOT_IN_LIBRARY not in str(exc):
+            except Exception as exc:
+                started.pop((pkg, to), None)  # a failed start can be retried right away
+                if not isinstance(exc, AgentFailed) or to != "frame" or NOT_IN_LIBRARY not in str(exc):
                     raise
                 self._add_then_play(pkg, title)  # e.g. the shortcut step failed during the install
                 return
@@ -617,7 +626,11 @@ class FramePortApp:
                 # Steam ignored FramePort's library entry: the game was added the way Valve's devkit tool does it
                 self.toast(tr("The Frame's Steam didn't accept {title}'s library entry, so FramePort added it as "
                               "\"Devkit Game: …\" instead. Starting it now — put the headset on.").format(title=title))
+            elif to == "frame" and steam.get("result") == "error" and steam.get("code") == 16:
+                # AppError_16: "WaitingPrevProcess" - the game is still starting or running (GitHub #41)
+                self.toast(tr("{title} is already running on the Frame — put the headset on").format(title=title))
             elif to == "frame" and steam.get("result") == "error":  # 9 = "Game configuration unavailable"
+                started.pop((pkg, to), None)
                 self.toast(tr("The Frame's Steam couldn't start {title} (Steam error {code}). Please send a problem "
                               "report so we can see why.").format(title=title, code=steam.get("code")), error=True,
                            action=tr("Report a problem"), on_action=lambda e: self.report_problem_dialog(pkg))

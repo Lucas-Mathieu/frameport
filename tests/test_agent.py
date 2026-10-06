@@ -911,6 +911,43 @@ def test_reinstall_with_unchanged_shortcut_does_not_restart_steam(monkeypatch, t
     assert (cfg / "grid").is_dir() and any(p.name.endswith("p.jpg") for p in (cfg / "grid").iterdir())
 
 
+
+def test_devkit_games_get_art_without_a_steam_restart(monkeypatch, tmp_path):
+    # GitHub #41: on Frames whose Steam drops FramePort's shortcuts.vdf entries, every install/art update restarted
+    # Steam, which also dropped the live devkit entry: the next Play then restarted Steam once more
+    a = load_agent(monkeypatch, tmp_path)
+    anchor = tmp_path / "Applications/quest-frame/com.x.y"
+    (anchor / "artwork").mkdir(parents=True)
+    (anchor / "artwork/portrait.jpg").write_bytes(b"art")
+    (anchor / "deployment.json").write_text(json.dumps({"package": "com.x.y", "appid": 1, "title": "X", "base": "b"}))
+    (tmp_path / ".local/share/Steam/userdata/42/config").mkdir(parents=True)
+    monkeypatch.setattr(a, "devkit_gameid", lambda pkg: "X")
+    monkeypatch.setattr(a, "devkit_appid", lambda gid: 777)
+    art = []
+    monkeypatch.setattr(a, "copy_grid_art", lambda pkg, appid, users=None: art.append((pkg, appid)))
+    stops = []
+    monkeypatch.setattr(a, "stop_steam", lambda: stops.append(1) or True)
+    monkeypatch.setattr(a, "start_steam", lambda s: stops.append(2))
+    a.shortcuts_worker(json.dumps({"packages": ["com.x.y"], "remove": []}))
+    status = json.load(open(a.STATUS_FILE))
+    assert not stops and art == [("com.x.y", 777)] and status["devkit"] == ["com.x.y"] and status["state"] == "done"
+
+
+def test_launch_re_adds_a_forgotten_devkit_entry_live(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    anchor = tmp_path / "Applications/quest-frame/com.x.y"
+    anchor.mkdir(parents=True)
+    (anchor / "deployment.json").write_text(json.dumps({"package": "com.x.y", "appid": 111, "title": "X",
+                                                        "base": str(anchor)}))
+    monkeypatch.setattr(a, "run", lambda cmd, **k: SimpleNamespace(returncode=0, stdout=""))
+    monkeypatch.setattr(a, "shortcut_appid_for", lambda exe: None)  # Steam has no shortcut either
+    monkeypatch.setattr(a, "devkit_gameid", lambda pkg: "X")
+    monkeypatch.setattr(a, "devkit_appid", lambda gid: None)  # Steam restarted and forgot the devkit entry
+    monkeypatch.setattr(a, "devkit_register", lambda pkg: 333)
+    monkeypatch.setattr(a, "steam_launch", lambda appid, wait=10: {"result": "started", "appid": appid})
+    got = a.cmd_launch({"package": "com.x.y"})  # no NOT_IN_LIBRARY (whose repair restarts Steam)
+    assert got["via"] == "devkit" and got["steam"]["appid"] == 333
+
 def test_shortcuts_lost_after_steam_restart(monkeypatch, tmp_path):
     a = load_agent(monkeypatch, tmp_path)
     anchor = tmp_path / "Applications/quest-frame/com.x.y"
