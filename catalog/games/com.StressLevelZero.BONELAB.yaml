@@ -1,15 +1,19 @@
 package: com.StressLevelZero.BONELAB
 title: BONELAB
-status: unsupported
-notes: Crashes while starting its graphics (Vulkan); no fix yet.
-details: SIGSEGV in vkCreateInstance, called from the game's own Vulkan hooks (libSLZQuestNative.so) into code that no
-  longer exists, right after OVRPlugin's pre-initialization creates and destroys an OpenXR instance. Keeping the
-  runtime (vrclient.so) and Steam's Fossilize layer loaded didn't help, so the stale pointer is to memory freed with
-  that first instance.
-tested_version: 1.2974.57485
+status: works
+notes: Head tracking and controls work with frame.unity_user_presence (tested with 1.2068.34555).
+details: The game runs (72 fps), but its player body stayed frozen - no head tracking, the controllers stuck to the
+  model, no buttons - although OpenXR input and OVRPlugin's poses were fine. A few seconds after start (when Unity
+  switches XR loaders) OVRPlugin reports the worn headset as not worn (ovrp_GetUserPresent2 -> 0), and BONELAB's
+  Marrow rig only follows the player while Unity's HMD device reports UserPresence (OpenControllerRig checks
+  XRHMD.IsUserPresent every frame). frame.unity_user_presence reports the headset as worn. Build 1.2974 crashed
+  earlier in vkCreateInstance from the game's own Vulkan hooks (libSLZQuestNative.so); not retested.
+tested_version: 1.2068.34555
 engine: Unity
 xr: OpenXR
+frame:
+- frame.unity_user_presence
 verified:
-  date: '2026-10-04'
-updated: '2026-10-04'
+  date: '2026-10-06'
+updated: '2026-10-06'
 source_hint: BONELAB

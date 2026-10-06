@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// FramePort OVRPlugin frame-loop shim for Unity 2017-2018 built-in Oculus support.
+// FramePort OVRPlugin shim: the frame loop for Unity 2017-2018 built-in Oculus support, and Unity's user presence.
 //
 // That Unity drives OVRPlugin with the legacy frame loop: ovrp_Update2(render step, frame index, ...) on the main
 // thread, then ovrp_BeginFrame / ovrp_EndFrame on the render thread. It never calls ovrp_WaitToBeginFrame, which
@@ -292,4 +292,25 @@ EXPORT int fpov_GetNodePresent(int node) {
         LOG("ovrp node %d present: OVRPlugin %d -> Unity %d", node, present, answer);
     }
     return answer;
+}
+
+// ---------------------------------------------------------------- user presence (patch frame.unity_user_presence)
+// Unity's Oculus XR Plugin gives its HMD input device a UserPresence feature from ovrp_GetUserPresent2. On the Frame
+// OVRPort's OVRPlugin answers "not worn" a few seconds after start while the headset is worn, and games that drive
+// their rig only while the user is present stay frozen (BONELAB's Marrow rig: XRHMD.IsUserPresent). The plugin's
+// lookup is renamed to this function, which reports the user as present and logs OVRPlugin's own answer on change.
+typedef int (*PFN_UserPresent2)(int *present);
+
+EXPORT int fpov_GetUserPresent2(int *present) {
+    static PFN_UserPresent2 real;
+    if (!real) {
+        void *ovrp = dlopen("libOVRPlugin.so", RTLD_NOW | RTLD_NOLOAD);
+        if (ovrp) real = (PFN_UserPresent2)dlsym(ovrp, "ovrp_GetUserPresent2");
+    }
+    int value = 0, r = real ? real(&value) : -1000;
+    static int last = -2, logged;
+    if ((r < 0 ? -1 : value) != last && logged++ < 20) LOG("user presence: OVRPlugin %d (result %d) -> 1", value, r);
+    last = r < 0 ? -1 : value;
+    if (present) *present = 1;
+    return 0;  // ovrpSuccess
 }

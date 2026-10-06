@@ -674,3 +674,32 @@ def test_tbxr_vendor_on_lambda1vr():
     assert b"\0OPENXR_HMD\0" in xash and b"\0meta\0" in xash
     fixed, count = elf.replace_rodata_string(xash, "meta", "alve")
     assert count == 1 and b"\0alve\0" in fixed and len(fixed) == len(xash)
+
+
+def test_unity_user_presence_points_the_xr_plugin_at_the_shim(tmp_path, quest_manifest):
+    """BONELAB: OVRPlugin reported the worn headset as not worn and the Marrow rig froze (no tracking, no controls)."""
+    from frameport.analysis import elf
+    from frameport.patches.frame import unity_user_presence as P
+
+    fake = _fixture("libfakeovrplugin_arm64.so")
+    xr_plugin, n = elf.replace_rodata_string(fake, "xrGetInstanceProcAddr", P.CALL)  # a stand-in with the lookup name
+    assert n == 1
+    apk = _apk(tmp_path, quest_manifest)
+    with zipfile.ZipFile(apk, "a") as z:
+        z.writestr("lib/arm64-v8a/libOculusXRPlugin.so", xr_plugin)
+        z.writestr("lib/arm64-v8a/libOVRPlugin.so", fake)
+    p = base.get("frame.unity_user_presence")
+    a = _analysis(engine="Unity", libs=["libunity.so", "libOVRPlugin.so", "libOculusXRPlugin.so"])
+    assert p.applies(a) and p.detect(a) is None  # per game, from the catalog
+    assert not p.applies(_analysis(engine="Unity", libs=["libunity.so", "libOVRPlugin.so"]))
+    with ApkWorkspace(apk) as ws:
+        ctx = base.ApkContext(ws, a, {}, Reporter(), {})
+        assert p.apply(ctx)
+        assert p.validate(ctx) == [("User presence shim loaded", True, P.SHIM)]
+        out = ws.write(tmp_path / "out.apk")
+    with zipfile.ZipFile(out) as z:
+        patched = z.read("lib/arm64-v8a/libOculusXRPlugin.so")
+        assert len(patched) == len(xr_plugin) and P.SHIM_CALL.encode() + b"\0" in patched
+        assert P.SHIM in elf.needed(z.read("lib/arm64-v8a/libOVRPlugin.so"))
+        shim = z.read(f"lib/arm64-v8a/{P.SHIM}")
+    assert P.SHIM_CALL in elf.dyn_symbols(shim, True)  # the rebuilt artifact exports the wrapper
