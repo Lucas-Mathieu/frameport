@@ -7,7 +7,7 @@ e7554c6343ee2989b0a273ee6230e65c25bfe6499eefd00de19f5f0fee58754f  ./arm64-v8a/li
 9f5ba793d1804728394a8fe9e83028e13f1bc939b558892e7beb5c3662317259  ./arm64-v8a/libglshim.so
 d7709fe953a3170467ec0c53e6b715833014512fbd8d91803a9cb2aecf0961ad  ./arm64-v8a/libopenxr_loader_generic.so
 1feaeafad467c4cafdf2b018a4d84b0bee200c3f711697b4ce97e66a3ba256ca  ./arm64-v8a/libovrplatformcompat.so
-e7aee5a17e12cc9f251b9edb1ad5432e76dd410bcd8f4dbb0eff7e035503f33d  ./arm64-v8a/libvrapi.so
+aa4dc0020c77e12d41ef6ce80b23ad90c9cb7e882338eddf2261efe8645cf38d  ./arm64-v8a/libvrapi.so
 f994e6bc9ae32ab7ad17ffc992e10dce19289bed44d577b5ac08d7e99eb0174d  ./armeabi-v7a/libopenxr_loader_generic.so
 1871eae093432d277da4bc751bf5f3269dfcf11f9168260b0c3caadb0dedb19d  ./dex/oculusos-stubs.dex
 1aa733117cf57ccff7cf23f0425dbfd73b0332a3ef1c905ceeca0ccd0449c4e0  ./linux-arm64/XR_APILAYER_FRAMEPORT_timefix.json

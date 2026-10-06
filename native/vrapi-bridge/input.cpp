@@ -431,6 +431,8 @@ void sync() {
 namespace ovp::input::diag {
 struct Counters {
     uint32_t enumerate = 0, caps = 0, state = 0, tracking = 0, trackingFail = 0, haptic = 0;
+    uint32_t stateTypes = 0, capsTypes = 0, stateRefused = 0, buttons = 0;  // ControllerType bits asked for
+    float stickMax[HandCount] = {};
     uint32_t lastStatus[HandCount] = {};
     float lastPos[HandCount][3] = {};
     float hapticMin = 2.0f, hapticMax = -1.0f;
@@ -447,6 +449,8 @@ static void maybeLog() {
             c.lastStatus[Left], c.lastPos[Left][0], c.lastPos[Left][1], c.lastPos[Left][2],
             c.lastStatus[Right], c.lastPos[Right][0], c.lastPos[Right][1], c.lastPos[Right][2],
             c.haptic, c.haptic ? c.hapticMin : 0.0f, c.haptic ? c.hapticMax : 0.0f);
+    OVP_LOG("input 5s: state types asked 0x%x (refused %u), caps types 0x%x, buttons seen 0x%x, stick max L %.2f R %.2f",
+            c.stateTypes, c.stateRefused, c.capsTypes, c.buttons, c.stickMax[Left], c.stickMax[Right]);
     const double last = now;
     c = {};
     c.lastLog = last;
@@ -479,6 +483,7 @@ VRAPI ovrResult vrapi_GetInputDeviceCapabilities(ovrMobile* mobile,
     if (capsHeader == nullptr) return InvalidParameter;
     if (!ovp::validMobile(mobile) || !ovp::input::ready()) return NotInitialized;
     ++ovp::input::diag::c.caps;
+    ovp::input::diag::c.capsTypes |= static_cast<uint32_t>(capsHeader->Type);
     if (capsHeader->Type != ovrControllerType_TrackedRemote) return Unsupported;
     size_t hand = 0;
     ovp::input::Hand* value = ovp::input::handForId(capsHeader->DeviceID, &hand);
@@ -508,8 +513,12 @@ VRAPI ovrResult vrapi_GetCurrentInputState(ovrMobile* mobile, ovrDeviceID device
     if (inputState == nullptr) return InvalidParameter;
     if (!ovp::validMobile(mobile) || !ovp::input::ready()) return NotInitialized;
     ++ovp::input::diag::c.state;
+    ovp::input::diag::c.stateTypes |= static_cast<uint32_t>(inputState->ControllerType);
     ovp::input::diag::maybeLog();
-    if (inputState->ControllerType != ovrControllerType_TrackedRemote) return Unsupported;
+    if (inputState->ControllerType != ovrControllerType_TrackedRemote) {
+        ++ovp::input::diag::c.stateRefused;
+        return Unsupported;
+    }
     ovp::input::Hand* hand = ovp::input::handForId(deviceID);
     if (hand == nullptr) return NoDevice;
     auto* state = reinterpret_cast<ovrInputStateTrackedRemote*>(inputState);
@@ -520,6 +529,12 @@ VRAPI ovrResult vrapi_GetCurrentInputState(ovrMobile* mobile, ovrDeviceID device
         return DeviceUnavailable;
     }
     *state = hand->state;
+    {
+        auto& d = ovp::input::diag::c;
+        size_t i = hand == &ovp::input::g.hands[ovp::input::Left] ? ovp::input::Left : ovp::input::Right;
+        d.buttons |= state->Buttons;
+        d.stickMax[i] = std::max(d.stickMax[i], std::max(std::fabs(state->Joystick.x), std::fabs(state->Joystick.y)));
+    }
     return Success;
 }
 
