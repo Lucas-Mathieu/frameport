@@ -5,6 +5,8 @@ Android home screen, e.g. Accounting+, Unity 2017.4). The package name in libuni
 installed): a same-length, in-place string edit; everything else about the check stays as it is."""
 from __future__ import annotations
 
+import os
+
 from ...analysis import elf
 from ..base import ApkContext, Patch, Suggestion, register
 from . import artifact
@@ -17,7 +19,7 @@ UPDATE, SHIM_UPDATE = "ovrp_Update2", "fpov_Update2"
 # input diagnostics (off): the C# P/Invoke names in libil2cpp.so pointed at the shim's wrappers, which log what they
 # return, report input focus as true and release buttons held > 2 s. Accounting+ still didn't pass "press any button"
 # with them (input reached the game cleanly), so they stay off; switch on to investigate another game.
-INPUT_PROBE = False
+INPUT_PROBE = os.environ.get("FRAMEPORT_INPUT_PROBE") == "1"  # diagnostic builds only
 INPUT_CALLS = ("ovrp_GetConnectedControllers", "ovrp_GetControllerState4", "ovrp_GetControllerState2",
                "ovrp_GetAppHasInputFocus")
 UNITY_INPUT_CALLS = ("ovrp_GetControllerState", "ovrp_GetControllerState2")
