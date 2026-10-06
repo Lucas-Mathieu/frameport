@@ -437,7 +437,7 @@
              output.views[eye].subImage.swapchain = chain->output;
              output.views[eye].subImage.imageArrayIndex =
                  chain->type == kTexture2DArray ? eye : 0;
-@@ -1007,3 +1355,73 @@
+@@ -1007,3 +1355,74 @@
      destroyCopyContext();
  }
  } // namespace ovp::graphics
@@ -447,7 +447,8 @@
 +constexpr int64_t kFormat8888 = 4, kFormat8888Srgb = 5, kFormatRgba16f = 6;
 +}
 +
-+VRAPI ovrTextureSwapChain* vrapi_CreateTextureSwapChain2(int32_t type, int64_t format, int width, int height,
++// format: VrApi's 32-bit ovrTextureFormat enum (only vrapi_CreateTextureSwapChain3 takes a 64-bit format)
++VRAPI ovrTextureSwapChain* vrapi_CreateTextureSwapChain2(int32_t type, int32_t format, int width, int height,
 +                                                          int levels, int bufferCount) {
 +    ovp::Runtime& s = ovp::runtime();
 +    std::lock_guard<std::recursive_mutex> lock(s.mutex);
@@ -499,7 +500,7 @@
 +    return chain;
 +}
 +
-+VRAPI ovrTextureSwapChain* vrapi_CreateTextureSwapChain(int32_t type, int64_t format, int width, int height,
++VRAPI ovrTextureSwapChain* vrapi_CreateTextureSwapChain(int32_t type, int32_t format, int width, int height,
 +                                                         int levels, bool buffered) {
 +    return vrapi_CreateTextureSwapChain2(type, format, width, height, levels, buffered ? 3 : 1);
 +}

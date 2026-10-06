@@ -731,10 +731,12 @@ VRAPI ovrResult vrapi_SetClientColorDesc(ovrMobile* mobile, const ovrHmdColorDes
     return xrOk(s.setColorSpace(s.session, static_cast<XrColorSpaceFB>(color->ColorSpace)), "xrSetColorSpaceFB") ? Success : InvalidParameter;
 }
 
-VRAPI void vrapi_SetTrackingSpace(ovrMobile* mobile, int32_t space) {
-    // Tracking-space changes (eye/floor level) are handled by the app's own poses; accept and ignore.
+VRAPI ovrResult vrapi_SetTrackingSpace(ovrMobile* mobile, int32_t space) {
+    // Tracking-space changes (eye/floor level) are handled by the app's own poses; accept and ignore. VrApi returns an
+    // ovrResult here: a void function left the caller reading whatever was in w0.
     (void)mobile;
     OVP_LOG("vrapi_SetTrackingSpace(%d) ignored", space);
+    return Success;
 }
 VRAPI bool vrapi_ShowSystemUI(const ovrJava* java, int32_t type) {
     (void)java;
@@ -747,7 +749,7 @@ VRAPI bool vrapi_ShowSystemUI(const ovrJava* java, int32_t type) {
 VRAPI ovrResult vrapi_PollEvent(ovrEventHeader* event) {
     // No VrApi events are produced: VRAPI_EVENT_NONE + ovrSuccess_EventUnavailable ends the app's polling loop.
     if (event) event->EventType = 0;
-    return 1000;
+    return 1002;  // ovrSuccess_EventUnavailable
 }
 VRAPI void vrapi_RecenterPose(ovrMobile* mobile) {
     // Deprecated in VrApi; OpenXR has no application recenter (the runtime's own recenter is reported via status 13).
