@@ -399,6 +399,24 @@ __attribute__((visibility("default"))) const GLubyte *glGetString(GLenum name) {
     return (const GLubyte *)filtered;
 }
 
+// With GL_EXT_multisampled_render_to_texture hidden (gl_hide_msrtt), an app that calls its functions anyway (Team
+// Beef's TBXR, e.g. Lambda1VR: color via glFramebufferTexture2DMultisampleEXT, depth via
+// glRenderbufferStorageMultisampleEXT) gets plain single-sampled versions, so both attachments match: Zink called
+// the mix GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE and the eyes stayed black.
+typedef void (*PFN_FT2D)(GLenum, GLenum, GLenum, GLuint, GLint);
+typedef void (*PFN_RBS)(GLenum, GLenum, GLsizei, GLsizei);
+static PFN_FT2D r_plain_ft2d;
+static PFN_RBS r_plain_rbs;
+static int msrtt_logged;
+static void plain_ft2dms(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level, GLsizei samples) {
+    if (!msrtt_logged++) LOG("GL shim: multisampled render-to-texture (%d samples) drawn single-sampled", (int)samples);
+    if (r_plain_ft2d) r_plain_ft2d(target, attachment, textarget, texture, level);
+}
+static void plain_rbsms(GLenum target, GLsizei samples, GLenum format, GLsizei width, GLsizei height) {
+    (void)samples;
+    if (r_plain_rbs) r_plain_rbs(target, format, width, height);
+}
+
 __attribute__((visibility("default"))) __eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *name) {
     pthread_once(&once, init);
     if (name && !strcmp(name, "glGetStringi")) return (__eglMustCastToProperFunctionPointerType)glGetStringi;
@@ -407,6 +425,13 @@ __attribute__((visibility("default"))) __eglMustCastToProperFunctionPointerType 
     __eglMustCastToProperFunctionPointerType fn = real_eglGetProcAddress ? real_eglGetProcAddress(name) : NULL;
     if (!fn || !name) return fn;
 #define WRAP(sym, real, w) if (!strcmp(name, sym)) { real = (void *)fn; return (__eglMustCastToProperFunctionPointerType)w; }
+    if (hide_msrtt && (!strcmp(name, "glFramebufferTexture2DMultisampleEXT") ||
+                       !strcmp(name, "glRenderbufferStorageMultisampleEXT"))) {
+        if (!r_plain_ft2d) r_plain_ft2d = (PFN_FT2D)real_eglGetProcAddress("glFramebufferTexture2D");
+        if (!r_plain_rbs) r_plain_rbs = (PFN_RBS)real_eglGetProcAddress("glRenderbufferStorage");
+        return name[2] == 'F' ? (__eglMustCastToProperFunctionPointerType)plain_ft2dms
+                              : (__eglMustCastToProperFunctionPointerType)plain_rbsms;
+    }
 #ifdef GLSHIM_TRACE  // build with -DGLSHIM_TRACE for eye-buffer / draw / error tracing
     WRAP("glFramebufferTextureMultiviewOVR", real_ftmv, w_ftmv)
     WRAP("glFramebufferTextureMultisampleMultiviewOVR", real_ftmsmv, w_ftmsmv)

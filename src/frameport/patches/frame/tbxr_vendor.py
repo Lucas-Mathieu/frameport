@@ -6,12 +6,19 @@ found). Past that, the native code takes Meta's path only where strstr(OPENXR_HM
 otherwise (XR_PICO_configs_ext and a NULL xrSetConfigPICO call). The patch adds an empty libopenxr_loader_valve.so and
 turns the "meta" literal those checks compare with into "alve", which "valve" contains: the Meta path, which OVRPort
 translates. Checked in Lambda1VR 1.7.3's libxash.so: all six uses of the literal are these strstr checks.
+
+TBXR also draws through multisampled render-to-texture (glFramebufferTexture2DMultisampleEXT +
+glRenderbufferStorageMultisampleEXT) whatever its --msaa setting; on the Frame that framebuffer is incomplete
+(GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE, black eyes). The GL shim (libglshim.so, linked into the TBXR library) hands
+it single-sampled versions of both.
 """
 from __future__ import annotations
 
 from ...analysis import elf
 from ...analysis.stubgen import build_stub_library
 from ..base import ApkContext, Patch, Suggestion, register
+from . import artifact
+from .vrapi_bridge import SHIM
 
 VENDOR_LOADER = "libopenxr_loader_valve.so"
 
@@ -46,6 +53,13 @@ class TbxrVendor(Patch):
                 ws.put(ws.lib(lib), data)
                 ctx.notes.append(f"{lib}: headset checks for \"meta\" match \"valve\" ({count})")
                 changed = True
+            data = ws.read_lib(lib)
+            if "eglGetProcAddress" in elf.dyn_symbols(data, False) and SHIM not in elf.needed(data):
+                ws.put(ws.lib(lib), elf.add_needed(data, SHIM))  # its GL comes through eglGetProcAddress
+                ctx.notes.append(f"GL shim loaded by {lib} (single-sampled render-to-texture)")
+                changed = True
+        if changed or ws.has(ws.lib(SHIM)):
+            ws.put(ws.lib(SHIM), artifact(ws.abi, SHIM))
         if not ws.has(ws.lib(VENDOR_LOADER)):
             ws.put(ws.lib(VENDOR_LOADER), build_stub_library([], soname=VENDOR_LOADER))
             changed = True
