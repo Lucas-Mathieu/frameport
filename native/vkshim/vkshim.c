@@ -8,6 +8,8 @@
 // at this shim (patches/frame/vk_sanitize.py). dlsym on the shim finds the functions below first and every other
 // symbol in its dependency, the real libvulkan.so. Valid pointers are kept; a pointer is dropped only when it isn't
 // readable memory or doesn't point at a structure type the parent may chain.
+// A depth/stencil resolve named in a subpass without a depth attachment is dropped as well: the Frame's driver
+// (Turnip) reads the missing depth attachment and crashes in vkCreateRenderPass2 (Unreal 5, e.g. Metro Awakening).
 //
 // Shader fixes (adapter setting vk_shader_fix, from a game's recipe): a SPIR-V module whose size and SHA-256 match is
 // copied with extra words inserted at a byte offset, e.g. stores that initialize locals a shader reads before writing
@@ -28,6 +30,8 @@
 //  * subpasses with Qualcomm's shader resolve (VK_SUBPASS_DESCRIPTION_SHADER_RESOLVE_BIT_QCOM) also name a depth
 //    resolve attachment for a single-sampled depth attachment (VUID-VkSubpassDescription2-flags-04908, -03179): the
 //    resolve is dropped (there is nothing to resolve from one sample).
+//  * image memory barriers whose image is VK_NULL_HANDLE (Unreal 5, e.g. Metro Awakening) are left out of
+//    vkCmdPipelineBarrier(2): Quest's driver skips them, the Frame's Turnip crashes on them.
 #define _GNU_SOURCE
 #include <vulkan/vulkan.h>
 #include <android/log.h>
@@ -35,6 +39,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -93,6 +98,7 @@ static int query_slots = 1;  // vk_query_slots: slots per occlusion query (1 = u
 static int spec_fixes;       // vk_spec_fixes: make two Unreal habits valid Vulkan (depth clears, depth resolves)
 #define VALIDATION_LAYER "VK_LAYER_KHRONOS_validation"
 static int validation;       // vk_validation: add Khronos' validation layer (bundled in the APK) to the instance
+static int hide_fdm;         // vk_hide_fdm: the game doesn't see VK_EXT_fragment_density_map(2)
 
 static void read_settings(const char *path) {
     FILE *f = fopen(path, "r");
@@ -101,6 +107,7 @@ static void read_settings(const char *path) {
     while (fgets(line, sizeof line, f)) {
         line[strcspn(line, "\r\n")] = 0;
         if (!strncmp(line, "vk_validation=", 14)) validation = atoi(line + 14) != 0;
+        if (!strncmp(line, "vk_hide_fdm=", 12)) hide_fdm = atoi(line + 12) != 0;
         if (!strncmp(line, "vk_spec_fixes=", 14)) spec_fixes = atoi(line + 14) != 0;
         if (!strncmp(line, "vk_query_slots=", 15)) {
             int v = atoi(line + 15);
@@ -210,6 +217,7 @@ static void init(void) {
     if (nfixes) LOG("vk shim: %d shader fix(es) configured", nfixes);
     if (query_slots > 1) LOG("vk shim: %d slots per occlusion query", query_slots);
     if (validation) LOG("vk shim: adding %s to the instance", VALIDATION_LAYER);
+    if (hide_fdm) LOG("vk shim: fragment density map extensions hidden from the game");
     if (spec_fixes) LOG("vk shim: Vulkan spec fixes on (depth images can be cleared, no depth resolve in shader-resolve "
                         "subpasses)");
     real_vk = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
@@ -348,7 +356,23 @@ static const void *clean_chain(Arena *a, const void *head, int *fixes) {
     return first;
 }
 
-static int resolves_logged;
+static int resolves_logged, sourceless_logged;
+
+// A subpass without a depth/stencil attachment that still names a depth/stencil resolve attachment (Unreal 5, e.g.
+// Metro Awakening; valid Vulkan only while that resolve is VK_ATTACHMENT_UNUSED): the Frame's Turnip reads the
+// subpass's depth attachment whenever a resolve attachment is named and crashes on the NULL pointer in
+// vkCreateRenderPass2. With nothing to resolve from, no resolve attachment means the same thing.
+// `sp` is our copy; its known pNext members are copies too (clean_chain), the first unknown one ends the walk.
+static void drop_sourceless_resolve(VkSubpassDescription2 *sp, uint32_t index, int *fixes) {
+    for (VkBaseOutStructure *n = (VkBaseOutStructure *)sp->pNext; n && chain_size(n->sType); n = n->pNext) {
+        if (n->sType != VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_DEPTH_STENCIL_RESOLVE) continue;
+        VkSubpassDescriptionDepthStencilResolve *r = (void *)n;
+        if (!r->pDepthStencilResolveAttachment) continue;
+        r->pDepthStencilResolveAttachment = NULL;
+        (*fixes)++;
+        if (sourceless_logged++ < 5) LOG("vk shim: dropped the depth resolve of subpass %u (no depth attachment)", index);
+    }
+}
 
 static VkRenderPassCreateInfo2 clean_create_info(Arena *a, const VkRenderPassCreateInfo2 *ci, int *fixes) {
     VkRenderPassCreateInfo2 out = *ci;
@@ -370,6 +394,7 @@ static VkRenderPassCreateInfo2 clean_create_info(Arena *a, const VkRenderPassCre
                 sp[i].pColorAttachments = clean_refs(a, sp[i].pColorAttachments, sp[i].colorAttachmentCount, fixes);
                 sp[i].pResolveAttachments = clean_refs(a, sp[i].pResolveAttachments, sp[i].colorAttachmentCount, fixes);
                 sp[i].pDepthStencilAttachment = clean_refs(a, sp[i].pDepthStencilAttachment, 1, fixes);
+                if (!sp[i].pDepthStencilAttachment) drop_sourceless_resolve(&sp[i], i, fixes);
             }
             out.pSubpasses = sp;
         }
@@ -409,11 +434,13 @@ static VkRenderPassCreateInfo2 clean_create_info(Arena *a, const VkRenderPassCre
 // ---------------------------------------------------------------- entry points
 
 #define MAX_DEVICES 8
-enum { FN_RP2, FN_RP2KHR, FN_CSM, FN_CIMG, FN_CQP, FN_DQP, FN_BQ, FN_EQ, FN_CRQP, FN_RQP, FN_RQPEXT, FN_GQPR, FN_CCQPR, FN_COUNT };
+enum { FN_RP2, FN_RP2KHR, FN_CSM, FN_CIMG, FN_CQP, FN_DQP, FN_BQ, FN_EQ, FN_CRQP, FN_RQP, FN_RQPEXT, FN_GQPR, FN_CCQPR,
+      FN_PB, FN_PB2, FN_PB2KHR, FN_EDEP, FN_CDEV, FN_CIV, FN_COUNT };
 static const char *const FN_NAMES[FN_COUNT] = {
     "vkCreateRenderPass2", "vkCreateRenderPass2KHR", "vkCreateShaderModule", "vkCreateImage", "vkCreateQueryPool", "vkDestroyQueryPool",
     "vkCmdBeginQuery", "vkCmdEndQuery", "vkCmdResetQueryPool", "vkResetQueryPool", "vkResetQueryPoolEXT",
-    "vkGetQueryPoolResults", "vkCmdCopyQueryPoolResults"};
+    "vkGetQueryPoolResults", "vkCmdCopyQueryPoolResults", "vkCmdPipelineBarrier", "vkCmdPipelineBarrier2",
+    "vkCmdPipelineBarrier2KHR", "vkEnumerateDeviceExtensionProperties", "vkCreateDevice", "vkCreateImageView"};
 static struct { VkDevice device; PFN_vkVoidFunction fn[FN_COUNT]; } devices[MAX_DEVICES];
 static PFN_vkCreateRenderPass2 fallback_rp2khr;  // from vkGetInstanceProcAddr
 static pthread_mutex_t dev_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -701,6 +728,156 @@ EXPORT VKAPI_ATTR void VKAPI_CALL vkCmdCopyQueryPoolResults(VkCommandBuffer cb, 
     cmd_copy_query_pool_results(cb, p, f, c, b, o, st, fl);
 }
 
+// ---------------------------------------------------------------- fragment density map (vk_hide_fdm)
+
+// Unreal 5 turns on fragment-density-map foveation when the driver offers VK_EXT_fragment_density_map (the Frame's
+// Turnip does) and expects the density map from the headset's runtime, which the Frame doesn't provide (e.g. Metro
+// Awakening: image views and barriers for a VK_NULL_HANDLE image, then a crash). Hidden, the game renders without it;
+// Valve's own FDM layer sits below this shim and isn't affected.
+static int is_fdm_extension(const char *name) { return strstr(name, "fragment_density_map") != NULL; }
+
+EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(VkPhysicalDevice pd, const char *layer,
+                                                                          uint32_t *count, VkExtensionProperties *props) {
+    pthread_once(&once, init);
+    PFN_vkEnumerateDeviceExtensionProperties real = (PFN_vkEnumerateDeviceExtensionProperties)any_fn(NULL, FN_EDEP);
+    if (!real) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!hide_fdm || layer || !count) return real(pd, layer, count, props);
+    uint32_t n = 0;
+    VkResult r = real(pd, NULL, &n, NULL);
+    if (r != VK_SUCCESS) return r;
+    VkExtensionProperties *all = calloc(n ? n : 1, sizeof *all);
+    if (!all) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    r = real(pd, NULL, &n, all);
+    if (r < 0) { free(all); return r; }
+    uint32_t kept = 0;
+    for (uint32_t i = 0; i < n; i++)
+        if (!is_fdm_extension(all[i].extensionName)) all[kept++] = all[i];
+    if (!props) {
+        *count = kept;
+        free(all);
+        return VK_SUCCESS;
+    }
+    uint32_t c = *count < kept ? *count : kept;
+    memcpy(props, all, c * sizeof *props);
+    *count = c;
+    free(all);
+    return c < kept ? VK_INCOMPLETE : VK_SUCCESS;
+}
+
+EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice pd, const VkDeviceCreateInfo *ci,
+                                                    const VkAllocationCallbacks *alloc, VkDevice *device) {
+    pthread_once(&once, init);
+    PFN_vkCreateDevice real = (PFN_vkCreateDevice)any_fn(NULL, FN_CDEV);
+    if (!real) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!ci || (!hide_fdm && !spec_fixes)) return real(pd, ci, alloc, device);
+    char names[1024] = "";
+    VkDeviceCreateInfo copy = *ci;
+    const char **kept = calloc(ci->enabledExtensionCount + 1, sizeof *kept);
+    if (!kept) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    copy.enabledExtensionCount = 0;
+    for (uint32_t i = 0; i < ci->enabledExtensionCount; i++) {
+        const char *e = ci->ppEnabledExtensionNames[i];
+        size_t len = strlen(names);
+        snprintf(names + len, sizeof names - len, "%s%s", len ? " " : "", e + (strncmp(e, "VK_", 3) ? 0 : 3));
+        if (hide_fdm && is_fdm_extension(e)) continue;
+        kept[copy.enabledExtensionCount++] = e;
+    }
+    copy.ppEnabledExtensionNames = kept;
+    LOG("vk shim: vkCreateDevice with %u extension(s): %s", ci->enabledExtensionCount, names);
+    VkResult r = real(pd, &copy, alloc, device);
+    free(kept);
+    return r;
+}
+
+static int null_views_logged;
+
+// An image view of VK_NULL_HANDLE crashes the Frame's Turnip (it reads the image); with vk_spec_fixes it fails with
+// an error instead, which names the call in the game's own log.
+static VKAPI_ATTR VkResult VKAPI_CALL create_image_view(VkDevice device, const VkImageViewCreateInfo *ci,
+                                                       const VkAllocationCallbacks *alloc, VkImageView *view) {
+    PFN_vkCreateImageView real = (PFN_vkCreateImageView)any_fn(device, FN_CIV);
+    if (!real) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!ci || ci->image) return real(device, ci, alloc, view);
+    if (null_views_logged++ < 10)
+        LOG("vk shim: refused an image view without an image (format %d, view type %d, aspect 0x%x, layers %u)",
+            ci->format, ci->viewType, ci->subresourceRange.aspectMask, ci->subresourceRange.layerCount);
+    if (view) *view = VK_NULL_HANDLE;
+    return VK_ERROR_INITIALIZATION_FAILED;
+}
+
+// ---------------------------------------------------------------- image barriers without an image (vk_spec_fixes)
+
+// Unreal 5 (e.g. Metro Awakening) records image memory barriers whose image is VK_NULL_HANDLE (invalid Vulkan,
+// VUID-VkImageMemoryBarrier-image-parameter). Quest's driver skips them; the Frame's Turnip reads the image and
+// crashes in vkCmdPipelineBarrier. They change nothing, so they are left out.
+static int null_barriers_logged;
+
+// The barriers without the ones naming no image: `src` itself when there are none, else a copy in `buf` (or a malloc'd
+// one in *heap, which the caller frees); *count is updated.
+static const void *without_null_images(const void *src, uint32_t *count, size_t size, size_t image_offset, void *buf,
+                                       size_t buf_size, void **heap) {
+    uint32_t n = *count, kept = 0;
+    for (uint32_t i = 0; i < n; i++)
+        if (*(const uint64_t *)((const char *)src + i * size + image_offset)) kept++;
+    if (kept == n) return src;
+    char *out = n * size <= buf_size ? buf : (*heap = malloc(n * size));
+    if (!out) return src;
+    for (uint32_t i = 0, j = 0; i < n; i++)
+        if (*(const uint64_t *)((const char *)src + i * size + image_offset)) memcpy(out + j++ * size, (const char *)src + i * size, size);
+    if (null_barriers_logged++ < 5) {
+        // in both barrier versions oldLayout/newLayout sit 16 bytes before the image, the subresource range 8 after it
+        const char *first = NULL;
+        for (uint32_t i = 0; i < n && !first; i++)
+            if (!*(const uint64_t *)((const char *)src + i * size + image_offset)) first = (const char *)src + i * size;
+        const uint32_t *layouts = (const uint32_t *)(first + image_offset - 16);  // oldLayout, newLayout, srcQFI, dstQFI
+        const uint32_t *range = (const uint32_t *)(first + image_offset + 8);     // aspect, mip, levels, layer, layers
+        LOG("vk shim: left out %u image barrier(s) without an image (first: layout %u -> %u, aspect 0x%x, layers %u)",
+            n - kept, layouts[0], layouts[1], range[0], range[4]);
+    }
+    *count = kept;
+    return out;
+}
+
+static VKAPI_ATTR void VKAPI_CALL cmd_pipeline_barrier(VkCommandBuffer cb, VkPipelineStageFlags src, VkPipelineStageFlags dst,
+                                                       VkDependencyFlags flags, uint32_t memory_count,
+                                                       const VkMemoryBarrier *memory, uint32_t buffer_count,
+                                                       const VkBufferMemoryBarrier *buffers, uint32_t image_count,
+                                                       const VkImageMemoryBarrier *images) {
+    PFN_vkCmdPipelineBarrier real = (PFN_vkCmdPipelineBarrier)any_fn(NULL, FN_PB);
+    if (!real) return;
+    VkImageMemoryBarrier buf[16];
+    void *heap = NULL;
+    const VkImageMemoryBarrier *kept = images && image_count
+        ? without_null_images(images, &image_count, sizeof *images, offsetof(VkImageMemoryBarrier, image), buf, sizeof buf, &heap)
+        : images;
+    real(cb, src, dst, flags, memory_count, memory, buffer_count, buffers, image_count, kept);
+    free(heap);
+}
+
+static void pipeline_barrier2(VkCommandBuffer cb, const VkDependencyInfo *info, int which) {
+    PFN_vkCmdPipelineBarrier2 real = (PFN_vkCmdPipelineBarrier2)any_fn(NULL, which);
+    if (!real) return;
+    if (!info || !info->pImageMemoryBarriers || !info->imageMemoryBarrierCount) {
+        real(cb, info);
+        return;
+    }
+    VkImageMemoryBarrier2 buf[16];
+    void *heap = NULL;
+    VkDependencyInfo copy = *info;
+    copy.pImageMemoryBarriers = without_null_images(info->pImageMemoryBarriers, &copy.imageMemoryBarrierCount,
+                                                    sizeof *buf, offsetof(VkImageMemoryBarrier2, image), buf, sizeof buf, &heap);
+    real(cb, &copy);
+    free(heap);
+}
+
+static VKAPI_ATTR void VKAPI_CALL cmd_pipeline_barrier2(VkCommandBuffer cb, const VkDependencyInfo *info) {
+    pipeline_barrier2(cb, info, FN_PB2);
+}
+
+static VKAPI_ATTR void VKAPI_CALL cmd_pipeline_barrier2_khr(VkCommandBuffer cb, const VkDependencyInfo *info) {
+    pipeline_barrier2(cb, info, FN_PB2KHR);
+}
+
 static int wrapped_index(const char *name) {
     for (int i = 0; i < FN_COUNT; i++)
         if (!strcmp(name, FN_NAMES[i])) return i;
@@ -713,6 +890,12 @@ static PFN_vkVoidFunction wrap(const char *name) {
     case FN_RP2KHR: return (PFN_vkVoidFunction)create_render_pass2_khr;
     case FN_CSM: return nfixes ? (PFN_vkVoidFunction)vkCreateShaderModule : NULL;  // nothing to fix: no detour
     case FN_CIMG: return spec_fixes ? (PFN_vkVoidFunction)create_image : NULL;
+    case FN_PB: return spec_fixes ? (PFN_vkVoidFunction)cmd_pipeline_barrier : NULL;
+    case FN_PB2: return spec_fixes ? (PFN_vkVoidFunction)cmd_pipeline_barrier2 : NULL;
+    case FN_PB2KHR: return spec_fixes ? (PFN_vkVoidFunction)cmd_pipeline_barrier2_khr : NULL;
+    case FN_EDEP: return hide_fdm ? (PFN_vkVoidFunction)vkEnumerateDeviceExtensionProperties : NULL;
+    case FN_CDEV: return hide_fdm || spec_fixes ? (PFN_vkVoidFunction)vkCreateDevice : NULL;
+    case FN_CIV: return spec_fixes ? (PFN_vkVoidFunction)create_image_view : NULL;
     default: break;
     }
     if (query_slots < 2) return NULL;  // no query remapping: no detours

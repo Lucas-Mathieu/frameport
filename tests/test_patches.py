@@ -156,6 +156,16 @@ def test_per_game_session_settings_are_off_unless_selected():
         assert patch.detect(_analysis()) is None
 
 
+
+def test_vk_hide_fdm_is_a_per_game_unreal_setting():
+    """Metro Awakening: Unreal's Vulkan isn't always detected, so it's offered for every Unreal game; off by default."""
+    from frameport.patches.settings import UI
+
+    patch = base.get("adapter.vk_hide_fdm")
+    assert patch.applies(_analysis(engine="Unreal", graphics="GLES or unknown (no Vulkan declaration)"))
+    assert not patch.applies(_analysis(engine="Unity"))
+    assert "vk_hide_fdm" not in adapter_settings({}) and UI["vk_hide_fdm"]["group"] == "troubleshooting"
+
 def test_detect_direct_vrapi_suggests_bridge_and_shim():
     a = _analysis(xr="VrApi", direct_vrapi=True, uses_glad_gl=True, graphics="GLES or unknown", package="x.y.unknown")
     from frameport.recommend import engine

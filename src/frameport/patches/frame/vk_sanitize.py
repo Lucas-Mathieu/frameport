@@ -35,7 +35,9 @@ class VulkanSanitize(Patch):
                    "driver never reads it, but Lepton always loads Steam's Fossilize shader-cache layer, which follows "
                    "it and crashes on the first frame (SIGSEGV in libVkLayer_fossilize.so from FVulkanRenderPass, "
                    "e.g. Deadpool VR). Loads Vulkan through a small shim that keeps valid pointers and drops only "
-                   "unreadable ones or ones pointing at the wrong structure type.")
+                   "unreadable ones or ones pointing at the wrong structure type. It also drops a depth resolve "
+                   "named in a subpass without a depth attachment, which crashes the Frame's driver at the first "
+                   "render pass (e.g. Metro Awakening).")
     order = 72
     default_on = True
 

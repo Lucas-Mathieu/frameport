@@ -148,13 +148,19 @@ SETTINGS = [
      "Vulkan shim (frame.vk_sanitize): makes two Unreal habits valid Vulkan - depth images get "
      "VK_IMAGE_USAGE_TRANSFER_DST_BIT (they are cleared with vkCmdClearDepthStencilImage) and Qualcomm shader-resolve "
      "subpasses lose an invalid depth resolve. Found with the validation layer in Into The Radius 2 (flickering "
-     "models, windows behind models)."),
+     "models, windows behind models). Also leaves out image barriers without an image and refuses image views without "
+     "one, which crash the Frame's driver (e.g. Metro Awakening)."),
     ("vk_validation", "int", 0, "Vulkan shim: validation layer",
      "Diagnostics: the Vulkan shim (frame.vk_sanitize) adds Khronos' validation layer to the game's instance; its "
      "findings go to launch.log. The layer library (libVkLayer_khronos_validation.so) must be in the APK."),
     ("gl_hide_msrtt", "int", 1, "GL shim: hide multisampled render-to-texture",
      "GL shim only: hide GL_EXT_multisampled_render_to_texture(2) (Zink crashes rendering Unity's runtime MSAA eye "
      "buffer through it, e.g. The Room VR)."),
+    ("vk_hide_fdm", "int", 0, "Vulkan shim: hide fragment density maps",
+     "Vulkan shim (frame.vk_sanitize): the game doesn't see VK_EXT_fragment_density_map(2). Unreal Engine 5 turns on "
+     "fragment-density-map foveation when the driver offers it and expects the density map from the headset, which the "
+     "Frame doesn't provide: image views and barriers for a missing image, then a crash in the Frame's Vulkan driver "
+     "(e.g. Metro Awakening). Valve's own foveation layer isn't affected."),
     ("gl_hide_multiview", "int", 1, "GL shim: hide multiview",
      "GL shim only: hide GL_OVR_multiview so all passes use single-view shaders. For GLES games whose multiview "
      "shaders fail on single-view render targets (e.g. Path of the Warrior)."),
@@ -264,7 +270,7 @@ UI: dict[str, dict] = {
     **{key: dict(group="troubleshooting", level="advanced", control=("switch",)) for key in (
         "foveation_fix", "hide_space_warp", "swapchain_fix", "layer_fix", "gl_hide_multiview", "mutable_fix",
         "flip_quads", "swap_eyes", "vk_validation", "rect_clamp", "gl_hide_msrtt", "strip_color_bias", "snapshot",
-        "strip_depth", "respace_kick", "layer_debug", "eye_debug", "release_wait")},
+        "strip_depth", "respace_kick", "layer_debug", "eye_debug", "release_wait", "vk_hide_fdm")},
 }
 
 
@@ -324,6 +330,7 @@ class AdapterSetting(Patch):
             "gl_hide_multiview": lambda a: a.direct_vrapi and ap.is_gles(a),
             "gl_hide_msrtt": ap.is_gles,
             "vk_shader_fix": lambda a: a.engine == "Unreal",  # read by the Vulkan shim, which only Unreal games get
+            "vk_hide_fdm": lambda a: a.engine == "Unreal",  # Unreal's Vulkan isn't always detected (Metro Awakening)
             "vk_query_slots": lambda a: a.engine == "Unreal" and ap.is_vulkan(a),
             "vk_validation": lambda a: a.engine == "Unreal",
             "haptic_fix": lambda a: "libOVRPlugin.so" in a.libs,

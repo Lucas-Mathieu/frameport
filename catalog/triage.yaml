@@ -149,6 +149,18 @@ signatures:
     severity: warning
     diagnosis: Runtime lacks timespec time conversion (emulated by the current adapter build).
     suggest: [frame.adapter]
+  - id: unreal-vulkan-driver-crash
+    pattern: '#00 pc [^\n]*/vulkan\.freedreno\.so[\s\S]{0,3000}?lib(Unreal|UE4)\.so'
+    severity: fatal
+    diagnosis: The Frame's Vulkan driver crashed on a call from Unreal. Unreal 5 passes things Quest's driver ignores - a depth resolve in a subpass without a depth attachment (fixed by the Vulkan shim), image barriers and image views for a missing image when it expects fragment density maps (foveation) from the headset (e.g. Metro Awakening).
+    suggest: [frame.vk_sanitize, adapter.vk_spec_fixes, adapter.vk_hide_fdm]
+    supersedes: [native-crash]
+  - id: unreal-fdm-missing
+    pattern: 'vk shim: left out \d+ image barrier\(s\) without an image \(first: layout \d+ -> 1000218000'
+    unless: 'vk shim: fragment density map extensions hidden'
+    severity: warning
+    diagnosis: Unreal expects fragment density maps (foveation) from the headset, which the Frame doesn't provide; its image views for them crash the Frame's driver a few seconds later (e.g. Metro Awakening).
+    suggest: [adapter.vk_hide_fdm]
   - id: fossilize-renderpass
     pattern: '#0\d pc [^\n]*libVkLayer_fossilize\.so[\s\S]{0,4000}?FVulkanRenderPass::FVulkanRenderPass'
     severity: fatal
