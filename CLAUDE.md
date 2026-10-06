@@ -626,6 +626,11 @@ Installed apps find the release themselves (self-update), so the notes are what 
   Windows console) plus PYTHONUTF8; macOS builds need `--python-version 3.12 --arch arm64` (cryptography has no wheels
   for flet's default Python / x86_64 cross-build), with a PyInstaller fallback step; `astral-sh/setup-uv` has no
   floating major tags after v7 → pin the exact version; force-moving a tag starts duplicate runs (cancel one).
+- `jni` (2026-10-06): jni_flutter 1.0.4/1.0.4+1 generate bindings that require jni ^1.1.0 while Flet's build template
+  pins jni 1.0.0 → every `flet build` bundle failed (`JniVersionCheck`, "generated bindings expect package:jni
+  ^1.1.0"). pyproject `[tool.flet.flutter.pubspec.dependency_overrides] jni = "1.1.0"` fixes it (pinning
+  jni_flutter 1.0.4 does not); drop it once Flet's template moves to jni 1.1. A failed tag build publishes nothing:
+  delete and re-push the tag on the fixed commit.
 - macOS runner (2026-10-02): `macos-latest` jobs went unassigned (cancelled after 15 min, no steps); `macos-15`'s Xcode
   16.4 fails a Flutter plugin (`NWPath has no member`); `macos-26` (Xcode 26) builds with `flet build`. The PyInstaller
   fallback (`package.py --pyinstaller`) passes `--yes` so a failed `flet build`'s folder doesn't stop it at a prompt.
