@@ -96,8 +96,27 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           app=$(find dist -maxdepth 3 -name "*.app" -type d | head -1)
-          codesign --force --deep --sign - "$app"
+          # Re-signing replaces the signature, entitlements included: pass them again, or the file picker refuses to
+          # open ("ENTITLEMENT_NOT_FOUND", GitHub #63). flet build writes them to Release.entitlements; the
+          # PyInstaller fallback has none, so it gets the same set.
+          ent=build/flutter/macos/Runner/Release.entitlements
+          if [ ! -f "$ent" ]; then
+            ent="$RUNNER_TEMP/FramePort.entitlements"
+            cat > "$ent" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>com.apple.security.cs.allow-jit</key><true/>
+            <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+            <key>com.apple.security.network.client</key><true/>
+            <key>com.apple.security.network.server</key><true/>
+            <key>com.apple.security.files.user-selected.read-write</key><true/>
+          </dict></plist>
+          EOF
+          fi
+          codesign --force --deep --sign - --entitlements "$ent" "$app"
           codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -d --entitlements - "$app" 2>/dev/null | tee /dev/stderr | grep -q "files.user-selected.read-write"
 
       # ---- package (archives keep permissions/symlinks) + provenance ----
       - name: Package (Windows)
