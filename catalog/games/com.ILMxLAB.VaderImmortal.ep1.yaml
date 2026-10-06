@@ -1,0 +1,20 @@
+package: com.ILMxLAB.VaderImmortal.ep1
+title: 'Vader Immortal: Episode I'
+status: issues
+notes: Starts in VR and plays the intro, then stays on the loading card (Vader's portrait with a progress bar).
+details: Unreal Engine 4 (GLES). After the Lucasfilm intro the game shows its loading card and never loads the next
+  scene; it keeps rendering at 72 fps and ignores input. Ruled out so far - Meta platform requests (all answered),
+  video playback (the intro is a video and plays), the no-ForceQuit build, frame and swapchain handling. The Frame's
+  SteamVR runtime also leaks about 20 MB of memory a second while the game runs, which slows it down after a few
+  minutes. Next steps - find what the loading code waits for in the game's engine library (no symbols) and report
+  the runtime leak to Valve. GitHub issue 49.
+tested_version: 1.1.1+667256.cl.387770
+engine: Unreal
+xr: VrApi
+alt_overport:
+- patch_remove_unreal_force_quit
+verified:
+  date: '2026-10-06'
+  issue: 49
+updated: '2026-10-06'
+source_hint: Vader Immortal- Episode I

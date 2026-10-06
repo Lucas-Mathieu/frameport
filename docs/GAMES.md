@@ -67,6 +67,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Phantom: Covert Ops | Quest | ⚠️ Works with issues | DLC/store button crashes (no Meta store). |
 | Silhouette | Quest | ⚠️ Works with issues | Hand-tracking game; the Frame synthesizes hands from controllers, so it is janky. |
 | Time Stall | Quest | ⚠️ Works with issues | Both eyes distort during movement (unresolved). |
+| Vader Immortal: Episode I | Quest | ⚠️ Works with issues | Starts in VR and plays the intro, then stays on the loading card (Vader's portrait with a progress bar). |
 | WiiCompiled VR | Quest | ⚠️ Works with issues | To add a game: in FramePort's Files tab, upload your .wcgame file to this game's storage, folder Android/data/org.wiicompiled.quest/files/WiiCompiledOpenXRVR… |
 | BONELAB | Quest | ❌ Doesn't run | Crashes while starting its graphics (Vulkan); no fix yet. |
 | Espire 1: VR Operative (Quest Edition) | Quest | ❌ Doesn't run | Mesa GL driver crash during texture upload. |
