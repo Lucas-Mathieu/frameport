@@ -746,3 +746,19 @@ def test_to_string_stubs_return_an_empty_string():
     assert struct.unpack_from("<I", lib, foo)[0] == 0xD2800000  # everything else still returns 0
     assert detect.OVR_TO_STRING.match("ovrVoipMuteState_ToString")
     assert not detect.OVR_TO_STRING.match("ovrAvatar_Create")
+
+
+def test_avatar_stub_keeps_the_loaders_functions(tmp_path, quest_manifest):
+    from frameport.analysis import elf
+
+    apk = _apk(tmp_path, quest_manifest)
+    with ApkWorkspace(apk) as ws:
+        real = build_stub_library(["ovrAvatar_InitializeAndroid", "ovrAvatarMessage_Pop"],
+                                  soname="libovravatarloader.so")
+        ws.put(ws.lib("libovravatarloader.so"), real.replace(b"\x00\x00\x80\xd2", b"\x20\x00\x80\xd2"))
+        p = base.get("frame.avatar_stub")
+        a = _analysis(libs=["libovravatarloader.so"])
+        assert p.applies(a) and p.detect(a) is None
+        assert p.apply(base.ApkContext(ws, a, {}, Reporter(), {p.id: {}}))
+        stub = ws.read_lib("libovravatarloader.so")
+        assert elf.dyn_symbols(stub, True) == {"ovrAvatar_InitializeAndroid", "ovrAvatarMessage_Pop"}

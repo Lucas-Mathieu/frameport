@@ -109,6 +109,13 @@ signatures:
       rebuild the game.
     suggest: [frame.adapter]
     supersedes: [native-crash]
+  - id: avatar-driver-missing
+    pattern: 'OVRAvatar-Loader: DisplayErrorAndExit'
+    severity: fatal
+    diagnosis: Meta's avatar library can't find its driver (it needs Meta's Horizon app) and stops the game (e.g.
+      BlazeRush). Replace it with a do-nothing library; the game runs without Meta avatars.
+    suggest: [frame.avatar_stub]
+    supersedes: [native-crash, java-crash]
   - id: vrapi-symbol-missing
     pattern: 'cannot locate symbol "vrapi_\w+"'
     severity: fatal

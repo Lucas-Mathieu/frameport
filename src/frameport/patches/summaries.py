@@ -70,6 +70,7 @@ SUMMARIES = {
     "frame.asset_files": "Lets the game find content it keeps in separate files next to its data (e.g. Star Wars "
                          "Tales' seasons).",
     "frame.ovr_microphone": "Stops a crash a few seconds after the logo in games with voice chat.",
+    "frame.avatar_stub": "Lets games start that would stop on Meta's avatar system (e.g. BlazeRush); no Meta avatars.",
     "frame.vrapi_bridge": "Translator for games built on Meta's oldest VR interface.",
     "frame.gl_shim": "Fixes graphics code that the Frame's drivers reject (black screen with sound).",
     "frame.metaxr_telemetry": "Skips a Quest-only reporting step in Meta's audio library that crashes some games.",

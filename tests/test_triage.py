@@ -137,3 +137,10 @@ def test_unreal_vulkan_driver_crash_and_missing_fdm():
 def test_session_without_graphics_requirements():
     log = "10-06 18:13:02.714  1115  1157 E TBXR    : Failed to create XR session: -50.\n"
     assert "graphics-requirements-missing" in {f.id for f in triage(log, "EXITED", "com.drbeef.lambda1vr").findings}
+
+
+def test_avatar_driver_missing():
+    log = ("10-06 18:42:51.349  1130  1158 I OVRAvatar-Loader: ovrAvatar_Initialize: Failed to load AvatarSDK "
+           "driver (-1)!\n10-06 18:42:51.351  1130  1158 F OVRAvatar-Loader: DisplayErrorAndExit: Failed to launch "
+           "SystemActivities\n")
+    assert triage(log, "EXITED", "ru.targem.blazerush").suggestions() == ["frame.avatar_stub"]
