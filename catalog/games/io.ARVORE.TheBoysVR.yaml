@@ -1,0 +1,21 @@
+package: io.ARVORE.TheBoysVR
+title: The Boys VR
+status: works
+notes: Plays with space warp off (owner's headset test, 2026-10-06; black screen reported before).
+tested_version: 1.1.0.345
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+  hide_space_warp: 1
+verified:
+  date: '2026-10-06'
+  known_good_sha256: 5df46b1771611c607229ee59298d983a4d78a57591d4864a02da2df5d2b6f97b
+  app: 0.12.0
+updated: '2026-10-06'
+min_app: 0.12.0
+source_hint: The Boys
