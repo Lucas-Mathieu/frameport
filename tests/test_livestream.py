@@ -420,8 +420,8 @@ def test_ensure_helper_uploads_only_when_different(tmp_path, monkeypatch):
     assert L.ensure_helper(same) and not same.puts
     other = _Frame("0" * 64)
     assert L.ensure_helper(other)
-    assert other.puts == ["/home/steamos/.local/share/frameport/bin/fp_venc.new"]
-    assert any("chmod 755" in c and "mv -f" in c for c in other.cmds)
+    assert len(other.puts) == 1 and other.puts[0].startswith("/home/steamos/.local/share/frameport/bin/fp_venc.new-")
+    assert any("chmod 755" in c and "mv -f" in c and other.puts[0] in c for c in other.cmds)
     monkeypatch.setattr(L, "helper_path", lambda: None)
     assert not L.ensure_helper(_Frame(""))  # a build without the helper: software encoder
 
@@ -445,6 +445,41 @@ def test_window_stats_and_panel_warning():
 
     assert "lower quality" in health_text({"dropping": True, "dropped": 276})
     assert health_text({"dropping": False, "dropped": 4}) == "" and health_text({}) == ""
+
+
+class _StopChan:
+    def __init__(self, exits: bool):
+        self.exits, self.closed, self.eof = exits, False, False
+
+    def shutdown_write(self):
+        self.eof = True
+
+    def exit_status_ready(self):
+        return self.exits
+
+    def recv_ready(self):
+        return False
+
+    def recv_stderr_ready(self):
+        return False
+
+    def close(self):
+        self.closed = True
+
+
+def test_stop_kills_a_stuck_stream():
+    """fp_venc blocked in a write never sees stdin EOF: after the grace time its process group is ended."""
+    frame = _Frame("")
+    src = L.FrameSource(frame, "1080p")
+    src.chan, src.info = _StopChan(exits=False), {"pgid": "4321"}
+    src.close(grace=0.1)
+    assert src.chan.eof and src.chan.closed
+    assert any("kill -TERM -- -4321" in c for c in frame.cmds)
+    frame = _Frame("")
+    src = L.FrameSource(frame, "1080p")
+    src.chan, src.info = _StopChan(exits=True), {"pgid": "4321"}
+    src.close(grace=0.1)
+    assert not any("kill" in c for c in frame.cmds)  # stopped by itself: nothing to kill
 
 
 def test_status_has_dropped_frames():

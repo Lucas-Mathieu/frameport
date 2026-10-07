@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import posixpath
 import queue
 import struct
@@ -423,6 +424,8 @@ for d in /sys/class/video4linux/video*; do
 done
 if [ -z "$dev" ]; then echo "no SteamVR headset view device: is SteamVR running?" >&2; exit 3; fi
 export XDG_RUNTIME_DIR=${{XDG_RUNTIME_DIR:-/run/user/$(id -u)}}  # (an SSH session may lack it: PipeWire's socket)
+# the PC kills this process group when a stop's stdin EOF doesn't end it (writes blocked on a full pipe)
+echo "{INFO_PREFIX}pgid=$(ps -o pgid= $$ | tr -d ' ')" >&2
 audio=(-an)
 sink=$(pactl get-default-sink 2>/dev/null)
 if [ -n "$sink" ]; then
@@ -484,9 +487,9 @@ def ensure_helper(frame) -> bool:
         if out.split()[:1] == [want]:
             return True
         frame.run(f"mkdir -p {sh_quote(posixpath.dirname(remote))}")
-        frame.put(local, remote + ".new", resume=False)
-        code, _, err = frame.run(f"chmod 755 {sh_quote(remote + '.new')} && mv -f {sh_quote(remote + '.new')} "
-                                 f"{sh_quote(remote)}")
+        tmp = f"{remote}.new-{os.getpid()}-{threading.get_ident()}"  # own name: two starts at once don't collide
+        frame.put(local, tmp, resume=False)
+        code, _, err = frame.run(f"chmod 755 {sh_quote(tmp)} && mv -f {sh_quote(tmp)} {sh_quote(remote)}")
         if code:
             raise RuntimeError(err.strip())
         return True
@@ -495,6 +498,7 @@ def ensure_helper(frame) -> bool:
         return False
 
 
+STOP_GRACE = 2.0  # s to wait for the script to end after stdin EOF before killing its process group
 DROP_WARN = 0.05  # share of a stats window's frame slots that were late or skipped before the panel warns
 
 
@@ -573,12 +577,29 @@ class FrameSource:
         except OSError:
             return False
 
-    def close(self) -> None:
-        if self.chan is not None:
-            try:
-                self.chan.shutdown_write()  # EOF on the script's stdin: it stops the encoder
-            finally:
-                self.chan.close()
+    def close(self, grace: float = STOP_GRACE) -> None:
+        """EOF on the script's stdin stops the encoder. But when the stream is backed up, fp_venc sits in a blocked
+        write and never reads stdin, and once the channel is closed nothing drains ffmpeg's output either (found on
+        the Frame at 1080p, 2026-10-07: both left running, holding SteamVR's headset view open). So: wait a moment,
+        then end the script's process group from a second command."""
+        if self.chan is None:
+            return
+        try:
+            self.chan.shutdown_write()
+            deadline = time.time() + grace
+            while not self.chan.exit_status_ready() and time.time() < deadline:
+                while self.chan.recv_ready():  # drain, so a blocked writer can get to stdin
+                    self.chan.recv(65536)
+                time.sleep(0.05)
+            self._read_stderr()
+            pgid = self.info.get("pgid", "")
+            if not self.chan.exit_status_ready() and pgid.isdigit() and int(pgid) > 1:
+                log.info("live view: the stream didn't stop by itself; ending process group %s", pgid)
+                self.frame.run(f"kill -TERM -- -{pgid} 2>/dev/null; sleep 1; kill -KILL -- -{pgid} 2>/dev/null; true")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("live view: stopping the stream on the Frame: %s", exc)
+        finally:
+            self.chan.close()
 
 
 def start(frame, quality: str = DEFAULT_QUALITY) -> LiveStream:
