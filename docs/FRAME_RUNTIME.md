@@ -142,7 +142,60 @@
   `h264_v4l2m2m` hangs, gst `v4l2h264enc` not-negotiated). ffmpeg + libx264 works: FramePort's live view
   (`install/livestream.py`: `fps=30` before the scale, ultrafast/zerolatency, 3 threads, nice 10, fragmented MP4 on
   stdout, + AAC 128k) measured 0.34 core at 720p / 0.56 at 1080p with a quiet picture (video only); expect ~1-1.4
-  cores with a busy scene.
+  cores with a busy scene. That is now only the fallback.
+- Hardware encoding (2026-10-07): the iris encoder works when driven directly through the V4L2 stateful encoder
+  interface. That is FramePort's `fp_venc` (`native/venc`, spec + every measured value in `native/venc/SPEC.md`).
+  Facts:
+  - Device: `/dev/video23` (`/dev/video-enc0` links to it), driver `iris_driver`, M2M multiplanar.
+  - Formats: input NV12/NV21/AB24(RGBA)/QC24/Q08C; output H264/HEVC; sizes 128..8192.
+  - NV12 layout (S_FMT answers):
+    - stride is a multiple of 128;
+    - the returned height is padded to a multiple of 32;
+    - CbCr starts at stride × padded height;
+    - sizeimage is rounded up to 4 KiB;
+    - the default crop is the requested size.
+  - Controls: CBR, FORCE_KEY_FRAME, PREPEND_SPSPPS_TO_IDR, HEADER_MODE joined, FRAME_SKIP_MODE, H.264 profiles
+    Baseline..Constrained High, levels up to 6.0.
+  - The `steamos` user can open it (group video).
+  - The panel's current refresh rate can be read without privileges through DRM: `/dev/dri/card0` is mode 0666, and
+    GETCRTC reports e.g. `2*2160x2160_96` (clock 1402720 kHz / 4448 × 3285 = 96 Hz) even while the headset sleeps.
+    The panel offers 72/80/90/96/108/120/144 Hz.
+  - `/dev/video99` (v4l2loopback) has `max_buffers=2`: a reader asking for more gets 2.
+  - Mid-stream keyframe requests (FORCE_KEY_FRAME) take effect on the next frame, and the GOP restarts from there.
+  - Measured 2026-10-07 with the headset asleep (still picture):
+    - `fp_venc` alone at 32/36 fps: 1% of a core at 1080p, 2.5% at 720p.
+    - Live view end to end: `fp_venc` 2.6% + ffmpeg 8.4% (AAC encoding + muxing).
+  - Conversion cost per new picture (self-test, NEON, 2026-10-07):
+    - 1080p (no scaling): 0.6–1.0 ms.
+    - 720p (exact 3:2 fast path): 1.3–1.65 ms, down from 5.6 ms with the generic box loop (~11 ms at idle clocks).
+    - 360p (3:1 fast path): 0.7 ms.
+    - 480p: 2.8 ms; its 852-px width doesn't repeat cleanly, so it uses the generic path.
+    - At 36 fps with live content that is roughly 2–6% of a core.
+  - ffmpeg with raw H.264 on a pipe:
+    - `-framerate` is ignored.
+    - `-fflags nobuffer` loses the first seconds of tiny frames.
+    - Numbering frames from 0 (`setts`) with no input timestamps holds all output ~7 s next to pulse's audio.
+    - Arrival stamps alone (`-use_wallclock_as_timestamps 1`) bunch frames that are read together: gaps of 0–10 ms
+      and 45+ ms, seen in the headset test as dropped frames.
+    - What works: `-probesize 32 -analyzeduration 0 -use_wallclock_as_timestamps 1` on the input (ffmpeg reads it in
+      step with the audio), then `-bsf:v setts=ts=N*(1/fps)/TB` on the output (exactly even frames; audio still
+      0–N s alongside), plus `frag_keyframe` so that a requested keyframe starts a fragment.
+    - With sound, ffmpeg paces its inputs against each other and pulse's audio arrives later than the wall clock
+      (more while something plays). The video input then counts as ahead, and ffmpeg stops reading it for up to
+      0.7 s, so the writer blocks. That was the cause of 1080p dropping frames: busy 1080p replayed with sound took
+      34–47 s for 20 s of video. Video alone was fine; `nice`, `-raw_packet_size` and the input queue size didn't
+      matter. Shifting the video input back fixes it, but too far makes ffmpeg hold the video for interleaving and
+      release it in clumps: -1 s gave output gaps of up to 550 ms, a longer and stuttering delay in the browser.
+      -0.25 s is the measured sweet spot (no stalled writes at busy 1080p with sound, steady 50–150 ms output; -0.5 s
+      already clumps). Output audio/video spans stay equal because setts sets the output times.
+    - Browser delay (headless Chromium, 720p, 2026-10-07): muted about 0.2–0.35 s behind the newest data; with
+      sound about 1 s. Chrome keeps about 0.6 s of audio ahead and stalls below that, whatever the player does:
+      1.1× catch-up gave 8 stalls per 30 s, no speed-up 1–2, same average lag; 50 ms fragments didn't help. So the
+      player doesn't speed up while sound is on.
+  - Quality (owner's headset test, 2026-10-07): 3 Mbit/s CBR at 720p36 showed heavy compression artifacts. The
+    hardware path now uses VBR with a 1.5× peak (the encoder accepts BITRATE_MODE VBR + BITRATE_PEAK) and higher
+    targets: 360p 1.5, 480p 2.5, 720p 5, 1080p 8, Full 10 Mbit/s. The x264 fallback keeps its rates.
+  - The default sink is SUSPENDED while nothing plays; its monitor still delivers (silent) audio.
 
 ## Text input
 

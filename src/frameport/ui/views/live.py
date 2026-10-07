@@ -26,7 +26,7 @@ QUALITIES = [("360p", tr("360p (lightest)")), ("480p", "480p"), ("720p", tr("720
 
 
 def status_text(st: dict) -> str:
-    """One line for the relay's status (livestream.Relay.status)."""
+    """One line for the stream's status (livestream.LiveStream.status)."""
     if st.get("ended"):
         return tr("Stopped: {why}").format(why=st["ended"])
     if not st.get("ready"):
@@ -34,11 +34,25 @@ def status_text(st: dict) -> str:
     parts = [tr("Live")]
     if st.get("width"):
         parts.append(f"{st['width']}×{st['height']}")
+    if st.get("fps"):
+        parts.append(tr("{fps} fps").format(fps=st["fps"]))
+    if st.get("encoder"):
+        parts.append(tr("hardware encoder") if st["encoder"] == "hardware" else tr("software encoder"))
     secs = max(st.get("seconds") or 0, 1)
     parts.append(tr("{rate}/s").format(rate=human(int((st.get("bytes") or 0) / secs))))
     n = st.get("viewers") or 0
     parts.append(tr("no viewer open") if not n else tr_n("{n} viewer", "{n} viewers", n))
     return " · ".join(parts)
+
+
+def health_text(st: dict) -> str:
+    """A warning when the Frame dropped frames in the encoder's last 10 s (hardware encoder only), else ""."""
+    if not st.get("dropping") or st.get("ended"):
+        return ""
+    return tr_n("The Frame can't keep up at this quality: {n} frame dropped in the last 10 seconds. "
+                "Choose a lower quality for a smoother picture.",
+                "The Frame can't keep up at this quality: {n} frames dropped in the last 10 seconds. "
+                "Choose a lower quality for a smoother picture.", st.get("dropped") or 0)
 
 
 def default_quality() -> str:
@@ -65,6 +79,7 @@ class LiveView:
         self.open_btn = C.secondary(tr("Open viewer"), ft.Icons.OPEN_IN_NEW_ROUNDED, self._open)
         self.stop_btn = C.ghost(tr("Stop"), ft.Icons.STOP_ROUNDED, self._stop_click)
         self.url = C.meta("", selectable=True)
+        self._push = None  # components.LoopUpdater (updates from background threads; a direct update dropped patches)
 
     # ---------------------------------------------------------------- building
     def mount(self) -> ft.Control:
@@ -92,8 +107,8 @@ class LiveView:
                              "full screen. It shows the headset's view with its sound "
                              "(click Sound on in the player) whatever is running: Steam's menus, SteamVR or a game; "
                              "while the headset sleeps the picture is black and updates about once a second. "
-                             "Streaming costs the Frame a little performance; "
-                             "stop it when you're done.")),
+                             "The Frame's hardware video encoder does the work (if it isn't available, the "
+                             "processor does, which costs a game more); stop the stream when you're done.")),
             ], spacing=T.S4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
         self._refresh(update=False)
         self._ensure_ticker()
@@ -106,20 +121,24 @@ class LiveView:
             self.dot.bgcolor, self.state.value = T.TEXT_3, tr("Not streaming")
             self.detail.value = tr("Starts a video stream on the Frame and opens it in your browser.")
         else:
-            st = live.relay.status()
+            st = live.status()
             ok = running and st.get("ready")
-            self.dot.bgcolor = T.OK if ok else T.ERROR if st.get("ended") else T.WARN
+            warning = health_text(st) if ok else ""
+            self.dot.bgcolor = T.WARN if warning else T.OK if ok else T.ERROR if st.get("ended") else T.WARN
             self.state.value = status_text(st)
-            self.detail.value = "" if ok or st.get("ended") else tr("The first picture takes a few seconds.")
+            self.detail.value = (warning if ok else "" if st.get("ended")
+                                 else tr("The first picture takes a few seconds."))
         self.start_btn.visible = not running
         self.start_btn.disabled = self._busy
         self.open_btn.visible = self.stop_btn.visible = running
         self.quality_dd.disabled = running or self._busy
         self.url.value = (tr("Viewer address on this PC: {url}").format(url=live.url) if running else "")
         self.url.visible = running
-        if update:
-            C.update(self.dot, self.state, self.detail, self.start_btn, self.open_btn, self.stop_btn,
-                     self.quality_dd, self.url)
+        if update:  # called from the ticker / start / stream-end threads: send through Flet's event loop
+            if self._push is None:
+                self._push = C.LoopUpdater(self.app.page)
+            self._push(self.dot, self.state, self.detail, self.start_btn, self.open_btn, self.stop_btn,
+                       self.quality_dd, self.url)
 
     def _ensure_ticker(self) -> None:
         if self._ticker and self._ticker.is_alive():

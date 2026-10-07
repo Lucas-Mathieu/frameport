@@ -17,5 +17,6 @@ e4028fccc30132918160c230958aeac616ac6dbf851e6af0c1fe15517b30f2e6  ./hevc/media_c
 27711fe725ba944127ec66656fb6021b594b3b84713f17b0b5a5130aef688a80  ./hevc/podman.py.txt
 28c2430a02bbd8902c5bfb9562c6fd0e318654f9e05c095bfeb94b0450ab1b07  ./linux-arm64/libxr_frameport_timefix.so
 1aa733117cf57ccff7cf23f0425dbfd73b0332a3ef1c905ceeca0ccd0449c4e0  ./linux-arm64/XR_APILAYER_FRAMEPORT_timefix.json
+b10b3a5c10c3339fc63fd9f6cb4d01ea29be11a863d0ebad1389ea69fd471940  ./linux-arm64-bin/fp_venc
 c2c70f4af1a5c3e6089dff1130161dd417f8044f99ec639eeecf1083930aab16  ./win-x64/fp_oculushmd.exe
 60ebc5fea05b8945082e2ca8b9f2eb74616012a26eb50133af273dff0fcddc42  ./win-x64/fp_vrsettings.exe

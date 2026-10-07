@@ -29,14 +29,21 @@ PLAYER_HTML = r"""<!doctype html>
 <video id="v" muted autoplay playsinline disablepictureinpicture></video>
 <div id="bar">
   <span id="dot"></span><span id="msg">Connecting to the Frame…</span><span id="info"></span>
-  <button id="snd" hidden title="Browsers start videos muted: click to hear the Frame">Sound on</button>
+  <button id="snd" hidden title="Browsers start videos muted: click to hear the Frame. With sound the picture runs about a second behind (the browser buffers audio); muted it's a quarter of a second">Sound on</button>
   <button id="fs" title="Full screen (or double-click the picture)">Full screen</button>
 </div>
 <script>
 "use strict";
 const video = document.getElementById("v"), dot = document.getElementById("dot");
 const msg = document.getElementById("msg"), info = document.getElementById("info");
-const CUSHION = 0.3, CATCH_UP = 0.7, FAR_BEHIND = 2.0, KEEP = 10;  // seconds behind the newest data
+const FAR_BEHIND = 2.0, KEEP = 10;  // seconds behind the newest data
+// Catch-up per mode: keep `cushion` s behind the newest data, play at `rate` while more than `catchUp` behind.
+// With sound, Chrome keeps ~0.6 s of audio ahead and stalls below it, so playback settles ~1 s behind whatever we do
+// (measured 2026-10-07 against the Frame: 1.1x catch-up 8 stalls / 30 s, none 1-2, same average lag ~1 s; 50 ms
+// fragments no better). So with sound: no speed-up (stalls are audible), only the jump when > FAR_BEHIND.
+// Muted: ~0.2-0.3 s behind. (window.FP_TUNE overrides these: tests)
+const TUNE = Object.assign({muted: {cushion: 0.3, catchUp: 0.7, rate: 1.1},
+                            sound: {cushion: 0.3, catchUp: Infinity, rate: 1.0}}, window.FP_TUNE || {});
 let session = 0, frames = 0, lastFrames = 0, size = "";
 
 function say(text, state) { msg.textContent = text; dot.className = state || ""; }
@@ -80,9 +87,9 @@ async function run() {
   sb.addEventListener("updateend", () => {
     if (sb.buffered.length) {
       const end = sb.buffered.end(sb.buffered.length - 1);
-      const lag = end - video.currentTime;
-      if (lag > FAR_BEHIND || video.currentTime < sb.buffered.start(0)) video.currentTime = Math.max(end - CUSHION, 0);
-      else video.playbackRate = lag > CATCH_UP ? 1.1 : lag < CUSHION ? 1.0 : video.playbackRate;
+      const lag = end - video.currentTime, k = video.muted ? TUNE.muted : TUNE.sound;
+      if (lag > FAR_BEHIND || video.currentTime < sb.buffered.start(0)) video.currentTime = Math.max(end - k.cushion, 0);
+      else video.playbackRate = lag > k.catchUp ? k.rate : lag < k.cushion ? 1.0 : video.playbackRate;
       if (video.paused) video.play().catch(() => {});
     }
     pump();

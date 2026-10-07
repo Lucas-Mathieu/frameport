@@ -7,10 +7,10 @@ Everything is fetched on demand into native/.cache (git-ignored):
   - Temurin JDK 21 (javac) and Android build-tools (d8) for the Java stub classes
 Then builds: FrameBridge adapter (arm64 + arm32), VrApi bridge, platform compat, language packs, GL shim, oculusos stub dex, the
 timefix OpenXR layer for Proton games (linux-arm64, glibc; the NDK's clang builds it freestanding), the
-OculusHMDConnected helper for Rift games under Proton (win-x64 PE; the NDK's clang + lld-link, no Windows SDK), and
-rewrites artifacts/SHA256SUMS. Run `frameport parity` afterwards to see which games change.
+OculusHMDConnected helper for Rift games under Proton (win-x64 PE; the NDK's clang + lld-link, no Windows SDK), the
+live view's hardware H.264 encoder fp_venc (linux-arm64-bin, static freestanding executable), and rewrites artifacts/SHA256SUMS. Run `frameport parity` afterwards to see which games change.
 
-    python native/build.py [--only adapter,bridge,compat,langpack,glshim,eglfmt,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,ovrpshim,vrsettings] [--ndk PATH]
+    python native/build.py [--only adapter,bridge,compat,langpack,glshim,eglfmt,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,ovrpshim,vrsettings,venc] [--ndk PATH]
 """
 from __future__ import annotations
 
@@ -156,6 +156,32 @@ def build_xrlayer(tc: Path):
          "-Wl,-z,max-page-size=65536", "-Wl,--hash-style=both", "-Wl,-soname,libxr_frameport_timefix.so",
          "timefix_layer.c", "-o", out / "libxr_frameport_timefix.so"], cwd=src)
     shutil.copy(src / "XR_APILAYER_FRAMEPORT_timefix.json", out / "XR_APILAYER_FRAMEPORT_timefix.json")
+
+
+def uapi_arm64(tc: Path) -> Path:
+    """Only the kernel UAPI headers of the NDK sysroot (linux/, asm-generic/, drm/, aarch64 asm/), rebuilt every time,
+    so no bionic libc header can end up on a freestanding build's include path."""
+    inc = tc / "sysroot/usr/include"
+    dest = CACHE / "uapi-arm64"
+    shutil.rmtree(dest, ignore_errors=True)
+    for d in ("linux", "asm-generic", "drm"):
+        shutil.copytree(inc / d, dest / d)
+    shutil.copytree(inc / "aarch64-linux-android/asm", dest / "asm")
+    return dest
+
+
+def build_venc(tc: Path):
+    """fp_venc (Linux aarch64, runs on the Frame): SteamVR headset view -> V4L2 hardware H.264 encoder -> stdout, for the
+    live view. Fully static and freestanding (raw syscalls, own _start), so it needs no libc at build or run time.
+    Goes to linux-arm64-bin/, not linux-arm64/ (that folder is uploaded whole as the OpenXR layer)."""
+    src = HERE / "venc"
+    uapi = uapi_arm64(tc)
+    out = ART / "linux-arm64-bin"
+    out.mkdir(parents=True, exist_ok=True)
+    run([tc / "bin/clang", "--target=aarch64-linux-gnu", "-ffreestanding", "-nostdlib", "-nostdlibinc", "-static",
+         "-fno-stack-protector", "-fno-builtin", "-O2", "-Wall", "-Wextra", "-Werror", "-fuse-ld=lld",
+         "-Wl,--build-id=none", "-Wl,-z,max-page-size=65536", "-e", "_start", "-I", src / "include", "-I", uapi,
+         f"-ffile-prefix-map={HERE}=native", "fp_venc.c", "convert.c", "sys.c", "-o", out / "fp_venc"], cwd=src)
 
 
 OCULUSHMD_IMPORTS = ("CreateEventW", "CreateJobObjectW", "AssignProcessToJobObject", "QueryInformationJobObject",
@@ -326,7 +352,7 @@ def write_sums():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", default="adapter,bridge,compat,langpack,glshim,eglfmt,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,ovrpshim,vrsettings")
+    ap.add_argument("--only", default="adapter,bridge,compat,langpack,glshim,eglfmt,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,ovrpshim,vrsettings,venc")
     ap.add_argument("--ndk")
     args = ap.parse_args()
     parts = set(args.only.split(","))
@@ -338,8 +364,8 @@ def main():
              "glshim": lambda: build_glshim(tc), "eglfmt": lambda: build_eglfmt(tc), "ovrtrace": lambda: build_ovrtrace(tc), "xrshim": lambda: build_xrshim(tc), "dex": build_dex, "xrlayer": lambda: build_xrlayer(tc),
              "oculushmd": lambda: build_oculushmd(tc), "vkshim": lambda: build_vkshim(tc),
              "ovrpshim": lambda: build_ovrpshim(tc),
-             "vrsettings": lambda: build_vrsettings(tc)}
-    for name in ("adapter", "bridge", "compat", "langpack", "glshim", "eglfmt", "ovrtrace", "xrshim", "vkshim", "ovrpshim", "dex", "xrlayer", "oculushmd", "vrsettings"):
+             "vrsettings": lambda: build_vrsettings(tc), "venc": lambda: build_venc(tc)}
+    for name in ("adapter", "bridge", "compat", "langpack", "glshim", "eglfmt", "ovrtrace", "xrshim", "vkshim", "ovrpshim", "dex", "xrlayer", "oculushmd", "vrsettings", "venc"):
         if name in parts:
             log(f"build {name}")
             steps[name]()
