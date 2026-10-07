@@ -388,6 +388,7 @@ DEFAULT_QUALITY = "720p"
 # picture, and CBR blurred exactly those frames.
 HW_BITRATE = {"360p": 1_500_000, "480p": 2_500_000, "720p": 5_000_000, "1080p": 8_000_000, "full": 10_000_000}
 HW_PEAK = 1.5
+VIDEO_INPUT_OFFSET = "-0.25"  # s: ffmpeg's video input vs pulse's late audio (see source_command)
 FPS = 30  # software (x264) path only; the hardware path picks an even fraction of the panel rate
 # Clocks (x264 path): pulse stamps audio with the wall clock, v4l2 with CLOCK_MONOTONIC → `-ts mono2abs` puts the
 # picture on the wall clock too. (Forcing -use_wallclock_as_timestamps on the pulse input gave bursts of AAC packets
@@ -445,13 +446,17 @@ if [ -n "$hwfps" ]; then
   # player); setts alone (no input stamps) held all output ~7 s next to the sound; -framerate is ignored;
   # -fflags nobuffer lost the first seconds of a still picture's tiny frames; a big probesize waits seconds for one.
   # frag_keyframe: a requested keyframe starts its own fragment, where a joining viewer can begin.
-  # -itsoffset -1: ffmpeg paces its inputs against each other, and pulse's audio arrives later than the wall clock
-  # (more while something plays), so the video input counted as "ahead" and ffmpeg stopped reading it for up to
-  # 0.7 s: fp_venc's writes blocked and 1080p dropped frames (owner's test 2026-10-07; busy 1080p replayed with sound:
-  # 20 s took 34-47 s). Shifted 1 s back, video is never ahead: writes 0.4 ms avg, 20 s in 20 s. Only the input side
-  # moves: setts sets the output times, audio and video spans stay equal.
+  # -itsoffset {VIDEO_INPUT_OFFSET}: ffmpeg paces its inputs against each other, and pulse's audio arrives later than
+  # the wall clock (more while something plays), so the video input counted as "ahead" and ffmpeg stopped reading it
+  # for up to 0.7 s: fp_venc's writes blocked and 1080p dropped frames (owner's test 2026-10-07; busy 1080p replayed
+  # with sound: 20 s took 34-47 s). Shifting the video input back fixes that, but too far makes ffmpeg hold video for
+  # the interleave and release it in clumps (-1 s: output gaps up to 550 ms, a longer, stuttering delay in the
+  # browser, worse with sound on). Measured on the Frame with sound playing: -0.25 s = no stalled writes at busy 1080p
+  # and steady output (gaps 50-150 ms); -0.5 s already clumps (200-250 ms); none = 18 slow writes; PULSE_LATENCY_MSEC
+  # =20 made it worse. Only the input side moves: setts sets the output times, audio and video spans stay equal.
   "$venc" {venc_args} --fps "$hwfps" | nice -n 10 ffmpeg -nostdin -hide_banner -loglevel error \\
-    -probesize 32 -analyzeduration 0 -use_wallclock_as_timestamps 1 -itsoffset -1 -f h264 -i pipe:0 "${{audio[@]}}" \\
+    -probesize 32 -analyzeduration 0 -use_wallclock_as_timestamps 1 -itsoffset {VIDEO_INPUT_OFFSET} \\
+    -f h264 -i pipe:0 "${{audio[@]}}" \\
     -c:v copy -bsf:v "setts=ts=N*(1/$hwfps)/TB:duration=(1/$hwfps)/TB" -shortest \\
     -f mp4 -movflags empty_moov+default_base_moof+frag_keyframe -frag_duration 100000 -
   exit $?

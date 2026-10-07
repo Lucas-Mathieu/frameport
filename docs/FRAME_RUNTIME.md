@@ -184,8 +184,14 @@
       (more while something plays). The video input then counts as ahead, and ffmpeg stops reading it for up to
       0.7 s, so the writer blocks. That was the cause of 1080p dropping frames: busy 1080p replayed with sound took
       34–47 s for 20 s of video. Video alone was fine; `nice`, `-raw_packet_size` and the input queue size didn't
-      matter. `-itsoffset -1` on the video input fixes it: writes 0.4 ms on average, 20 s in 20 s, and output
-      audio/video spans stay equal because setts sets the output times.
+      matter. Shifting the video input back fixes it, but too far makes ffmpeg hold the video for interleaving and
+      release it in clumps: -1 s gave output gaps of up to 550 ms, a longer and stuttering delay in the browser.
+      -0.25 s is the measured sweet spot (no stalled writes at busy 1080p with sound, steady 50–150 ms output; -0.5 s
+      already clumps). Output audio/video spans stay equal because setts sets the output times.
+    - Browser delay (headless Chromium, 720p, 2026-10-07): muted about 0.2–0.35 s behind the newest data; with
+      sound about 1 s. Chrome keeps about 0.6 s of audio ahead and stalls below that, whatever the player does:
+      1.1× catch-up gave 8 stalls per 30 s, no speed-up 1–2, same average lag; 50 ms fragments didn't help. So the
+      player doesn't speed up while sound is on.
   - Quality (owner's headset test, 2026-10-07): 3 Mbit/s CBR at 720p36 showed heavy compression artifacts. The
     hardware path now uses VBR with a 1.5× peak (the encoder accepts BITRATE_MODE VBR + BITRATE_PEAK) and higher
     targets: 360p 1.5, 480p 2.5, 720p 5, 1080p 8, Full 10 Mbit/s. The x264 fallback keeps its rates.
