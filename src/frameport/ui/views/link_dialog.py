@@ -95,9 +95,13 @@ def _confirm(app: FramePortApp, m: deeplink.Manifest, sizes: dict, pasted: bool,
         rows.append(header)
     for f in m.files:
         size = sizes.get(f.url)
-        rows.append(C.kv(f.filename, " · ".join(p for p in (
-            kind_label(f.kind), fmt_size(size) if size else "",
-            tr("checksum checked") if f.sha256 else tr("no checksum")) if p)))
+        # the file name on its own line (long names end in "…", the full name on hover), the facts below it
+        rows.append(ft.Column([
+            C.body(f.filename, T.TEXT, weight=ft.FontWeight.W_500, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
+                   tooltip=f.filename),
+            C.meta(" · ".join(p for p in (kind_label(f.kind), fmt_size(size) if size else "",
+                                          tr("checksum checked") if f.sha256 else tr("no checksum")) if p)),
+        ], spacing=T.px(2), tight=True))
     frame = app.frame_state == "connected"
     notes = [C.callout(tr("Only install software from sites you trust. FramePort downloads it from {host} and "
                           "installs it on your Frame.").format(host=m.host or _host(m.source)), "warn")]
