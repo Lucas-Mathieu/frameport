@@ -21,6 +21,7 @@ def settings_text(recipe_patches: dict) -> bytes:
 
 class FrameBridgeAdapter(Patch):
     id = "frame.adapter"
+    package_revisions = {"com.camouflaj.manta": 19}
     title = "FrameBridge OpenXR adapter"
     description = (
         "Wraps OVRPort's generic OpenXR loader (renamed libopenxr_loader_original.so). Fixes the Frame runtime's "
@@ -43,6 +44,11 @@ class FrameBridgeAdapter(Patch):
             raise RuntimeError("OVRPort output has no libopenxr_loader_generic.so (not an OVRPort build?)")
         adapter = artifact(ws.abi, GENERIC)
         settings = settings_text(ctx.recipe_patches)
+        # This client submits its Android video surface as stereo panoramas.
+        # Keep the implementation choice internal; no recipe/UI parameter.
+        native_video = ctx.analysis.package == "com.camouflaj.manta" and ws.abi == "arm64-v8a"
+        if native_video:
+            settings += b"surface_native=1\n"
         changed = False
         if not ws.has(ws.lib(ORIGINAL)):
             ws.move(ws.lib(GENERIC), ws.lib(ORIGINAL))
@@ -54,8 +60,26 @@ class FrameBridgeAdapter(Patch):
         if not ws.has(ws.lib(SETTINGS)) or ws.read_lib(SETTINGS) != settings:
             ws.put(ws.lib(SETTINGS), settings)
             changed = True
-        if needs_xrshim(ctx.recipe_patches) and ws.abi == "arm64-v8a":
+        if (needs_xrshim(ctx.recipe_patches) or native_video) and ws.abi == "arm64-v8a":
             changed |= add_xrshim(ctx)
+        # Only the validated Batman renderer needs this private hardware codec.
+        # Assets are extracted into its container; the shared runtime is untouched.
+        for name in ("libstagefrighthw.so", "media_codecs_frameport.xml", "podman.py", "manifest.json",
+                     "COPYING.FFmpeg"):
+            target = f"assets/frameport/hevc/{name}"
+            if not native_video:
+                if ws.has(target):
+                    ws.remove.add(target)
+                    ws.add.pop(target, None)
+                    ws.replace.pop(target, None)
+                    changed = True
+                continue
+            # Flet compiles/removes .py files in bundled data, so keep the
+            # remote wrapper's source under a non-Python extension on the PC.
+            data = artifact("hevc", name + ".txt" if name == "podman.py" else name)
+            if not ws.has(target) or ws.read(target) != data:
+                ws.put(target, data)
+                changed = True
         return changed
 
     def validate(self, ctx: ApkContext):

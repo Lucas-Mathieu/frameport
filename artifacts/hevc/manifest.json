@@ -1,0 +1,9 @@
+{
+  "runtime_sha256": "456e912c75cd389abcf6a63bc80e2a53bdc334371d00b200c93680388ae955e2",
+  "files": {
+    "libstagefrighthw.so": "40a01061eba6e3cadce3672e11848c8041b1fb3cd4dbc922767804bc66bb95a3",
+    "podman.py": "27711fe725ba944127ec66656fb6021b594b3b84713f17b0b5a5130aef688a80",
+    "media_codecs_frameport.xml": "e4028fccc30132918160c230958aeac616ac6dbf851e6af0c1fe15517b30f2e6",
+    "COPYING.FFmpeg": "b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe"
+  }
+}

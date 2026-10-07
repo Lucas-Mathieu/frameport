@@ -70,6 +70,57 @@ def test_adapter_refreshes_existing_wrapper(tmp_path, quest_manifest):
         assert not patch.apply(ctx)
 
 
+def test_native_video_is_internal_and_scoped_to_batman(tmp_path, quest_manifest):
+    from pathlib import Path
+
+    plugin = (Path(__file__).with_name("fixtures") / "libfakeovrplugin_arm64.so").read_bytes()
+    for package, enabled in (("com.camouflaj.manta", True), ("com.example.questgame", False)):
+        apk = _apk(tmp_path, quest_manifest)
+        with zipfile.ZipFile(apk, "a") as z:
+            z.writestr("lib/arm64-v8a/libOVRPlugin.so", plugin)
+        with ApkWorkspace(apk) as ws:
+            ctx = base.ApkContext(ws, _analysis(package=package), {}, Reporter(), {"frame.adapter": {}})
+            assert base.get("frame.adapter").apply(ctx)
+            assert (b"surface_native=1\n" in ws.read_lib("libframe_settings.so")) is enabled
+            assert ws.has(ws.lib("libframe_xrshim.so")) is enabled
+            assert any(n.startswith("assets/frameport/hevc/") for n in ws.names()) is enabled
+            if enabled:
+                assert b"libframe_xrshim.so\0" in ws.read_lib("libOVRPlugin.so")
+            assert not base.get("frame.adapter").apply(ctx)
+
+
+def test_adapter_removes_unneeded_codec_without_touching_video_assets(tmp_path, quest_manifest):
+    """Updating earlier test builds leaves no codec wrapper active in unrelated games."""
+    apk = _apk(tmp_path, quest_manifest)
+    with zipfile.ZipFile(apk, "a") as z:
+        for name in ("manifest.json", "libstagefrighthw.so", "media_codecs_frameport.xml", "podman.py",
+                     "COPYING.FFmpeg"):
+            z.writestr("assets/frameport/hevc/" + name, b"old test codec")
+        z.writestr("assets/movie.mp4", b"original movie")
+    with ApkWorkspace(apk) as ws:
+        ctx = base.ApkContext(ws, _analysis(), {}, Reporter(), {"frame.adapter": {}})
+        assert base.get("frame.adapter").apply(ctx)
+        assert not any(n.startswith("assets/frameport/hevc/") for n in ws.names())
+        assert not base.get("frame.adapter").apply(ctx)
+        out = ws.write(tmp_path / "scoped.apk")
+    with zipfile.ZipFile(out) as z:
+        assert z.read("assets/movie.mp4") == b"original movie"
+        assert not any(n.startswith("assets/frameport/hevc/") for n in z.namelist())
+
+
+def test_batman_arm32_does_not_get_unvalidated_native_video(tmp_path):
+    apk = tmp_path / "arm32.apk"
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr("lib/armeabi-v7a/libopenxr_loader_generic.so", b"original loader")
+    with ApkWorkspace(apk) as ws:
+        ctx = base.ApkContext(ws, _analysis(package="com.camouflaj.manta", abis=["armeabi-v7a"]),
+                              {}, Reporter(), {"frame.adapter": {}})
+        assert base.get("frame.adapter").apply(ctx)
+        assert b"surface_native" not in ws.read_lib("libframe_settings.so")
+        assert not ws.has(ws.lib("libframe_xrshim.so"))
+        assert not any(n.startswith("assets/frameport/hevc/") for n in ws.names())
+
+
 def test_controller_models_adds_xrshim(tmp_path, quest_manifest):
     from pathlib import Path
 
