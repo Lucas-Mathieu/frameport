@@ -201,7 +201,8 @@ def test_processes_games_and_filters(fa):
     clock["t"] += 1.0
     s = m.sample(wall=2002.0)
     game = next(p for p in s["procs"] if p["pid"] == 302)
-    assert game["cpu"] == 25.0 and game["gpu"] == 25.0
+    # the table averages GPU over the 2 s since the last scan (250 ms busy); the game card shows the last tick
+    assert game["cpu"] == 25.0 and game["gpu"] == 12.5
     assert s["games"][0]["cpu"] == 25.0 and s["games"][0]["gpu"] == 25.0
 
 
@@ -343,3 +344,15 @@ def test_power_cluster_rails_every_5_s(fa):
     assert s["power"]["system"] == 9.0 and s["power"]["cpu"] == 0.75
     clock["t"] += 4.0
     assert m.sample(wall=2005.0)["power"]["cpu"] == 1.75
+
+
+def test_fast_ticks_scan_processes_every_2_s(fa):
+    """At 0.1-0.5 s intervals the sensors are read every tick but processes only every 2 s (the expensive part)."""
+    m, clock = monitor(fa)
+    assert "procs" in m.sample(wall=2000.0)
+    seen = []
+    for _ in range(8):
+        clock["t"] += 0.25
+        seen.append("procs" in m.sample(wall=2000.0 + clock["t"] - 100.0))
+    assert seen == [False] * 7 + [True]
+    assert 0.1 in fa.MON_INTERVALS and fa.MON_DEFAULT_INTERVAL == 0.5

@@ -199,7 +199,8 @@ class FakeMonitorSession:
              ("com.android.launcher3", "game", 0.0, 0.0, 194_000_000), ("main", "game", 0.0, 0.0, 178_000_000),
              ("com.android.settings", "game", 0.0, 0.0, 172_000_000),
              ("com.android.networkstack.process", "game", 0.0, 0.0, 130_000_000),
-             ("android.ext.services", "game", 0.0, 0.0, 111_000_000)]
+             ("android.ext.services", "game", 0.0, 0.0, 111_000_000)] + \
+            [("vrwebhelper", "steamvr", 0.3, 0.0, 160_000_000 + i * 9_000_000) for i in range(4)]
 
     def __init__(self, frame, on_sample, on_end=None):
         import math
@@ -225,7 +226,7 @@ class FakeMonitorSession:
                   "context": grp != "game"}
                  for i, (n, grp, c, gp, r) in enumerate(self.PROCS)]
         return {
-            "t": time.time(), "dt": 1.0, "self_ms": 11.5,
+            "t": time.time() - max(0, self.BACKFILL - t), "dt": 1.0, "self_ms": 11.5,
             "cpu": {"total": round(15 + wave(4, 4), 1), "cores": [round(4 + wave(30, 3 + i, i), 1) for i in range(8)],
                     "mhz": [2265, 1996, 1920, 518]},
             "gpu": {"busy": round(52 + wave(8, 5), 1), "mhz": 903},

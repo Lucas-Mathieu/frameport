@@ -3834,7 +3834,9 @@ def not_started(text, waited, grace=30):
 # after their first sighting and render fds are cached per process.
 PROC = "/proc"
 SYS = "/sys"
-MON_INTERVALS = (1, 2, 5)
+MON_INTERVALS = (0.1, 0.25, 0.5, 1, 2, 5)  # seconds between samples; processes are scanned every 2 s at any of them
+MON_DEFAULT_INTERVAL = 0.5
+SCAN_SECONDS = 2.0
 MON_FILTERS = ("game", "steam", "all")
 MON_PROC_LIMIT = 150
 MON_CONTEXT = 3  # "game" filter: the busiest other processes, shown for context
@@ -4155,6 +4157,9 @@ class Monitor:
         self.drm = {}       # pid -> (fds, time of the fd scan)
         self.gpu_ns = {}    # pid -> last drm-engine ns
         self.gpu_pct = {}   # pid -> GPU % in the last tick
+        self.gpu_acc = {}   # pid -> GPU ns since the last process scan (the table shows the average over it)
+        self.scan_at = -1e9
+        self.scan_prev = None  # time of the previous process scan
         self.proc_prev = {}  # pid -> (cpu jiffies, time)
         self.cpu_prev = None
         self.net_prev = None
@@ -4326,6 +4331,7 @@ class Monitor:
             if prev is not None and dt > 0 and ns >= prev:
                 pct = min(100.0, (ns - prev) / 1e7 / dt)
                 self.gpu_pct[pid] = pct
+                self.gpu_acc[pid] = self.gpu_acc.get(pid, 0) + ns - prev
                 total += pct
         return min(100.0, total)
 
@@ -4358,10 +4364,14 @@ class Monitor:
         self.games = out
         return out
 
-    def filtered(self):
+    def filtered(self, now=None):
         procs = self.procs
-        for p in procs:
-            p["gpu"] = round(self.gpu_pct.get(p["pid"], 0.0), 1)
+        span = (now - self.scan_prev) if now is not None and self.scan_prev is not None else 0.0
+        for p in procs:  # GPU % averaged over the time since the previous scan (per tick it's noisy at 0.1 s)
+            acc = self.gpu_acc.get(p["pid"], 0)
+            p["gpu"] = round(min(100.0, acc / 1e7 / span), 1) if span > 0 else \
+                round(self.gpu_pct.get(p["pid"], 0.0), 1)
+        self.gpu_acc = {}
         if self.filter == "game":
             shown = [p for p in procs if p["game"]]
             others = sorted((p for p in procs if not p["game"]), key=lambda p: (-p["cpu"], -p["rss"]))
@@ -4416,16 +4426,18 @@ class Monitor:
             except OSError:
                 pass
             self.disk_at = now
-        scan = self.tick % 2 == 0 or not self.procs
+        scan = now - self.scan_at >= SCAN_SECONDS or not self.procs
         if scan:
             self.scan(now, wall)
+            self.scan_at = now
         busy = self.gpu_sample(now, dt)
         out["gpu"] = {"busy": round(busy, 1) if dt > 0 else None,
                       "mhz": _num(_rd(f"{self.gpu}/cur_freq"), 0) // 1000000 if self.gpu else None}
         out["games"] = self.games_sample(now)
         if scan:
-            out["procs"] = self.filtered()
+            out["procs"] = self.filtered(now)
             out["filter"] = self.filter
+            self.scan_prev = now
         self.tick += 1
         out["self_ms"] = round((time.process_time() - t0) * 1000, 2)
         return out
@@ -4519,7 +4531,7 @@ def monitor_session(stdin, stdout, monitor=None, sleep=time.sleep, max_ticks=Non
 
     mon = monitor or Monitor()
     lock = threading.Lock()
-    state = {"interval": 1.0, "stop": False, "pause": False}
+    state = {"interval": MON_DEFAULT_INTERVAL, "stop": False, "pause": False}
     wake = threading.Event()
 
     def emit(obj):
@@ -4553,7 +4565,7 @@ def monitor_session(stdin, stdout, monitor=None, sleep=time.sleep, max_ticks=Non
                     state["interval"] = float(msg["interval"])
                 if msg.get("procs") in MON_FILTERS:
                     mon.filter = msg["procs"]
-                    mon.tick = 0  # rescan now
+                    mon.scan_at = -1e9  # rescan now
                 if "pause" in msg:
                     state["pause"] = bool(msg["pause"])
                 if "kill" in msg or "end_game" in msg:

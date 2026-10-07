@@ -92,7 +92,7 @@ class MonitorSession:
             self._stdin.write(json.dumps(msg) + "\n")
             self._stdin.flush()
 
-    def set_interval(self, seconds: int) -> None:
+    def set_interval(self, seconds: float) -> None:
         self.send({"interval": seconds})
 
     def set_filter(self, which: str) -> None:
@@ -139,17 +139,27 @@ class MonitorSession:
 
 # --------------------------------------------------------------------------------------------- pure helpers
 class History:
-    """Rolling series for the sparklines: name -> deque of the last HISTORY values (None = a gap)."""
+    """Rolling series for the sparklines: name -> the last HISTORY points (None = a gap). With a time, values that
+    fall in the same `bucket` (1 s) are averaged into one point, so a chart always covers 2 minutes and moves
+    smoothly whatever the sampling interval (at 0.1 s the newest point is refined ten times a second)."""
 
-    def __init__(self, size: int = HISTORY):
-        self.size = size
-        self.series: dict[str, deque] = {}
+    def __init__(self, size: int = HISTORY, bucket: float = 1.0):
+        self.size, self.bucket = size, bucket
+        self.series: dict[str, deque] = {}  # name -> deque of [bucket index | None, sum, count]
 
-    def add(self, name: str, value: float | None) -> None:
-        self.series.setdefault(name, deque(maxlen=self.size)).append(value)
+    def add(self, name: str, value: float | None, t: float | None = None) -> None:
+        q = self.series.setdefault(name, deque(maxlen=self.size))
+        idx = None if t is None else int(t // self.bucket)
+        last = q[-1] if q else None
+        if idx is not None and last is not None and last[0] == idx:
+            if value is not None:  # same second: refine the newest point
+                last[1] = (last[1] or 0.0) + value
+                last[2] += 1
+            return
+        q.append([idx, value, 1 if value is not None else 0])
 
     def get(self, name: str) -> list:
-        return list(self.series.get(name, ()))
+        return [(v / n if n else None) if v is not None else None for _i, v, n in self.series.get(name, ())]
 
     def clear(self) -> None:
         self.series.clear()
@@ -162,7 +172,10 @@ def series_of(sample: dict) -> dict[str, float | None]:
     temps = sample.get("temps") or {}
     bat = sample.get("battery") or {}
     game = (sample.get("games") or [None])[0] or {}
-    return {
+    extra = {f"temp:{g}": v for g, v in temps.items()}
+    if sample.get("fan") is not None:
+        extra["fan"] = sample["fan"]
+    return {**extra,
         "cpu": (sample.get("cpu") or {}).get("total"),
         "gpu": (sample.get("gpu") or {}).get("busy"),
         "mem": 100.0 * (total - mem.get("avail", 0)) / total if total else None,
@@ -288,3 +301,44 @@ def fps_target(values: list) -> int | None:
     if best is None:
         return None
     return next((r for r in REFRESH_RATES if best <= r * 1.03), REFRESH_RATES[-1])
+
+
+INTERVALS = (0.1, 0.25, 0.5, 1, 2, 5)
+DEFAULT_INTERVAL = 0.5
+
+
+def fmt_interval(s: float) -> str:
+    """0.1 -> "0.1 s", 1 -> "1 s"."""
+    return f"{s:g} s"
+
+
+def group_procs(procs: list[dict], expanded: set | frozenset = frozenset()) -> list[dict]:
+    """Table rows: processes with the same name and the same parent collapse into one group row ("vrwebhelper ×5",
+    summed CPU/GPU/memory, oldest age) at the position of its first member; an expanded group is followed by its
+    members (kind "member"). Single processes stay as they are (kind "proc"). The input order is kept."""
+    groups: dict[tuple, list[dict]] = {}
+    for p in procs:
+        groups.setdefault((p.get("ppid"), p.get("name")), []).append(p)
+    rows, done = [], set()
+    for p in procs:
+        key = (p.get("ppid"), p.get("name"))
+        members = groups[key]
+        if len(members) < 2:
+            rows.append({"kind": "proc", **p})
+            continue
+        if key in done:
+            continue
+        done.add(key)
+        ages = [m["age"] for m in members if m.get("age") is not None]
+        rows.append({"kind": "group", "key": key, "name": p.get("name"), "count": len(members), "pid": None,
+                     "ppid": key[0], "group": p.get("group"), "game": p.get("game"),
+                     "cpu": round(sum(m.get("cpu") or 0 for m in members), 1),
+                     "gpu": round(sum(m.get("gpu") or 0 for m in members), 1),
+                     "rss": sum(m.get("rss") or 0 for m in members), "age": max(ages) if ages else None,
+                     "critical": any(m.get("critical") for m in members),
+                     "locked": all(m.get("locked") for m in members),
+                     "context": all(m.get("context") for m in members), "members": members,
+                     "expanded": key in expanded})
+        if key in expanded:
+            rows += [{"kind": "member", **m} for m in members]
+    return rows

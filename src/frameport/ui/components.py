@@ -489,10 +489,11 @@ class Sparkline:
     set() replaces only the paths' elements, so a tick sends a small patch. Fills its width (on_resize)."""
 
     def __init__(self, color: str = T.ACCENT, height: int = 36, slots: int = 120, lo: float = 0.0,
-                 hi: float | None = None, min_slots: int = 30):
+                 hi: float | None = None, min_slots: int = 30, fit: float | None = None):
         import flet.canvas as cv
 
         self.cv, self.slots, self.min_slots, self.lo, self.hi = cv, slots, min_slots, lo, hi
+        self.fit = fit  # zoom to the data: a scale of at least this span around it (temperatures, fan speed)
         self.width, self.height = 0.0, T.px(height)
         self.values: list = []
         self.target: float | None = None
@@ -522,12 +523,16 @@ class Sparkline:
 
     def _draw(self) -> None:
         cv, w, h = self.cv, self.width, self.height
-        hi = self.hi
-        if hi is None:
-            hi = max([v for v in self.values if v is not None] + [self.target or 0, self.lo + 1.0]) * 1.1
+        lo, hi = self.lo, self.hi
+        real = [v for v in self.values if v is not None]
+        if self.fit is not None and real:
+            mid, span = (max(real) + min(real)) / 2, max(self.fit, (max(real) - min(real)) * 1.3)
+            lo, hi = mid - span / 2, mid + span / 2
+        elif hi is None:
+            hi = max(real + [self.target or 0, self.lo + 1.0]) * 1.1
         # the time window starts at min_slots points and widens to `slots` as data comes in (a new chart isn't a
         # sliver at the right edge for its first minute)
-        runs = spark_points(self.values, w, h, self.lo, hi, max(self.min_slots, min(self.slots, len(self.values))))
+        runs = spark_points(self.values, w, h, lo, hi, max(self.min_slots, min(self.slots, len(self.values))))
         line, area = [], []
         for run in runs:
             line.append(cv.Path.MoveTo(*run[0]))
@@ -537,7 +542,7 @@ class Sparkline:
         self.line.elements, self.area.elements = line, area
         guide = []
         if self.target is not None and w > 0:
-            y = spark_points([self.target, self.target], w, h, self.lo, hi)[0][0][1]
+            y = spark_points([self.target, self.target], w, h, lo, hi)[0][0][1]
             guide = [cv.Path.MoveTo(0, y), cv.Path.LineTo(w, y)]
         self.guide.elements = guide
 
@@ -560,3 +565,41 @@ class MeterBar:
             seg.visible = seg.expand > 0
             total += seg.expand
         self.rest.expand = max(1, 1000 - total)
+
+
+class LoopUpdater:
+    """update() for controls changed on a background thread that Flet doesn't know (e.g. an SSH reader): the patch is
+    sent from Flet's event loop. Flet 1.0's desktop connection queues outgoing messages on an asyncio.Queue with
+    put_nowait, which from a foreign thread doesn't wake the loop: the window only showed such updates after the next
+    UI event (the Monitor stayed empty until a click, its charts jumped in bursts). Updates requested while one is
+    pending are merged into it, so a fast stream can't pile up work on the loop."""
+
+    def __init__(self, page: ft.Page):
+        import threading
+
+        self.page = page
+        self._lock = threading.Lock()
+        self._pending: dict[int, ft.Control] = {}
+        self._scheduled = False
+
+    def __call__(self, *controls: ft.Control) -> None:
+        with self._lock:
+            for c in controls:
+                self._pending[id(c)] = c
+            if self._scheduled:
+                return
+            self._scheduled = True
+        try:
+            self.page.run_task(self._flush)
+        except Exception:  # noqa: BLE001 - no event loop (tests, shutting down): update right here
+            self._flush_now()
+
+    async def _flush(self) -> None:
+        self._flush_now()
+
+    def _flush_now(self) -> None:
+        with self._lock:
+            items = list(self._pending.values())
+            self._pending.clear()
+            self._scheduled = False
+        update(*items)

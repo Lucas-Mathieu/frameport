@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from ..app import FramePortApp
 
 ROWS = 50            # process rows shown at most (the agent sends up to 150; the search narrows them)
+DETAIL_HEIGHT = 250  # the three detail cards share one height (px at 100 %)
 RETRY_SECONDS = 5    # reconnect after the stream was lost, while the tab is open
 LEVEL_COLOR = {"ok": T.TEXT, "warn": T.WARN, "error": T.ERROR}
 GROUP_COLOR = {"Game": T.ACCENT, "Steam": T.INFO, "SteamVR": T.PC, "Desktop": T.TEXT_2, "Other": T.TEXT_3}
@@ -46,9 +47,11 @@ class Tile:
         self.value = ft.Text("–", size=T.px(26), weight=ft.FontWeight.W_600, color=T.TEXT)
         self.sub = C.meta("", max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
         self.spark = C.Sparkline(color, height=34, hi=hi)
-        head = ft.Row([ft.Icon(icon, size=T.px(16), color=color), C.meta(label)], spacing=T.S2)
+        row = ft.Row([ft.Icon(icon, size=T.px(16), color=color), C.meta(label)], spacing=T.S2,
+                     vertical_alignment=ft.CrossAxisAlignment.CENTER)
         if help_key:
-            head.controls.append(C.help_icon(help_key, 14))
+            row.controls.append(C.help_icon(help_key, 14))
+        head = ft.Container(row, height=T.px(22))
         self.control = C.card(ft.Column([head, self.value, self.sub, self.spark.control], spacing=T.px(4)),
                               padding=T.S3, col={"xs": 12, "sm": 6, "md": 4, "xl": 2})
 
@@ -66,6 +69,8 @@ class ProcRow:
         self.view, self.proc = view, None
         self.lock = ft.Icon(ft.Icons.LOCK_OUTLINE_ROUNDED, size=T.px(14), color=T.WARN, visible=False,
                             tooltip=tr("Ending this stops Steam, SteamVR or the desktop"))
+        self.chevron = ft.Icon(ft.Icons.CHEVRON_RIGHT_ROUNDED, size=T.px(16), color=T.TEXT_2, visible=False)
+        self.indent = ft.Container(width=T.px(22), visible=False)
         self.name = ft.Text("", size=T.T_BODY, color=T.TEXT, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
         self.pid = C.meta("")
         self.group = ft.Text("", size=T.T_SMALL, weight=ft.FontWeight.W_600)
@@ -76,17 +81,22 @@ class ProcRow:
         dots = ft.GestureDetector(ft.Icon(ft.Icons.MORE_HORIZ_ROUNDED, size=T.px(18), color=T.TEXT_2),
                                   on_tap_down=lambda e: self.view.open_menu(self.proc, e.global_position),
                                   mouse_cursor=ft.MouseCursor.CLICK)
-        cells = [ft.Container(ft.Row([self.lock, self.name], spacing=T.px(6), tight=True), expand=True),
+        cells = [ft.Container(ft.Row([self.indent, self.chevron, self.lock, self.name], spacing=T.px(6), tight=True),
+                              expand=True),
                  ft.Container(self.pid, width=T.px(70)), ft.Container(self.group_box, width=T.px(96)),
                  ft.Container(self.cpu, width=T.px(64)), ft.Container(self.gpu, width=T.px(64)),
                  ft.Container(self.mem, width=T.px(84)), ft.Container(self.age, width=T.px(76)),
                  ft.Container(dots, width=T.px(32), alignment=ft.Alignment.CENTER)]
         self.box = ft.Container(ft.Row(cells, spacing=T.S2, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                                 padding=ft.Padding(T.S3, T.px(6), T.S2, T.px(6)), border_radius=T.RADIUS_SM,
-                                on_hover=self._hover)
+                                on_hover=self._hover, on_click=self._click)
         self.control = ft.GestureDetector(self.box, visible=False,
                                           on_secondary_tap_down=lambda e: self.view.open_menu(self.proc,
                                                                                               e.global_position))
+
+    def _click(self, e) -> None:
+        if self.proc and self.proc.get("kind") == "group":  # a group row opens / closes its processes
+            self.view.toggle_group(self.proc)
 
     def _hover(self, e) -> None:
         self.box.bgcolor = T.SURFACE_2 if e.data in (True, "true") else None
@@ -97,12 +107,16 @@ class ProcRow:
         self.control.visible = p is not None
         if p is None:
             return
+        kind = p.get("kind", "proc")
         group_name = M.group_label(p.get("group", ""))
         color = GROUP_COLOR[group_name]
-        self.name.value = p.get("name", "")
+        self.chevron.visible, self.indent.visible = kind == "group", kind == "member"
+        if kind == "group":
+            self.chevron.name = ft.Icons.EXPAND_MORE_ROUNDED if p.get("expanded") else ft.Icons.CHEVRON_RIGHT_ROUNDED
+        self.name.value = f"{p.get('name', '')}  ×{p['count']}" if kind == "group" else p.get("name", "")
         self.name.color = T.TEXT_3 if p.get("context") else T.TEXT
         self.name.tooltip = p.get("game") or None
-        self.pid.value = str(p.get("pid"))
+        self.pid.value = tr("{n} processes").format(n=p["count"]) if kind == "group" else str(p.get("pid"))
         self.group.value, self.group.color = label(group_name), color
         self.group_box.bgcolor = T.soft(color, 0.12)
         self.lock.visible = bool(p.get("critical") or p.get("locked"))
@@ -131,6 +145,8 @@ class MonitorView:
         self.game_pkg: str | None = None
         self.last_games: list[dict] = []
         self.last_sample: dict | None = None
+        self.expanded: set = set()   # process groups shown open: (parent pid, name)
+        self.push = None             # components.LoopUpdater: updates from the stream's thread
         self._build()
 
     # ---------------------------------------------------------------- building
@@ -141,9 +157,10 @@ class MonitorView:
                                  bgcolor=T.SURFACE_3, border_radius=T.px(20),
                                  padding=ft.Padding(T.px(10), T.px(5), T.px(12), T.px(5)))
         self.overhead = C.meta("")
-        self.interval = ft.Dropdown(value="1", dense=True, width=T.px(150), border_color=T.BORDER,
-                                    options=[ft.DropdownOption(str(s), tr("Every {n} s").format(n=s))
-                                             for s in (1, 2, 5)], text_size=T.T_BODY,
+        self.interval = ft.Dropdown(value=f"{M.DEFAULT_INTERVAL:g}", dense=True, width=T.px(150),
+                                    border_color=T.BORDER, text_size=T.T_BODY,
+                                    options=[ft.DropdownOption(f"{s:g}", tr("Every {n}").format(n=M.fmt_interval(s)))
+                                             for s in M.INTERVALS],
                                     on_select=self._set_interval, tooltip=tr("How often the Frame sends new numbers"))
         self.pause_btn = C.icon_btn(ft.Icons.PAUSE_ROUNDED, tr("Pause"), lambda e: self.toggle_pause())
         self.reconnect = C.secondary(tr("Reconnect"), ft.Icons.REFRESH_ROUNDED, lambda e: self.start())
@@ -188,22 +205,23 @@ class MonitorView:
 
         # details (filled once the stream says how many cores / which sensors the Frame has)
         self.cores = ft.Column(spacing=T.px(6))
-        self.temps = ft.Row(spacing=T.S2, run_spacing=T.S2, wrap=True)
+        self.temps = ft.ResponsiveRow(spacing=T.S2, run_spacing=T.S2)
         self.power_bar = C.MeterBar(list(POWER_COLORS), height=10)
         self.power_legend = ft.Row(spacing=T.S4, run_spacing=T.S2, wrap=True)
         self.net = ft.Column(spacing=T.px(4))
         self.core_bars: list[tuple[C.MeterBar, ft.Text]] = []
-        self.temp_chips: dict[str, ft.Text] = {}
+        self.temp_boxes: dict[str, tuple[ft.Text, C.Sparkline]] = {}  # group (or "fan") -> value, chart
         self.legend_texts: list[ft.Text] = []
         self.net_texts: dict[str, ft.Text] = {}
+        h = T.px(DETAIL_HEIGHT)
         self.details = ft.ResponsiveRow([
-            C.card(ft.Column([C.meta(tr("CPU cores")), self.cores], spacing=T.S2), padding=T.S3,
-                   col={"xs": 12, "md": 4}),
-            C.card(ft.Column([C.meta(tr("Temperatures")), self.temps], spacing=T.S2), padding=T.S3,
-                   col={"xs": 12, "md": 4}),
+            C.card(ft.Column([C.meta(tr("CPU cores")), self.cores], spacing=T.S2), padding=T.S3, height=h,
+                   col={"xs": 12, "md": 6, "xl": 3}),
+            C.card(ft.Column([C.meta(tr("Temperatures and fan")), self.temps], spacing=T.S2), padding=T.S3,
+                   height=h, col={"xs": 12, "md": 6, "xl": 6}),
             C.card(ft.Column([C.meta(tr("Where the power goes")), self.power_bar.control, self.power_legend,
                               ft.Container(height=T.px(4)), C.meta(tr("Network")), self.net], spacing=T.S2),
-                   padding=T.S3, col={"xs": 12, "md": 4}),
+                   padding=T.S3, height=h, col={"xs": 12, "md": 6, "xl": 3}),
         ], spacing=T.S3, run_spacing=T.S3, visible=False)
         self.details_btn = C.ghost(tr("Show details"), ft.Icons.EXPAND_MORE_ROUNDED, lambda e: self.toggle_details())
 
@@ -296,8 +314,8 @@ class MonitorView:
         if session.static != self.static:
             self.static = session.static
             self._build_static()
-        if self.interval.value != "1":
-            session.set_interval(int(self.interval.value))
+        if self.interval.value != f"{M.DEFAULT_INTERVAL:g}":
+            session.set_interval(float(self.interval.value))
         if self.filter.selected != ["game"]:
             session.set_filter(self.filter.selected[0])
         if self.paused:
@@ -329,7 +347,7 @@ class MonitorView:
 
     def _set_interval(self, e) -> None:
         if self.session:
-            self.session.set_interval(int(self.interval.value))
+            self.session.set_interval(float(self.interval.value))
 
     def toggle_pause(self) -> None:
         self.paused = not self.paused
@@ -385,15 +403,20 @@ class MonitorView:
             rows.append(ft.Row([C.meta(f"{cpu}", width=T.px(16)), ft.Container(bar.control, expand=True), val],
                                spacing=T.S2, vertical_alignment=ft.CrossAxisAlignment.CENTER))
         self.cores.controls = rows
-        self.temp_chips = {}
-        chips = []
-        for group in st.get("temp_groups") or []:
+        self.temp_boxes = {}
+        boxes = []
+        names = [(g, label(g), T.WARN) for g in st.get("temp_groups") or []]
+        if st.get("fan"):
+            names.append(("fan", tr("Fan"), T.INFO))
+        for key, name, color in names:
             value = ft.Text("–", size=T.T_BODY, weight=ft.FontWeight.W_600, color=T.TEXT)
-            self.temp_chips[group] = value
-            chips.append(ft.Container(ft.Column([C.meta(label(group)), value], spacing=0, tight=True),
-                                      bgcolor=T.SURFACE_2, border_radius=T.RADIUS_SM,
+            spark = C.Sparkline(color, height=18, min_slots=60, fit=600.0 if key == "fan" else 4.0)
+            self.temp_boxes[key] = (value, spark)
+            head = ft.Row([C.meta(name), value], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+            boxes.append(ft.Container(ft.Column([head, spark.control], spacing=T.px(2), tight=True),
+                                      bgcolor=T.SURFACE_2, border_radius=T.RADIUS_SM, col={"xs": 6, "sm": 4},
                                       padding=ft.Padding(T.px(10), T.px(6), T.px(10), T.px(6))))
-        self.temps.controls = chips
+        self.temps.controls = boxes
         self.legend_texts = []
         legend = []
         for color, name in zip(POWER_COLORS, ("CPU", "GPU", "NPU", tr("Other")), strict=True):
@@ -409,16 +432,18 @@ class MonitorView:
         if gen != self._gen or self.root is None:
             return
         self.last_sample = s
+        if self.push is None:
+            self.push = C.LoopUpdater(self.app.page)
         for name, value in M.series_of(s).items():
-            self.history.add(name, value)
+            self.history.add(name, value, s.get("t"))
         changed = [self._apply_tiles(s), self._apply_game(s), self._apply_details(s)]
         if "procs" in s:
             self.procs = s.get("procs") or []
             changed.append(self._bind_rows(update=False))
         cpu_share = (s.get("self_ms") or 0) / 10 / max(1.0, s.get("dt") or 1.0) / max(1, self.static.get("cores", 1))
-        self.overhead.value = tr("Monitor uses {pct} % of the Frame's CPU").format(pct=f"{cpu_share:.2f}")
+        self.overhead.value = tr("Monitor is using {pct} % of the Frame's CPU").format(pct=f"{cpu_share:.2f}")
         self.overhead.tooltip = tr("The time the Frame spends collecting these numbers")
-        C.update(self.overhead, *[c for group in changed for c in group])
+        self.push(self.overhead, *[c for group in changed for c in group])
 
     def _apply_tiles(self, s: dict) -> list:
         h, st = self.history, self.static
@@ -444,9 +469,7 @@ class MonitorView:
         self.t_mem.set(M.fmt_pct(100.0 * used / total if total else None), sub, h.get("mem"), lvl)
         temps = s.get("temps") or {}
         hot = max(temps.items(), key=lambda kv: kv[1]) if temps else None
-        fan = s.get("fan")
-        sub = (tr("hottest: {part}").format(part=label(hot[0])) if hot else "") + \
-            (f" · {tr('fan')} {fan} rpm" if fan else "")
+        sub = tr("hottest: {part}").format(part=label(hot[0])) if hot else ""
         lvl = max((M.temp_level(g, v) for g, v in temps.items()), key=("ok", "warn", "error").index, default="ok")
         self.t_temp.set(f"{hot[1]:.0f} °C" if hot else "–", sub, h.get("temp"), lvl)
         pw = s.get("power") or {}
@@ -529,13 +552,21 @@ class MonitorView:
             out += [bar.control, val]
         temps = s.get("temps") or {}
         zones = s.get("zones")
-        for group, text in self.temp_chips.items():
-            v = temps.get(group)
-            text.value = f"{v:.1f} °C" if v is not None else "–"
-            text.color = LEVEL_COLOR[M.temp_level(group, v)]
-            if zones and group in zones:
-                text.tooltip = "\n".join(f"{z}: {c:.1f} °C" for z, c in sorted(zones[group].items()))
-            out.append(text)
+        for key, (text, spark) in self.temp_boxes.items():
+            if key == "fan":
+                fan = s.get("fan")
+                text.value = f"{fan} rpm" if fan is not None else "–"
+                spark.set(self.history.get("fan"))
+            else:
+                v = temps.get(key)
+                lvl = M.temp_level(key, v)
+                text.value = f"{v:.1f} °C" if v is not None else "–"
+                text.color = LEVEL_COLOR[lvl]
+                spark.set_color(T.WARN if lvl == "ok" else LEVEL_COLOR[lvl])
+                spark.set(self.history.get(f"temp:{key}"))
+                if zones and key in zones:
+                    text.tooltip = "\n".join(f"{z}: {c:.1f} °C" for z, c in sorted(zones[key].items()))
+            out += [text, spark.control]
         split = M.power_split(s.get("power") or {})
         total = sum(w for _n, w in split) or 1.0
         self.power_bar.set([w / total for _n, w in split])
@@ -554,12 +585,13 @@ class MonitorView:
 
     def _bind_rows(self, update: bool = True) -> list:
         procs = M.sort_filter(self.procs, self.search.value or "", self.sort_key, self.descending)
-        for row, p in zip(self.rows, procs + [None] * ROWS, strict=False):
+        rows = M.group_procs(procs, self.expanded)
+        for row, p in zip(self.rows, rows + [None] * ROWS, strict=False):
             row.bind(p)
-        shown, total = min(len(procs), ROWS), len(self.procs)
-        if len(procs) > ROWS:
-            self.proc_note.value = tr("Showing the top {shown} of {n}: search to find others.").format(
-                shown=shown, n=len(procs))
+        total = len(self.procs)
+        if len(rows) > ROWS:
+            self.proc_note.value = tr("Showing the top {shown} of {n} rows: search to find others.").format(
+                shown=ROWS, n=len(rows))
         elif self.search.value and not procs:
             self.proc_note.value = tr("No process matches.")
         else:
@@ -570,11 +602,36 @@ class MonitorView:
         return controls
 
     # ---------------------------------------------------------------- actions
+    def toggle_group(self, row: dict) -> None:
+        """Open or close a process group (same name, same parent) in the table."""
+        key = row.get("key")
+        if key is None:
+            return
+        self.expanded.symmetric_difference_update({key})
+        self._bind_rows(update=True)
+
     def open_menu(self, p: dict | None, position=None) -> None:
         if not p:
             return
         name, pid = p.get("name", "?"), p.get("pid")
         actions: list = []
+        if p.get("kind") == "group":
+            n = p["count"]
+            actions.append((tr("Hide its processes") if p.get("expanded") else tr("Show its processes"),
+                            ft.Icons.UNFOLD_MORE_ROUNDED, lambda e: self.toggle_group(p)))
+            if not p.get("locked"):
+                actions += [None, (tr("End all {n}").format(n=n), ft.Icons.CLOSE_ROUNDED,
+                                   lambda e: self.ask_kill(p, "TERM")),
+                            (tr("Force kill all {n}").format(n=n), ft.Icons.DANGEROUS_OUTLINED,
+                             lambda e: self.ask_kill(p, "KILL"))]
+            if p.get("game"):
+                actions += [None, (tr("End the whole game"), ft.Icons.STOP_CIRCLE_OUTLINED,
+                                   lambda e: self.ask_end_game(p["game"]))]
+            actions += [None, (tr("Copy name"), ft.Icons.CONTENT_COPY_ROUNDED, lambda e: self.app.copy(name))]
+            self.menu.items = C.menu_items(actions)
+            C.update(self.menu)
+            self.app.page.run_task(self.menu.open, global_position=position)
+            return
         if not p.get("locked"):
             actions += [(tr("End process"), ft.Icons.CLOSE_ROUNDED, lambda e: self.ask_kill(p, "TERM")),
                         (tr("Force kill"), ft.Icons.DANGEROUS_OUTLINED, lambda e: self.ask_kill(p, "KILL"))]
@@ -590,6 +647,17 @@ class MonitorView:
 
     def ask_kill(self, p: dict, sig: str) -> None:
         name, pid = p.get("name", "?"), p.get("pid")
+        if p.get("kind") == "group":
+            n = p["count"]
+            heading = (tr("Force kill all {n} {name}?") if sig == "KILL" else tr("End all {n} {name}?")).format(
+                n=n, name=name)
+            text = tr("{n} processes named {name} with the same parent are ended.").format(n=n, name=name)
+            if p.get("critical"):
+                text += " " + tr("They are part of Steam, SteamVR or the desktop: the headset view or Steam may "
+                                 "restart, and anything running in the headset may stop.")
+            C.confirm(self.app.page, heading, text, tr("Force kill all") if sig == "KILL" else tr("End all"),
+                      lambda: self.app.run_bg(self._kill, p, sig), danger=True)
+            return
         if p.get("critical"):
             heading = tr("End {name}?").format(name=name)
             text = tr("{name} is part of Steam, SteamVR or the desktop. Ending it can close the headset view or "
@@ -612,6 +680,21 @@ class MonitorView:
             self.app.toast(tr("The monitor isn't connected."), error=True)
             return
         name = p.get("name", "?")
+        if p.get("kind") == "group":
+            left = []
+            for m in p.get("members") or []:
+                try:
+                    if not session.kill(m["pid"], sig, force=True).get("ended"):  # confirmed for the whole group
+                        left.append(m["pid"])
+                except Exception:  # noqa: BLE001 - one refusal (gone, system) doesn't stop the others
+                    left.append(m["pid"])
+            if left:
+                self.app.toast(tr("{n} of the {name} processes are still running.").format(n=len(left), name=name),
+                               action=None if sig == "KILL" else tr("Force kill"),
+                               on_action=None if sig == "KILL" else lambda e: self.app.run_bg(self._kill, p, "KILL"))
+            else:
+                self.app.toast(tr("All {n} {name} processes ended.").format(n=p["count"], name=name))
+            return
         try:
             res = session.kill(p["pid"], sig, force=bool(p.get("critical")))
         except M.ProcessCritical:  # the table was older than the Frame's view of it

@@ -161,7 +161,35 @@ def test_history_and_series():
          "temps": {"CPU": 50.0, "GPU": 61.5}, "power": {"system": 6.2}, "battery": {"percent": 80},
          "games": [{"fps": 71.9}]}
     assert M.series_of(s) == {"cpu": 12.5, "gpu": None, "mem": 75.0, "temp": 61.5, "power": 6.2, "battery": 80,
-                              "fps": 71.9}
+                              "fps": 71.9, "temp:CPU": 50.0, "temp:GPU": 61.5}
+    assert M.series_of({**s, "fan": 8200})["fan"] == 8200
+
+
+def test_history_buckets_by_time():
+    """Several samples within one second become one (averaged) point: 2 minutes of chart at any interval."""
+    h = M.History(size=3)
+    for t, v in ((10.0, 2), (10.5, 4), (11.2, 6), (11.9, None), (12.0, 1), (13.0, 5)):
+        h.add("cpu", v, t)
+    assert h.get("cpu") == [6.0, 1.0, 5.0]  # 10 s = (2+4)/2 rolled out of the 3-point window
+    h.add("x", None, 1.0)
+    assert h.get("x") == [None]
+
+
+def test_group_procs():
+    procs = [{"pid": 1, "ppid": 10, "name": "vrwebhelper", "cpu": 1.0, "gpu": 0, "rss": 5, "age": 30},
+             {"pid": 2, "ppid": 99, "name": "steam", "cpu": 0.8, "gpu": 0, "rss": 9, "age": 50},
+             {"pid": 3, "ppid": 10, "name": "vrwebhelper", "cpu": 0.5, "gpu": 2, "rss": 7, "age": 40,
+              "critical": True},
+             {"pid": 4, "ppid": 11, "name": "vrwebhelper", "cpu": 0.1, "gpu": 0, "rss": 1, "age": 5}]
+    rows = M.group_procs(procs)
+    assert [r["kind"] for r in rows] == ["group", "proc", "proc"]
+    g = rows[0]
+    assert g["name"] == "vrwebhelper" and g["count"] == 2 and g["cpu"] == 1.5 and g["gpu"] == 2 and g["rss"] == 12
+    assert g["age"] == 40 and g["critical"] and not g["expanded"] and rows[2]["pid"] == 4  # other parent: alone
+    rows = M.group_procs(procs, {(10, "vrwebhelper")})
+    assert [(r["kind"], r.get("pid")) for r in rows] == [("group", None), ("member", 1), ("member", 3),
+                                                         ("proc", 2), ("proc", 4)]
+    assert M.fmt_interval(0.25) == "0.25 s" and M.fmt_interval(1) == "1 s" and M.DEFAULT_INTERVAL in M.INTERVALS
     assert M.series_of({})["fps"] is None and M.series_of({})["mem"] is None
 
 
