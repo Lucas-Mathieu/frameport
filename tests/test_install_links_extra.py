@@ -1,8 +1,8 @@
 """Install links, continued (test_deeplink.py has the main cases): cancelled downloads, FrameDrop's placeholder
 checksum, which file a manifest installs, naming the program that owns a scheme, lone Windows programs."""
+import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-import threading
 
 import pytest
 

@@ -6,9 +6,10 @@ script instead (PowerShell on Windows, sh on Linux and WSL) that drops the link 
 FramePort unless it is already running (its heartbeat file is fresh). The running app takes links from that folder
 (`take_links`), so a click while FramePort is open reaches the open window.
 
-Settings `links.framedrop` / `links.frameport` (default on, Settings → Install links; skipped with FRAMEPORT_HOME or FRAMEPORT_NO_LINK_HANDLER). A scheme that already belongs to another program
-(FrameDrop) is only taken over when the user says so (`register(force=True)`); turning the setting off removes
-FramePort's registration only where FramePort is the handler.
+Settings `links.framedrop` / `links.frameport` (default on, Settings → Install links; skipped with FRAMEPORT_HOME
+or FRAMEPORT_NO_LINK_HANDLER). A scheme that already belongs to another program (FrameDrop) is only taken over when
+the user says so (`register(force=True)`); turning the setting off removes FramePort's registration only where
+FramePort is the handler.
 """
 from __future__ import annotations
 
@@ -123,7 +124,7 @@ def ps1_script(data: Path, cmd: list[str]) -> str:
     links, alive, starting = data / "links", data / "gui.alive", data / "gui.starting"
     args = ", ".join(_ps_quote(a) for a in cmd[1:]) or ""
     start = (f"Start-Process -FilePath {_ps_quote(cmd[0])}" + (f" -ArgumentList @({args})" if args else ""))
-    return f"""# {MARK}: written by FramePort. Queues a framedrop:// or frameport:// link and starts FramePort if needed.
+    return f"""# {MARK}: written by FramePort. Queues a framedrop:// or frameport:// link, starts FramePort if needed.
 param([string]$Link)
 $ErrorActionPreference = 'SilentlyContinue'
 if (-not $Link) {{ exit 0 }}

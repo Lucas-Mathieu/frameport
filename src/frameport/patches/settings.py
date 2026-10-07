@@ -461,7 +461,8 @@ class DisplayMode(Patch):
     title = "Show as VR or as a flat window"
     description = ("How Lepton runs the app: VR (headless Android, only what the app draws through OpenXR reaches the "
                    "headset) or a flat window (Lepton's lepton-show-flatscreen marker: the Android window on a screen "
-                   "in the headset, like a phone or tablet app). Automatic uses a flat window for apps without VR code. "
+                   "in the headset, like a phone or tablet app). Automatic uses a flat window for apps without VR "
+                   "code. "
                    "Choose \"Flat window\" for a 2D app FramePort took for VR (it shows nothing in the headset), "
                    "\"VR\" for a VR app FramePort took for 2D.")
     category = "device"

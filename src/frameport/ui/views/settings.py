@@ -177,7 +177,7 @@ class SettingsView:
         def show(st: dict | None):
             last.clear()
             last.update(st or {})
-            for scheme, (switch, state, take) in rows.items():
+            for scheme, (_switch, state, take) in rows.items():
                 take.visible = False
                 if not last.get("supported", True):
                     state.value = tr("This system can't send web links to FramePort: use Add games → Install from a "

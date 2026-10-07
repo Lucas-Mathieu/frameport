@@ -1472,9 +1472,8 @@ class FramePortApp:
         have no extension."""
         from ..analysis import linux
 
-        files = await ft.FilePicker().pick_files(dialog_title=tr("A Linux app (AppImage, .zip or .tar.gz; arm64, or x86_64 "
-                                                                 "through translation)"),
-                                                 allow_multiple=True)
+        title = tr("A Linux app (AppImage, .zip or .tar.gz; arm64, or x86_64 through translation)")
+        files = await ft.FilePicker().pick_files(dialog_title=title, allow_multiple=True)
         for f in files or []:
             if not f.path:
                 continue
