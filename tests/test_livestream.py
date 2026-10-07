@@ -243,7 +243,9 @@ def test_relay_with_audio():
 def test_source_command_captures_default_output():
     cmd = L.source_command()
     assert "pactl get-default-sink" in cmd and "$sink.monitor" in cmd and "-c:a aac" in cmd
-    assert "-ts mono2abs" in cmd and "-use_wallclock_as_timestamps" not in cmd  # both on pulse's wall clock
+    audio = cmd[cmd.index("audio=(-thread_queue_size"):cmd.index("fi\n", cmd.index("audio=(-thread_queue_size"))]
+    assert "-ts mono2abs" in cmd and "-use_wallclock_as_timestamps" not in audio  # both on pulse's wall clock
+    # (the hardware path stamps its raw H.264 input with the wall clock; the pulse input never gets that flag)
     assert "aresample=async=1" in cmd
 
 
@@ -291,7 +293,9 @@ def test_source_command_hardware_path(tmp_path):
     assert p.wait(timeout=5) == 0
     assert b"live: encoder=hardware fps=32" in p.stderr.read()
     args = (tmp_path / "ffmpeg.args").read_text()
-    assert "-f h264 -framerate 32 -i pipe:0" in args and "-c:v copy" in args and "libx264" not in args
+    assert "-f h264 -i pipe:0" in args and "-c:v copy" in args and "libx264" not in args
+    assert "-use_wallclock_as_timestamps 1" in args and "nobuffer" not in args  # same clock as pulse's audio
+    assert "+frag_keyframe" in args  # a requested keyframe starts a fragment (where a new viewer begins)
     venc_calls = (tmp_path / "venc.args").read_text().splitlines()
     assert venc_calls[0].startswith("--probe ") and "--height 720" in venc_calls[0] and "--bitrate 3000000" in \
         venc_calls[0]

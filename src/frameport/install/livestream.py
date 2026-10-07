@@ -428,11 +428,15 @@ info=
 hwfps=$(printf %s "$info" | sed -n 's/.*"fps":\\([0-9][0-9]*\\).*/\\1/p')
 if [ -n "$hwfps" ]; then
   echo "{INFO_PREFIX}encoder=hardware fps=$hwfps" >&2
-  # fp_venc reads the SSH channel (stdin): "k" = keyframe, EOF = stop; ffmpeg then ends with it (-shortest)
+  # fp_venc reads the SSH channel (stdin): "k" = keyframe, EOF = stop; ffmpeg then ends with it (-shortest).
+  # Raw H.264 has no timestamps: frames are stamped on arrival (wall clock, like pulse's audio; fp_venc sends them on
+  # its even fps grid, so arrival = capture + a constant). Measured on the Frame (2026-10-07): -framerate is ignored;
+  # numbering frames from 0 (setts) held all output ~7 s when sound was on (interleaving against pulse's wall clock);
+  # -fflags nobuffer lost the first seconds of a still picture's tiny frames; a big probesize waits seconds for one.
+  # frag_keyframe: a requested keyframe starts its own fragment, where a joining viewer can begin.
   "$venc" {venc_args} --fps "$hwfps" | nice -n 10 ffmpeg -nostdin -hide_banner -loglevel error \\
-    -probesize 262144 -analyzeduration 500000 -fflags +genpts+nobuffer -f h264 -framerate "$hwfps" -i pipe:0 \\
-    "${{audio[@]}}" -c:v copy -shortest \\
-    -f mp4 -movflags empty_moov+default_base_moof -frag_duration 100000 -
+    -probesize 32 -analyzeduration 0 -use_wallclock_as_timestamps 1 -f h264 -i pipe:0 "${{audio[@]}}" \\
+    -c:v copy -shortest -f mp4 -movflags empty_moov+default_base_moof+frag_keyframe -frag_duration 100000 -
   exit $?
 fi
 echo "{INFO_PREFIX}encoder=software fps={fps}" >&2

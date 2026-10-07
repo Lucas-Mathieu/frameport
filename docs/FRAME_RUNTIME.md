@@ -160,6 +160,20 @@
   - The panel's current refresh rate can be read without privileges through DRM: `/dev/dri/card0` is mode 0666, and
     GETCRTC reports e.g. `2*2160x2160_96` (clock 1402720 kHz / 4448 × 3285 = 96 Hz) even while the headset sleeps.
     The panel offers 72/80/90/96/108/120/144 Hz.
+  - `/dev/video99` (v4l2loopback) has `max_buffers=2`: a reader asking for more gets 2.
+  - Mid-stream keyframe requests (FORCE_KEY_FRAME) take effect on the next frame, and the GOP restarts from there.
+  - Measured 2026-10-07 with the headset asleep (still picture):
+    - `fp_venc` alone at 32/36 fps: 1% of a core at 1080p, 2.5% at 720p.
+    - Live view end to end: `fp_venc` 2.6% + ffmpeg 8.4% (AAC encoding + muxing).
+  - Conversion cost per new picture (self-test, NEON): 1.5 ms at 1080p→1080p. Box-scaling to 720p takes 5.6 ms
+    (~11 ms at idle clocks), so with live content 1080p costs the CPU *less* than the scaled qualities.
+  - ffmpeg with raw H.264 on a pipe:
+    - `-framerate` is ignored.
+    - `-fflags nobuffer` loses the first seconds of tiny frames.
+    - Numbering frames from 0 (`setts`) next to pulse's wall-clock audio holds all output ~7 s.
+    - What works: `-probesize 32 -analyzeduration 0 -use_wallclock_as_timestamps 1`, plus `frag_keyframe` so that a
+      requested keyframe starts a fragment.
+  - The default sink is SUSPENDED while nothing plays; its monitor still delivers (silent) audio.
 
 ## Text input
 

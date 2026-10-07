@@ -350,6 +350,8 @@ struct enc {
     uint8_t *out_mem[ENC_BUFS], *cap_mem[ENC_BUFS];
     uint32_t out_len[ENC_BUFS], cap_len[ENC_BUFS];
     int out_free[ENC_BUFS];
+    long out_pic[ENC_BUFS];   /* which picture each OUTPUT buffer holds (0 = black, -1 = none): a repeat that finds
+                               * its picture already in the buffer skips the conversion (standby, still scenes) */
 };
 
 static int src_open(struct src *s, const char *path)
@@ -375,8 +377,10 @@ static int src_open(struct src *s, const char *path)
     memset(&rb, 0, sizeof rb);
     rb.count = SRC_BUFS, rb.type = V4L2_BUF_TYPE_VIDEO_CAPTURE, rb.memory = V4L2_MEMORY_MMAP;
     r = sys_ioctl(s->fd, VIDIOC_REQBUFS, &rb);
-    if (r < 0 || rb.count < SRC_BUFS) return fail(3, "source VIDIOC_REQBUFS", r < 0 ? r : -ENOMEM);
-    for (int i = 0; i < SRC_BUFS; i++) {
+    /* The driver may grant fewer (the Frame's v4l2loopback has max_buffers=2); two are enough: one held, one filling. */
+    if (r < 0 || rb.count < 2) return fail(3, "source VIDIOC_REQBUFS", r < 0 ? r : -ENOMEM);
+    if (rb.count > SRC_BUFS) rb.count = SRC_BUFS;
+    for (int i = 0; i < (int)rb.count; i++) {
         struct v4l2_buffer b;
         memset(&b, 0, sizeof b);
         b.index = (uint32_t)i, b.type = V4L2_BUF_TYPE_VIDEO_CAPTURE, b.memory = V4L2_MEMORY_MMAP;
@@ -710,6 +714,8 @@ int main(int argc, char **argv, char **envp)
     const int64_t t0 = now_ns(), period = 1000000000 / fps;
     int64_t next_stats = t0 + 10000000000LL, quiet_src = 0, quiet_enc = 0;
     long slot = 0;                 /* next slot to submit; due at t0 + slot * 1e9 / fps */
+    long pic = 0;                  /* current picture: 0 = black (no source frame yet), +1 per new source frame */
+    for (int i = 0; i < ENC_BUFS; i++) e.out_pic[i] = -1;
     int want_key = 0, stdin_open = 1, sent_any = 0, rc = 0;
 
     for (;;) {
@@ -726,12 +732,16 @@ int main(int argc, char **argv, char **envp)
             while (i < ENC_BUFS && !e.out_free[i]) i++;
             if (i == ENC_BUFS) break;
             uint8_t *m = e.out_mem[i];
-            if (s.held >= 0) {
-                fp_convert(s.mem[s.held], s.w, s.h, s.stride, m, e.stride, m + (size_t)e.stride * e.hpad, e.stride,
-                           ow, oh, scratch);
-            } else {   /* no source frame yet: black */
-                memset(m, 16, (size_t)e.stride * oh);
-                memset(m + (size_t)e.stride * e.hpad, 128, (size_t)e.stride * oh / 2);
+            if (s.held >= 0 && s.fresh) pic++;
+            if (e.out_pic[i] != pic) {
+                if (s.held >= 0) {
+                    fp_convert(s.mem[s.held], s.w, s.h, s.stride, m, e.stride, m + (size_t)e.stride * e.hpad,
+                               e.stride, ow, oh, scratch);
+                } else {   /* no source frame yet: black */
+                    memset(m, 16, (size_t)e.stride * oh);
+                    memset(m + (size_t)e.stride * e.hpad, 128, (size_t)e.stride * oh / 2);
+                }
+                e.out_pic[i] = pic;
             }
             if (!s.fresh && sent_any) st.repeats++;
             s.fresh = 0;
