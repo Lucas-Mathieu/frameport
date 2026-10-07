@@ -180,6 +180,12 @@
     - What works: `-probesize 32 -analyzeduration 0 -use_wallclock_as_timestamps 1` on the input (ffmpeg reads it in
       step with the audio), then `-bsf:v setts=ts=N*(1/fps)/TB` on the output (exactly even frames; audio still
       0–N s alongside), plus `frag_keyframe` so that a requested keyframe starts a fragment.
+    - With sound, ffmpeg paces its inputs against each other and pulse's audio arrives later than the wall clock
+      (more while something plays). The video input then counts as ahead, and ffmpeg stops reading it for up to
+      0.7 s, so the writer blocks. That was the cause of 1080p dropping frames: busy 1080p replayed with sound took
+      34–47 s for 20 s of video. Video alone was fine; `nice`, `-raw_packet_size` and the input queue size didn't
+      matter. `-itsoffset -1` on the video input fixes it: writes 0.4 ms on average, 20 s in 20 s, and output
+      audio/video spans stay equal because setts sets the output times.
   - Quality (owner's headset test, 2026-10-07): 3 Mbit/s CBR at 720p36 showed heavy compression artifacts. The
     hardware path now uses VBR with a 1.5× peak (the encoder accepts BITRATE_MODE VBR + BITRATE_PEAK) and higher
     targets: 360p 1.5, 480p 2.5, 720p 5, 1080p 8, Full 10 Mbit/s. The x264 fallback keeps its rates.

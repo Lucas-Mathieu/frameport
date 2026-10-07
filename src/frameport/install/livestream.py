@@ -445,8 +445,13 @@ if [ -n "$hwfps" ]; then
   # player); setts alone (no input stamps) held all output ~7 s next to the sound; -framerate is ignored;
   # -fflags nobuffer lost the first seconds of a still picture's tiny frames; a big probesize waits seconds for one.
   # frag_keyframe: a requested keyframe starts its own fragment, where a joining viewer can begin.
+  # -itsoffset -1: ffmpeg paces its inputs against each other, and pulse's audio arrives later than the wall clock
+  # (more while something plays), so the video input counted as "ahead" and ffmpeg stopped reading it for up to
+  # 0.7 s: fp_venc's writes blocked and 1080p dropped frames (owner's test 2026-10-07; busy 1080p replayed with sound:
+  # 20 s took 34-47 s). Shifted 1 s back, video is never ahead: writes 0.4 ms avg, 20 s in 20 s. Only the input side
+  # moves: setts sets the output times, audio and video spans stay equal.
   "$venc" {venc_args} --fps "$hwfps" | nice -n 10 ffmpeg -nostdin -hide_banner -loglevel error \\
-    -probesize 32 -analyzeduration 0 -use_wallclock_as_timestamps 1 -f h264 -i pipe:0 "${{audio[@]}}" \\
+    -probesize 32 -analyzeduration 0 -use_wallclock_as_timestamps 1 -itsoffset -1 -f h264 -i pipe:0 "${{audio[@]}}" \\
     -c:v copy -bsf:v "setts=ts=N*(1/$hwfps)/TB:duration=(1/$hwfps)/TB" -shortest \\
     -f mp4 -movflags empty_moov+default_base_moof+frag_keyframe -frag_duration 100000 -
   exit $?

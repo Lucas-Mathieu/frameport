@@ -296,6 +296,7 @@ def test_source_command_hardware_path(tmp_path):
     assert "-f h264 -i pipe:0" in args and "-c:v copy" in args and "libx264" not in args
     assert "-use_wallclock_as_timestamps 1" in args and "nobuffer" not in args  # read in step with pulse's audio
     assert "setts=ts=N*(1/32)/TB" in args  # output timestamps on fp_venc's 32 fps grid (no bunched frames)
+    assert "-itsoffset -1 -f h264 -i pipe:0" in args  # video never "ahead" of pulse: ffmpeg keeps reading it
     assert "+frag_keyframe" in args  # a requested keyframe starts a fragment (where a new viewer begins)
     venc_calls = (tmp_path / "venc.args").read_text().splitlines()
     assert venc_calls[0].startswith("--probe ") and "--height 720" in venc_calls[0]
