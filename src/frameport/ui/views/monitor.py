@@ -489,9 +489,8 @@ class MonitorView:
         if pkg != self.game_pkg:
             self.game_pkg = pkg
             meta = self._game_meta(pkg)
-            art = C.art_fill(meta["art"], radius=T.RADIUS_SM, width=T.px(96), height=T.px(96))
-            self.game_art.image, self.game_art.gradient = art.image, art.gradient
-            self.game_art.content, self.game_art.alignment = art.content, art.alignment
+            # once per game (not per tick): its artwork, by asset URL
+            self.game_art.content = C.art_fill(meta["art"], radius=T.RADIUS_SM, width=T.px(96), height=T.px(96))
             self.page_btn.visible = meta["in_library"]
         kind = {"pcvr": tr("PC VR via Proton"), "linux": tr("Linux app")}.get(game.get("kind"), tr("Quest game"))
         self.game_title.value = game.get("title") or pkg

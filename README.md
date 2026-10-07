@@ -35,6 +35,8 @@ Install games that target the Meta Quest, Android, or general PCVR onto your **V
 - **Screenshots tab:** the screenshots you took in the headset, sorted by game (matched by play time) and day;
   view them and download them to your computer.
 - **Live view tab:** watch what the headset shows, with sound, in a browser window on your computer.
+- **Monitor tab:** the running game's frame rate, the Frame's load, temperatures, power and battery live, and its
+  processes, which you can end. [More](#monitor).
 - **Self-updating** releases, redacted diagnostics, one-click problem reports and working-config sharing.
 
 ## Quick start
@@ -88,6 +90,17 @@ it opens in your default web browser (full screen with a double-click; click **S
 videos muted). Pick 360p to 1080p, or the headset view's full size. The picture comes from SteamVR's built-in headset
 view on the Frame and is encoded there while you watch (about one CPU core), so stop it when you're done. It's black
 while the headset sleeps.
+
+## Monitor
+
+The **Monitor** tab shows what the Frame is doing while it's open: the running game with its frame rate against the
+display's refresh rate, CPU, graphics chip, memory, the hottest temperature with the fan speed, power draw and battery
+time left, each with a 2-minute chart. **Show details** adds every CPU core, all temperature sensors, where the power
+goes and the network. Below, the game's processes (or Steam's, or all of them) with their CPU, GPU and memory use:
+right-click one to end it, or end the whole game. Programs that Steam, SteamVR or the desktop need are marked and ask
+again. The Frame sends the numbers itself (about 1 % of one CPU core) and stops when you leave the tab.
+
+![Monitor](docs/images/monitor.png)
 
 ## Compatibility
 

@@ -183,17 +183,23 @@ class FakeKeyboardSession:
 
 
 class FakeMonitorSession:
-    """--fake-frame: the Monitor tab's stream as synthetic samples, one per second: a Quest game near 72 fps, warming
-    temperatures, ~40 processes (nothing reaches a Frame)."""
+    """--fake-frame: the Monitor tab's stream as synthetic samples, one per second, shaped like a real Quest game on
+    the dev Frame (2026-10-07): 72 fps, the game's Android container, SteamVR/Steam as context. Two minutes are sent
+    at once first, so the charts are full in screenshots. GAME = --game (else the library's first game)."""
 
-    PROCS = [("com.example.game", "game:com.example.game", 38.0, 22.0, 1_900_000_000),
-             ("RenderThread", "game:com.example.game", 12.0, 0.0, 0), ("surfaceflinger", "game:com.example.game",
-                                                                          3.1, 4.0, 90_000_000),
-             ("vrcompositor", "steamvr", 6.2, 18.5, 80_000_000), ("vrserver", "steamvr", 4.3, 0.0, 86_000_000),
-             ("XRServiceLoopTh", "steamvr", 5.1, 0.0, 410_000_000), ("steam", "steam", 3.5, 0.2, 290_000_000),
-             ("steamwebhelper", "steam", 2.4, 0.4, 560_000_000), ("gamescope-wl", "desktop", 1.1, 1.2, 50_000_000),
-             ("Xwayland", "desktop", 0.2, 0.1, 68_000_000)] + \
-            [("steamwebhelper", "steam", 0.1, 0.0, 60_000_000 + i * 1_000_000) for i in range(30)]
+    GAME: str | None = None
+    BACKFILL = 120
+    # (name, group, CPU %, GPU %, memory); "GAME" = the game's package
+    PROCS = [("GAME", "game", 9.8, 44.0, 1_350_000_000), ("vrcompositor", "steamvr", 1.4, 9.0, 80_000_000),
+             ("system_server", "game", 1.1, 0.0, 296_000_000), ("XRServiceLoopTh", "steamvr", 0.5, 0.0, 433_000_000),
+             ("steamwebhelper", "steam", 0.4, 0.0, 350_000_000), ("com.android.systemui", "game", 0.1, 0.0,
+                                                                   229_000_000),
+             ("surfaceflinger", "game", 0.1, 0.4, 96_000_000), ("audioserver", "game", 0.1, 0.0, 31_000_000),
+             ("com.android.providers.media.module", "game", 0.1, 0.0, 130_000_000),
+             ("com.android.launcher3", "game", 0.0, 0.0, 194_000_000), ("main", "game", 0.0, 0.0, 178_000_000),
+             ("com.android.settings", "game", 0.0, 0.0, 172_000_000),
+             ("com.android.networkstack.process", "game", 0.0, 0.0, 130_000_000),
+             ("android.ext.services", "game", 0.0, 0.0, 111_000_000)]
 
     def __init__(self, frame, on_sample, on_end=None):
         import math
@@ -209,33 +215,36 @@ class FakeMonitorSession:
     def _sample(self) -> dict:
         m, t = self.math, self.t
         wave = lambda a, p, o=0: a * (1 + m.sin(t / p + o)) / 2  # noqa: E731
-        game = library.games()[0] if library.games() else {"package": "com.example.game", "title": "Example Game"}
-        procs = [{"pid": 4100 + i, "ppid": 1, "name": n, "group": g, "game": game["package"] if g.startswith("game")
-                  else None, "cpu": round(c * (0.8 + wave(0.4, 3, i)), 1), "gpu": gp, "rss": r, "age": 1800 + i,
-                  "uid": 1000, "critical": n in ("vrcompositor", "vrserver", "steam", "gamescope-wl", "Xwayland",
-                                                 "XRServiceLoopTh", "steamwebhelper"), "locked": False}
-                 for i, (n, g, c, gp, r) in enumerate(self.PROCS)]
+        g = library.game(self.GAME) if self.GAME else (library.games() or [None])[0]
+        game = g or {"package": "com.example.game", "title": "Example Game"}
+        pkg = game["package"]
+        procs = [{"pid": 570799 + i * 37, "ppid": 1, "name": pkg if n == "GAME" else n,
+                  "group": f"game:{pkg}" if grp == "game" else grp, "game": pkg if grp == "game" else None,
+                  "cpu": round(c * (0.85 + wave(0.3, 3, i)), 1), "gpu": round(gp * (0.9 + wave(0.2, 5, i)), 1),
+                  "rss": r, "age": 1500 + t, "uid": 1000, "critical": grp in ("steamvr", "steam"), "locked": False,
+                  "context": grp != "game"}
+                 for i, (n, grp, c, gp, r) in enumerate(self.PROCS)]
         return {
-            "t": time.time(), "dt": 1.0, "self_ms": 4.2,
-            "cpu": {"total": round(38 + wave(20, 4), 1), "cores": [round(20 + wave(70, 3 + i, i), 1) for i in range(8)],
-                    "mhz": [1785, 2803, 2611, 3052]},
-            "gpu": {"busy": round(55 + wave(30, 5), 1), "mhz": 680},
-            "mem": {"total": 16 * 1024 ** 3, "avail": int((7.2 - wave(0.6, 6)) * 1024 ** 3),
-                    "swap_total": 8 * 1024 ** 3, "swap_free": 8 * 1024 ** 3},
-            "psi": {"cpu": 2.0, "memory": 0.0, "io": 0.3},
-            "temps": {"CPU": round(61 + t * 0.15, 1), "GPU": round(58 + t * 0.12, 1), "Memory": 49.5, "Battery": 33.2,
-                      "NPU": 44.0, "Power ICs": 46.0, "Modem": 41.0, "Camera": 43.5},
-            "zones": {"CPU": {"cpu7-top": round(61 + t * 0.15, 1), "cpu0": 55.0}, "GPU": {"gpuss-0": 58.0}},
-            "fan": 9400 + int(wave(600, 7)),
-            "power": {"system": round(9.5 + wave(2.5, 4), 2), "cpu": 2.6, "gpu": round(3.1 + wave(1.2, 5), 2),
+            "t": time.time(), "dt": 1.0, "self_ms": 11.5,
+            "cpu": {"total": round(15 + wave(4, 4), 1), "cores": [round(4 + wave(30, 3 + i, i), 1) for i in range(8)],
+                    "mhz": [2265, 1996, 1920, 518]},
+            "gpu": {"busy": round(52 + wave(8, 5), 1), "mhz": 903},
+            "mem": {"total": 15.3 * 1024 ** 3, "avail": int((8.3 - wave(0.15, 9)) * 1024 ** 3),
+                    "swap_total": 7.6 * 1024 ** 3, "swap_free": 7.4 * 1024 ** 3},
+            "psi": {"cpu": 1.0, "memory": 0.0, "io": 0.1},
+            "temps": {"CPU": round(48 + wave(1.5, 11), 1), "GPU": round(46.5 + wave(1, 13), 1), "Memory": 47.1,
+                      "Battery": 27.7, "NPU": 47.3, "Power ICs": 37.0, "Modem": 44.2, "Camera": 46.3},
+            "zones": {"CPU": {"cpu7-top": 48.4, "cpu0": 44.0}, "GPU": {"gpuss-0": 46.5}},
+            "fan": 8500 + int(wave(300, 7)),
+            "power": {"system": round(7.3 + wave(0.6, 4), 2), "cpu": 0.85, "gpu": round(1.0 + wave(0.3, 5), 2),
                       "npu": 0.1},
-            "battery": {"percent": 78, "status": "Discharging", "plugged": False, "draining": True, "watts": -10.4,
-                        "empty_s": 5400},
-            "net": {"wlan0": [int(wave(250_000, 3)), 18_000], "wlanap": [0, 0], "usb0": [0, 0]},
-            "games": [{"package": game["package"], "title": game.get("title") or game["package"], "kind": "quest",
-                       "appid": 1, "elapsed": 1800 + t, "cpu": 41.0, "gpu": 26.5, "mem": 2_300_000_000,
-                       "processes": 3, "fps": round(71.5 + wave(0.8, 2) - (14 if t % 23 == 7 else 0), 1),
-                       "frame_ms": 0.1}],
+            "battery": {"percent": 95, "status": "Discharging", "plugged": False, "draining": True, "watts": -1.96,
+                        "empty_s": 22440},
+            "net": {"wlan0": [int(2000 + wave(4000, 3)), 1000], "wlanap": [0, 0], "usb0": [0, 0]},
+            "games": [{"package": pkg, "title": game.get("title") or pkg, "kind": "quest", "appid": 1,
+                       "elapsed": 1500 + t, "cpu": 9.4, "gpu": round(44 + wave(6, 5), 1), "mem": 3_390_000_000,
+                       "processes": 87, "fps": round(71.6 + wave(0.6, 2) - (9 if t % 41 == 30 else 0), 1),
+                       "frame_ms": 0.0}],
             "procs": procs, "filter": "game"}
 
     def _run(self) -> None:
@@ -243,7 +252,8 @@ class FakeMonitorSession:
             if self.closed:
                 return
             self.on_sample(self._sample())
-            time.sleep(1)
+            if self.t >= self.BACKFILL:  # the first two minutes at once (full charts), then one per second
+                time.sleep(1)
 
     def set_interval(self, s): pass  # noqa: E704
     def set_filter(self, w): pass  # noqa: E704
@@ -573,6 +583,7 @@ def main() -> int:
 
         keyboard.KeyboardSession = FakeKeyboardSession
         monitor.MonitorSession = FakeMonitorSession
+        FakeMonitorSession.GAME = game  # the game card shows --game (with its artwork)
         FramePortApp.connect = lambda self, *a, **k: None
         FramePortApp.refresh_frame = lambda self, *a, **k: None
 
