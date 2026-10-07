@@ -626,6 +626,7 @@ Installed apps find the release themselves (self-update), so the notes are what 
   replace the rolling `dev` pre-release (`dev-release` job; same assets + SHA256SUMS). Automatic update checks ignore
   pre-releases; testers use Settings → Updates → "Install the latest dev build…" (`updates.check_dev`,
   `Updater.install_dev`). `parse_version` sorts 0.9.0 < 0.9.1.devN < 0.9.1, so testers get the next release normally.
+- **Upstream trackers:** issues labelled `upstream` (#73 microphone, #74 haptics, #75 VrApi bridge) list our workarounds for OVRPort bugs and how to drop them; check them against OVRPort's latest release before each release.
 - **Release checklist:** bump `src/frameport/_version.py` (the only version; `scripts/package.py` fails a tag build
   whose tag ≠ `v<_version>`), commit, `git tag -a vX.Y.Z -m "FramePort X.Y.Z" -m "<What's new, Markdown bullets>"`,
   push the commit and the tag. Never publish a release without its `SHA256SUMS.txt` (the updater refuses it) and keep

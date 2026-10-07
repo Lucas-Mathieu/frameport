@@ -6,6 +6,8 @@ without a check, so a game that asks for the buffer size right after Create (Unr
 Walking Dead: Saints & Sinners Ch. 2) dereferences a NULL stream: SIGSEGV in libaaudio.so on the GameThread a few
 seconds after the logo. Meta's own library allows that order. The function is rewritten in place (same size) to return
 0 while no stream is open and behave as before otherwise.
+
+Upstream: Android-XR-Bridge/OVRPort#2, ovrport/app#73; tracked in GitHub #73 (drop this patch once fixed upstream).
 """
 from __future__ import annotations
 

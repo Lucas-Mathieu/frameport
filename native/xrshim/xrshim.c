@@ -13,6 +13,7 @@
 // enormous sample buffer and the Frame runs out of memory and freezes. The shim hands OVRPlugin its own
 // xrApplyHapticFeedback, which turns such an envelope into a plain XrHapticVibration (same duration, its peak
 // amplitude) before the dispatcher sees it. Everything else passes through unchanged.
+// Upstream: ovrport/app#73; tracked in FramePort GitHub #74.
 #include <openxr/openxr.h>
 #include <android/log.h>
 #include <dlfcn.h>
