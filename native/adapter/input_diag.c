@@ -85,7 +85,8 @@ static void input_diag_current_profile(XrPath user, XrPath profile) {
 }
 
 // ---------------------------------------------------------------- failing calls
-// xrSyncActions and xrSuggestInteractionProfileBindings are reported from session_fixes.c's hooks.
+// xrSyncActions and xrSuggestInteractionProfileBindings are reported from session_fixes.c's hooks,
+// xrApplyHapticFeedback from frame_adapter.c's (always hooked for haptic_scale).
 #define DIAG_CHECKED(name, params, args, detail)                                                                    \
     static XRAPI_ATTR XrResult XRAPI_CALL diag_##name params {                                                     \
         PFN_##name fn = (PFN_##name)lookup(active_instance, #name);                                                \
@@ -110,10 +111,6 @@ DIAG_CHECKED(xrCreateAction, (XrActionSet set, const XrActionCreateInfo *info, X
              diag_name_detail(info ? info->actionName : NULL))
 DIAG_CHECKED(xrAttachSessionActionSets, (XrSession session, const XrSessionActionSetsAttachInfo *info),
              (session, info), NULL)
-DIAG_CHECKED(xrApplyHapticFeedback,
-             (XrSession session, const XrHapticActionInfo *info, const XrHapticBaseHeader *haptic),
-             (session, info, haptic),
-             haptic && haptic->type != XR_TYPE_HAPTIC_VIBRATION ? "(not XrHapticVibration)" : NULL)
 DIAG_CHECKED(xrPerfSettingsSetPerformanceLevelEXT,
              (XrSession session, XrPerfSettingsDomainEXT domain, XrPerfSettingsLevelEXT level),
              (session, domain, level), diag_perf_detail(domain, level))
@@ -125,7 +122,6 @@ static PFN_xrVoidFunction input_diag_hook(const char *name) {
     DIAG(xrStringToPath)
     DIAG(xrCreateAction)
     DIAG(xrAttachSessionActionSets)
-    DIAG(xrApplyHapticFeedback)
     DIAG(xrPerfSettingsSetPerformanceLevelEXT)
 #undef DIAG
     return NULL;

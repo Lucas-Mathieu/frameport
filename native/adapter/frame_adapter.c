@@ -880,8 +880,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance instance, const XrSess
 // Vibrations: logged (the first few, to see what games ask for) and scaled by haptic_scale. Plain vibrations, Meta's
 // amplitude envelopes and PCM buffers all pass here: games' own calls, OVRPort's VrApi bridge and the xrshim alike.
 static int haptics_logged;
-XRAPI_ATTR XrResult XRAPI_CALL xrApplyHapticFeedback(XrSession session, const XrHapticActionInfo *info,
-                                                    const XrHapticBaseHeader *feedback) {
+static XrResult apply_haptics(XrSession session, const XrHapticActionInfo *info, const XrHapticBaseHeader *feedback) {
     PFN_xrApplyHapticFeedback fn = (PFN_xrApplyHapticFeedback)lookup(active_instance, "xrApplyHapticFeedback");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
     if (!feedback) return fn(session, info, feedback);
@@ -924,6 +923,15 @@ XRAPI_ATTR XrResult XRAPI_CALL xrApplyHapticFeedback(XrSession session, const Xr
         return r;
     }
     return fn(session, info, feedback);
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL xrApplyHapticFeedback(XrSession session, const XrHapticActionInfo *info,
+                                                    const XrHapticBaseHeader *feedback) {
+    XrResult result = apply_haptics(session, info, feedback);
+    if (input_diag && XR_FAILED(result))  // always hooked (haptic_scale), so input_diag reports failures here
+        diag_call_failed("xrApplyHapticFeedback", result,
+                         feedback && feedback->type != XR_TYPE_HAPTIC_VIBRATION ? "(not XrHapticVibration)" : NULL);
+    return result;
 }
 
 XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateSwapchainImages(XrSwapchain swapchain, uint32_t capacity, uint32_t *count,
