@@ -142,7 +142,24 @@
   `h264_v4l2m2m` hangs, gst `v4l2h264enc` not-negotiated). ffmpeg + libx264 works: FramePort's live view
   (`install/livestream.py`: `fps=30` before the scale, ultrafast/zerolatency, 3 threads, nice 10, fragmented MP4 on
   stdout, + AAC 128k) measured 0.34 core at 720p / 0.56 at 1080p with a quiet picture (video only); expect ~1-1.4
-  cores with a busy scene.
+  cores with a busy scene. That is now only the fallback.
+- Hardware encoding (2026-10-07): the iris encoder works when driven directly through the V4L2 stateful encoder
+  interface. That is FramePort's `fp_venc` (`native/venc`, spec + every measured value in `native/venc/SPEC.md`).
+  Facts:
+  - Device: `/dev/video23` (`/dev/video-enc0` links to it), driver `iris_driver`, M2M multiplanar.
+  - Formats: input NV12/NV21/AB24(RGBA)/QC24/Q08C; output H264/HEVC; sizes 128..8192.
+  - NV12 layout (S_FMT answers):
+    - stride is a multiple of 128;
+    - the returned height is padded to a multiple of 32;
+    - CbCr starts at stride × padded height;
+    - sizeimage is rounded up to 4 KiB;
+    - the default crop is the requested size.
+  - Controls: CBR, FORCE_KEY_FRAME, PREPEND_SPSPPS_TO_IDR, HEADER_MODE joined, FRAME_SKIP_MODE, H.264 profiles
+    Baseline..Constrained High, levels up to 6.0.
+  - The `steamos` user can open it (group video).
+  - The panel's current refresh rate can be read without privileges through DRM: `/dev/dri/card0` is mode 0666, and
+    GETCRTC reports e.g. `2*2160x2160_96` (clock 1402720 kHz / 4448 × 3285 = 96 Hz) even while the headset sleeps.
+    The panel offers 72/80/90/96/108/120/144 Hz.
 
 ## Text input
 

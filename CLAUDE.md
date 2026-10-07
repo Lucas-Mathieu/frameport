@@ -28,9 +28,15 @@ Read `docs/PLAYBOOK.md` (symptom → fix) before debugging a game, and `docs/FRA
     delete leaves screenshots.vdf alone (Steam rewrites it at exit); game menu → "Screenshots" = `go("screenshots",
     pkg)`); live view (`views/live.py` + `install/livestream.py`: the Frame's built-in SteamVR "headset view" webcam
     (`steamvr-v4l2cam.service` → v4l2loopback "SteamVR" /dev/video99, see docs/FRAME_RUNTIME.md) + the default
-    output's pulse monitor (sound) → ffmpeg/x264 + AAC (qualities scale down only; "full" = SteamVR's size) →
-    fragmented MP4 on an SSH exec channel's stdout (the script stops ffmpeg on stdin EOF) → relay on 127.0.0.1 (keeps
-    init + fragments since the last keyframe of the *video* track for late viewers) → player page
+    output's pulse monitor (sound) → `fp_venc` (`native/venc`, own clean-room V4L2 driver of the Frame's iris
+    hardware encoder: RGB24→NV12 box downscale with NEON, H.264 CBR, one frame per slot of an even fraction of the
+    panel rate read from DRM, e.g. 96 Hz → 32 fps; stdin `k` = keyframe, EOF = stop; `--probe` / `--selftest`;
+    artifact `linux-arm64-bin/`, synced to `~/.local/share/frameport/bin` by sha256 at stream start, no agent change)
+    piped into ffmpeg (`-c:v copy` + AAC), else the old ffmpeg/x264 30 fps path (qualities scale down only; "full" =
+    SteamVR's size; stderr `live: encoder=… fps=…` → status line) →
+    fragmented MP4 on an SSH exec channel's stdout (stdin EOF stops it) → relay on 127.0.0.1 (a new viewer asks
+    the hardware encoder for a keyframe and waits for it, else gets init + fragments since the last keyframe of the
+    *video* track) → player page
     `install/live_player.py` (MSE; starts muted as browsers require, "Sound on" button; 0.3 s cushion, catches up at
     1.1x, seeks only when >2 s behind: seeking to the very edge starved it) opened
     in the user's default browser: Flet can't show video outside `flet build` bundles; the stream outlives the tab and

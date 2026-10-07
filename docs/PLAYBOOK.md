@@ -111,6 +111,13 @@ version is `catalog/triage.yaml` (used by `frameport test` / the Job screen); ke
 | Unreal 5 game crashes in `vulkan.freedreno.so` called straight from `libUnreal.so` right after its swapchains, or a few seconds into the first frames (Metro Awakening) | Unreal turns on fragment-density-map foveation because Turnip offers VK_EXT_fragment_density_map, then records barriers (to `FRAGMENT_DENSITY_MAP_OPTIMAL`) and image views (2D array R8G8) for a density map the Frame never provides (VK_NULL_HANDLE); Turnip dereferences it | adapter `vk_hide_fdm=1` (the game doesn't see the extension) + `vk_spec_fixes=1` (leaves out null-image barriers, refuses null-image views); triage `unreal-fdm-missing`. Found by disassembling the driver at the crash pc: the struct offsets (0x58 = VkSubpassDescription2, 0x48/0x60 = image barriers, viewType/format in registers) name the call |
 | Own-engine game crashes in `je_free` from its own library on the first frames (Roblox) | the game frees memory it doesn't own; not the Vulkan shim or the format fallback | unsupported |
 
+## Live view (Live view tab, `install/livestream.py`)
+| Symptom | Cause | Fix |
+|---|---|---|
+| Status line says "software encoder" (30 fps, the Frame's CPU busier) | `fp_venc --probe` failed (missing upload, encoder busy or refused a format: exit 4) or the helper couldn't be put on the Frame | on the Frame: `~/.local/share/frameport/bin/fp_venc --probe; echo $?` and `--selftest`; the app log names upload failures. `FP_VENC_DISABLE=1` forces the fallback for tests |
+| Picture drifts out of sync with the sound | the hardware path relies on one H.264 frame per fps slot (ffmpeg `-framerate`); `fp_venc: stats … skipped=` > 0 on stderr means slots were skipped | see the stats line (every 10 s); a stopped/suspended Frame skips slots on purpose |
+| Viewer joins only after several seconds | the keyframe request (`k` on the channel) didn't reach the encoder; the viewer then waits for the next regular keyframe (4 s) | check `live: encoder=hardware` came first (requests are sent only then) |
+
 ## Debugging techniques that worked
 - A user's problem report: `frameport diag inspect <FramePort-diag-*.zip>` re-triages its launch log with the current
   signatures; the zip has the recipe, analysis, ELF/PE imports, Frame logs and versions (docs/DIAGNOSTICS.md).

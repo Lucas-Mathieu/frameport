@@ -26,7 +26,7 @@ QUALITIES = [("360p", tr("360p (lightest)")), ("480p", "480p"), ("720p", tr("720
 
 
 def status_text(st: dict) -> str:
-    """One line for the relay's status (livestream.Relay.status)."""
+    """One line for the stream's status (livestream.LiveStream.status)."""
     if st.get("ended"):
         return tr("Stopped: {why}").format(why=st["ended"])
     if not st.get("ready"):
@@ -34,6 +34,10 @@ def status_text(st: dict) -> str:
     parts = [tr("Live")]
     if st.get("width"):
         parts.append(f"{st['width']}×{st['height']}")
+    if st.get("fps"):
+        parts.append(tr("{fps} fps").format(fps=st["fps"]))
+    if st.get("encoder"):
+        parts.append(tr("hardware encoder") if st["encoder"] == "hardware" else tr("software encoder"))
     secs = max(st.get("seconds") or 0, 1)
     parts.append(tr("{rate}/s").format(rate=human(int((st.get("bytes") or 0) / secs))))
     n = st.get("viewers") or 0
@@ -92,8 +96,8 @@ class LiveView:
                              "full screen. It shows the headset's view with its sound "
                              "(click Sound on in the player) whatever is running: Steam's menus, SteamVR or a game; "
                              "while the headset sleeps the picture is black and updates about once a second. "
-                             "Streaming costs the Frame a little performance; "
-                             "stop it when you're done.")),
+                             "The Frame's hardware video encoder does the work (if it isn't available, the "
+                             "processor does, which costs a game more); stop the stream when you're done.")),
             ], spacing=T.S4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
         self._refresh(update=False)
         self._ensure_ticker()
@@ -106,7 +110,7 @@ class LiveView:
             self.dot.bgcolor, self.state.value = T.TEXT_3, tr("Not streaming")
             self.detail.value = tr("Starts a video stream on the Frame and opens it in your browser.")
         else:
-            st = live.relay.status()
+            st = live.status()
             ok = running and st.get("ready")
             self.dot.bgcolor = T.OK if ok else T.ERROR if st.get("ended") else T.WARN
             self.state.value = status_text(st)

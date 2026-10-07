@@ -245,3 +245,181 @@ def test_source_command_captures_default_output():
     assert "pactl get-default-sink" in cmd and "$sink.monitor" in cmd and "-c:a aac" in cmd
     assert "-ts mono2abs" in cmd and "-use_wallclock_as_timestamps" not in cmd  # both on pulse's wall clock
     assert "aresample=async=1" in cmd
+
+
+# ------------------------------------------------------------------------------------------------ hardware encoder
+def _fake_tools(tmp_path, probe_exit=0, fps=32):
+    """A headset-view device, a fake fp_venc (probe JSON / copies stdin to stdout) and a fake ffmpeg (logs its args,
+    reads its stdin to the end)."""
+    dev = tmp_path / "video99"
+    dev.mkdir()
+    (dev / "name").write_text("SteamVR\n")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    venc = bindir / "fp_venc"
+    venc.write_text("#!/bin/sh\n"
+                    f'echo "$@" >> {tmp_path}/venc.args\n'
+                    'case " $* " in *" --probe "*)\n'
+                    f'  [ {probe_exit} = 0 ] || exit {probe_exit}\n'
+                    f'  echo \'{{"encoder":"/dev/video23","fps":{fps},"bitrate":3000000}}\'; exit 0;;\n'
+                    "esac\n"
+                    "exec cat\n")
+    ffmpeg = bindir / "ffmpeg"
+    ffmpeg.write_text("#!/bin/sh\n"
+                      f'echo "$@" > {tmp_path}/ffmpeg.args\n'
+                      "exec cat > /dev/null\n")
+    for f in (venc, ffmpeg):
+        f.chmod(0o755)
+    env = {"PATH": f"{bindir}:/usr/bin:/bin", "FP_VENC": str(venc)}
+    return env
+
+
+def _run_script(tmp_path, env, quality="720p"):
+    script = L.source_command(quality).replace("/sys/class/video4linux", str(tmp_path))
+    return subprocess.Popen(["bash", "-c", script], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, env=env)
+
+
+@pytest.mark.skipif(not shutil.which("bash"), reason="needs bash")
+def test_source_command_hardware_path(tmp_path):
+    p = _run_script(tmp_path, _fake_tools(tmp_path, fps=32))
+    p.stdin.write(b"k")  # a keyframe request reaches the encoder (here: copied on to ffmpeg)
+    p.stdin.flush()
+    time.sleep(0.5)
+    assert p.poll() is None
+    p.stdin.close()  # the SSH channel closing ends the encoder, then ffmpeg
+    assert p.wait(timeout=5) == 0
+    assert b"live: encoder=hardware fps=32" in p.stderr.read()
+    args = (tmp_path / "ffmpeg.args").read_text()
+    assert "-f h264 -framerate 32 -i pipe:0" in args and "-c:v copy" in args and "libx264" not in args
+    venc_calls = (tmp_path / "venc.args").read_text().splitlines()
+    assert venc_calls[0].startswith("--probe ") and "--height 720" in venc_calls[0] and "--bitrate 3000000" in \
+        venc_calls[0]
+    assert "--fps 32" in venc_calls[1] and "--probe" not in venc_calls[1]
+
+
+@pytest.mark.skipif(not shutil.which("bash"), reason="needs bash")
+def test_source_command_full_quality_has_no_height(tmp_path):
+    p = _run_script(tmp_path, _fake_tools(tmp_path), quality="full")
+    p.stdin.close()
+    p.wait(timeout=5)
+    assert "--height" not in (tmp_path / "venc.args").read_text()
+
+
+@pytest.mark.skipif(not shutil.which("bash"), reason="needs bash")
+def test_source_command_falls_back_to_x264(tmp_path):
+    p = _run_script(tmp_path, _fake_tools(tmp_path, probe_exit=4))  # hardware encoder not usable
+    time.sleep(0.5)
+    p.stdin.close()
+    p.wait(timeout=5)
+    assert b"live: encoder=software fps=30" in p.stderr.read()
+    args = (tmp_path / "ffmpeg.args").read_text()
+    assert "libx264" in args and "-f v4l2" in args
+    assert len((tmp_path / "venc.args").read_text().splitlines()) == 1  # only the probe ran
+
+
+def test_bitrate_bps():
+    assert [L.bitrate_bps(r) for _, r in L.QUALITY.values()] == [1_000_000, 1_500_000, 3_000_000, 6_000_000,
+                                                                 10_000_000]
+
+
+def test_relay_viewer_waits_for_requested_keyframe():
+    r = L.Relay()
+    asked = []
+    r.on_join = lambda: asked.append(1) or True
+    r.feed(init_segment() + fragment(True, seq=1) + fragment(False, seq=2))
+    init, gop, q = r.subscribe()
+    assert asked and init == init_segment() and gop == []  # no stale group: the requested keyframe comes next
+    r.feed(fragment(False, seq=3))  # still before the keyframe: not for this viewer
+    r.feed(fragment(True, seq=4) + fragment(False, seq=5))
+    assert q.get_nowait() == fragment(True, seq=4)
+    assert q.get_nowait() == fragment(False, seq=5)
+
+
+def test_relay_without_keyframe_request_sends_gop():
+    r = L.Relay()
+    r.on_join = lambda: False  # x264 path: no way to ask
+    r.feed(init_segment() + fragment(True, seq=1) + fragment(False, seq=2))
+    _, gop, q = r.subscribe()
+    assert gop == [fragment(True, seq=1), fragment(False, seq=2)]
+    r.feed(fragment(False, seq=3))
+    assert q.get_nowait() == fragment(False, seq=3)
+
+
+class _Chan:
+    def __init__(self, data: bytes, err: bytes):
+        self.data, self.err, self.sent = [data, b""], err, b""
+
+    def recv(self, n):
+        return self.data.pop(0) if self.data else b""
+
+    def recv_stderr_ready(self):
+        return bool(self.err)
+
+    def recv_stderr(self, n):
+        out, self.err = self.err[:n], self.err[n:]
+        return out
+
+    def sendall(self, b):
+        self.sent += b
+
+
+def test_frame_source_reads_info_and_errors():
+    src = L.FrameSource(frame=None, quality="720p")
+    src.chan = _Chan(b"mp4", b"live: encoder=hardware fps=36\nfp_venc: stats frames=1\nffmpeg: broken pipe")
+    assert not src.request_keyframe()  # nothing known yet
+    assert src.read(10) == b"mp4"
+    assert src.info == {"encoder": "hardware", "fps": "36"}
+    assert src.request_keyframe() and src.chan.sent == b"k"
+    with pytest.raises(RuntimeError, match="broken pipe"):  # the last stderr line explains the end
+        src.read(10)
+
+
+def test_live_stream_status_has_encoder():
+    live = L.LiveStream(lambda: _Source(b""))
+    try:
+        live.source_info = lambda: {"encoder": "hardware", "fps": "32"}
+        st = live.status()
+        assert st["encoder"] == "hardware" and st["fps"] == 32
+    finally:
+        live.server.server_close()
+
+
+class _Frame:
+    home = "/home/steamos"
+
+    def __init__(self, remote_sum: str):
+        self.remote_sum, self.cmds, self.puts = remote_sum, [], []
+
+    def run(self, cmd, **kw):
+        self.cmds.append(cmd)
+        if cmd.startswith("sha256sum"):
+            return 0, f"{self.remote_sum}  x\n" if self.remote_sum else "", ""
+        return 0, "", ""
+
+    def put(self, local, remote, **kw):
+        self.puts.append(remote)
+
+
+def test_ensure_helper_uploads_only_when_different(tmp_path, monkeypatch):
+    import hashlib
+
+    exe = tmp_path / "fp_venc"
+    exe.write_bytes(b"\x7fELF test")
+    monkeypatch.setattr(L, "helper_path", lambda: exe)
+    same = _Frame(hashlib.sha256(exe.read_bytes()).hexdigest())
+    assert L.ensure_helper(same) and not same.puts
+    other = _Frame("0" * 64)
+    assert L.ensure_helper(other)
+    assert other.puts == ["/home/steamos/.local/share/frameport/bin/fp_venc.new"]
+    assert any("chmod 755" in c and "mv -f" in c for c in other.cmds)
+    monkeypatch.setattr(L, "helper_path", lambda: None)
+    assert not L.ensure_helper(_Frame(""))  # a build without the helper: software encoder
+
+
+def test_status_text_names_encoder():
+    from frameport.ui.views.live import status_text
+
+    line = status_text({"ready": True, "width": 1280, "height": 720, "fps": 32, "encoder": "hardware",
+                        "bytes": 1000, "seconds": 1, "viewers": 1})
+    assert "32 fps" in line and "hardware encoder" in line

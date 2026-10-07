@@ -9,12 +9,18 @@ starts at a keyframe. No image bytes ever go through Flet.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
+import posixpath
 import queue
 import struct
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 SAMPLE_NON_SYNC = 0x10000  # ISO/IEC 14496-12 sample_is_non_sync_sample
 CLIENT_QUEUE = 240  # fragments a slow viewer may lag behind before it's dropped (it reconnects at a keyframe)
@@ -204,6 +210,10 @@ class Relay:
         self.started = time.time()
         self.ended: str | None = None  # why the source stopped
         self._splitter = Mp4Splitter()
+        # on_join() asks the source for a keyframe now and says whether it will come (hardware encoder). Then a new
+        # viewer waits for it instead of getting the frames since the last one (seconds old with a long GOP).
+        self.on_join = None
+        self._waiting: set[int] = set()  # id() of client queues that wait for the next keyframe
 
     def feed(self, data: bytes) -> None:
         for kind, chunk in self._splitter.feed(data):
@@ -214,11 +224,15 @@ class Relay:
                     self.video_track = video_track_id(chunk)
                     continue
                 self.frames += 1
-                if fragment_is_keyframe(chunk, self.video_track):
+                key = fragment_is_keyframe(chunk, self.video_track)
+                if key:
                     self.gop = [chunk]
+                    self._waiting.clear()
                 elif self.gop:
                     self.gop.append(chunk)
                 for q in list(self.clients):
+                    if id(q) in self._waiting:
+                        continue
                     try:
                         q.put_nowait(chunk)
                     except queue.Full:  # too slow: drop it, its page reconnects (never block: we hold the lock)
@@ -236,12 +250,20 @@ class Relay:
         q: queue.Queue = queue.Queue(CLIENT_QUEUE)
         with self._lock:
             self.clients.append(q)
+            if self.on_join is None or self.init is None:
+                return self.init, list(self.gop), q
+            self._waiting.add(id(q))  # before asking: the keyframe may come back at once
+        if self.on_join():
+            return self.init, [], q
+        with self._lock:  # no keyframe coming: start from the buffered group as before
+            self._waiting.discard(id(q))
             return self.init, list(self.gop), q
 
     def unsubscribe(self, q: queue.Queue) -> None:
         with self._lock:
             if q in self.clients:
                 self.clients.remove(q)
+            self._waiting.discard(id(q))
 
     def status(self) -> dict:
         with self._lock:
@@ -343,9 +365,11 @@ class _Server(ThreadingHTTPServer):
 # SteamVR on the Frame runs `steamvr-v4l2cam.service` (Valve's v4l2cam): it copies the compositor's "headset view"
 # (what the wearer sees: games, SteamVR home, Steam's panels) into a v4l2loopback webcam named "SteamVR"
 # (/dev/video99, 1920x1080 RGB24, frames at the display rate). It costs nothing until someone reads it. Steam's own
-# recording/Remote Play capture gamescope instead (only the flat Steam UI in VR) and encode with x264 as well; the
-# Frame's Qualcomm encoder (qcom-iris) doesn't work with the stock ffmpeg/GStreamer. So: read the headset view, drop
-# to 30 fps before scaling, x264 at low priority, fragmented MP4 on stdout. Black while the headset sleeps.
+# recording/Remote Play capture gamescope instead (only the flat Steam UI in VR).
+# Encoding: our own helper `fp_venc` (native/venc, spec in native/venc/SPEC.md) drives the Frame's hardware encoder
+# (qcom-iris, V4L2) - the stock ffmpeg h264_v4l2m2m hangs on it. It emits one H.264 frame per slot of an even fps
+# grid (half/third of the panel rate), so ffmpeg only adds sound and packs fMP4 (`-c:v copy`, `-framerate` = the
+# helper's fps). When the helper isn't there or its `--probe` fails, the old path runs: x264 at 30 fps on the CPU.
 DEVICE_NAME = "SteamVR"
 # The headset view's size comes from SteamVR (1920x1080 on SteamOS 0.3.0; v4l2cam follows it, it has no size option),
 # so qualities are heights the picture is scaled *down* to (never up: a 2K/4K setting would only add bytes); "full"
@@ -358,28 +382,39 @@ QUALITY = {  # max height (None = the headset view's own), bitrate
     "full": (None, "10M"),
 }
 DEFAULT_QUALITY = "720p"
-FPS = 30
-# Clocks: pulse stamps audio with the wall clock, v4l2 with CLOCK_MONOTONIC → `-ts mono2abs` puts the picture on the
-# wall clock too. (Forcing -use_wallclock_as_timestamps on the pulse input gave bursts of AAC packets one shared time,
-# a broken audio timeline.) aresample=async=1 keeps the sound continuous across hiccups.
+FPS = 30  # software (x264) path only; the hardware path picks an even fraction of the panel rate
+# Clocks (x264 path): pulse stamps audio with the wall clock, v4l2 with CLOCK_MONOTONIC → `-ts mono2abs` puts the
+# picture on the wall clock too. (Forcing -use_wallclock_as_timestamps on the pulse input gave bursts of AAC packets
+# one shared time, a broken audio timeline.) aresample=async=1 keeps the sound continuous across hiccups.
 AUDIO_BITRATE = "128k"  # AAC of the Frame's default output's monitor = what the headset plays (Lepton/Proton games)
 ENCODER_THREADS = 3  # leaves the game most of the CPU
+HELPER = "fp_venc"
+HELPER_REMOTE = ".local/share/frameport/bin/fp_venc"  # under the Frame's home
+# stderr lines the script prints for the PC side: `live: encoder=hardware fps=32` / `live: encoder=software fps=30`
+INFO_PREFIX = "live: "
+
+
+def bitrate_bps(rate: str) -> int:
+    """ffmpeg-style "3M" / "1500k" → bit/s."""
+    mult = {"k": 1_000, "M": 1_000_000}.get(rate[-1:], 1)
+    return int(float(rate[:-1] if mult > 1 else rate) * mult)
 
 
 def source_command(quality: str = DEFAULT_QUALITY, fps: int = FPS) -> str:
     """Shell script for the Frame: finds the headset-view device, streams fMP4 (H.264, + AAC sound of the
     default output when there is one) to stdout and stops when the SSH channel closes (stdin reaches EOF).
-    Exit 3 = no headset view device (SteamVR not running)."""
+    Hardware encoder (fp_venc) when it probes fine, else x264. Exit 3 = no headset view device (SteamVR not running).
+    `fps` applies to the x264 path."""
     h, rate = QUALITY.get(quality, QUALITY[DEFAULT_QUALITY])
     # width -2 keeps the aspect ratio (even, as yuv420p needs); full size only drops an odd last row/column
     scale = (",crop=trunc(iw/2)*2:trunc(ih/2)*2" if h is None
              else f",scale=-2:'min({h},ih)':flags=fast_bilinear")
+    venc_args = f'--source "$dev" --bitrate {bitrate_bps(rate)}' + (f" --height {h}" if h else "")
     return f"""dev=
 for d in /sys/class/video4linux/video*; do
   [ "$(cat "$d/name" 2>/dev/null)" = "{DEVICE_NAME}" ] && dev=/dev/${{d##*/}} && break
 done
 if [ -z "$dev" ]; then echo "no SteamVR headset view device: is SteamVR running?" >&2; exit 3; fi
-exec 3<&0
 export XDG_RUNTIME_DIR=${{XDG_RUNTIME_DIR:-/run/user/$(id -u)}}  # (an SSH session may lack it: PipeWire's socket)
 audio=(-an)
 sink=$(pactl get-default-sink 2>/dev/null)
@@ -387,6 +422,21 @@ if [ -n "$sink" ]; then
   audio=(-thread_queue_size 1024 -f pulse -fragment_size 3840 -i "$sink.monitor"
          -map 0:v -map 1:a -af aresample=async=1 -c:a aac -b:a {AUDIO_BITRATE} -ac 2 -ar 48000)
 fi
+venc=${{FP_VENC:-$HOME/{HELPER_REMOTE}}}
+info=
+[ -x "$venc" ] && info=$("$venc" --probe {venc_args} 2>/dev/null)
+hwfps=$(printf %s "$info" | sed -n 's/.*"fps":\\([0-9][0-9]*\\).*/\\1/p')
+if [ -n "$hwfps" ]; then
+  echo "{INFO_PREFIX}encoder=hardware fps=$hwfps" >&2
+  # fp_venc reads the SSH channel (stdin): "k" = keyframe, EOF = stop; ffmpeg then ends with it (-shortest)
+  "$venc" {venc_args} --fps "$hwfps" | nice -n 10 ffmpeg -nostdin -hide_banner -loglevel error \\
+    -probesize 262144 -analyzeduration 500000 -fflags +genpts+nobuffer -f h264 -framerate "$hwfps" -i pipe:0 \\
+    "${{audio[@]}}" -c:v copy -shortest \\
+    -f mp4 -movflags empty_moov+default_base_moof -frag_duration 100000 -
+  exit $?
+fi
+echo "{INFO_PREFIX}encoder=software fps={fps}" >&2
+exec 3<&0
 nice -n 10 ffmpeg -nostdin -hide_banner -loglevel error \\
   -thread_queue_size 64 -ts mono2abs -f v4l2 -input_format rgb24 -i "$dev" "${{audio[@]}}" \\
   -vf "fps={fps}{scale},format=yuv420p" -c:v libx264 -preset ultrafast -tune zerolatency -threads {ENCODER_THREADS} \\
@@ -398,6 +448,40 @@ wait $pid
 """
 
 
+def helper_path() -> Path | None:
+    """The bundled fp_venc (artifacts/linux-arm64-bin), None in builds without it."""
+    from ..core.paths import artifacts_dir
+
+    p = artifacts_dir() / "linux-arm64-bin" / HELPER
+    return p if p.is_file() else None
+
+
+def ensure_helper(frame) -> bool:
+    """Make sure the Frame has this app's fp_venc (sha256 compare, upload when different). False = it doesn't (the
+    stream then uses x264); never raises."""
+    local = helper_path()
+    if local is None:
+        return False
+    try:
+        from ..frame.connection import sh_quote
+
+        remote = f"{frame.home}/{HELPER_REMOTE}"
+        want = hashlib.sha256(local.read_bytes()).hexdigest()
+        _, out, _ = frame.run(f"sha256sum {sh_quote(remote)} 2>/dev/null")
+        if out.split()[:1] == [want]:
+            return True
+        frame.run(f"mkdir -p {sh_quote(posixpath.dirname(remote))}")
+        frame.put(local, remote + ".new", resume=False)
+        code, _, err = frame.run(f"chmod 755 {sh_quote(remote + '.new')} && mv -f {sh_quote(remote + '.new')} "
+                                 f"{sh_quote(remote)}")
+        if code:
+            raise RuntimeError(err.strip())
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.warning("live view: couldn't put %s on the Frame (%s); using the software encoder", HELPER, exc)
+        return False
+
+
 class FrameSource:
     """The stdout of `source_command` on the Frame, on its own SSH channel of the existing connection."""
 
@@ -405,8 +489,12 @@ class FrameSource:
         self.frame = frame
         self.quality = quality
         self.chan = None
+        self.info: dict[str, str] = {}  # from the script's `live: k=v ...` stderr lines (encoder, fps)
+        self._err = b""
+        self._last_error = ""
 
     def open(self):
+        ensure_helper(self.frame)
         transport = self.frame.client.get_transport()
         if transport is None or not transport.is_active():
             raise ConnectionError("not connected to the Frame")
@@ -416,20 +504,42 @@ class FrameSource:
         self.chan.exec_command("bash -c " + sh_quote(source_command(self.quality)))
         return self
 
+    def _read_stderr(self, final: bool = False) -> None:
+        while self.chan.recv_stderr_ready():
+            self._err += self.chan.recv_stderr(4096)
+        *lines, self._err = self._err.split(b"\n")
+        if final:
+            lines.append(self._err)
+            self._err = b""
+        for raw in lines:
+            line = raw.decode("utf-8", "replace").strip()
+            if line.startswith(INFO_PREFIX):
+                self.info.update(kv.split("=", 1) for kv in line[len(INFO_PREFIX):].split() if "=" in kv)
+            elif line:
+                self._last_error = line
+
     def read(self, n: int) -> bytes:
         data = self.chan.recv(n)
-        if not data:
-            err = b""
-            while self.chan.recv_stderr_ready():
-                err += self.chan.recv_stderr(4096)
-            if err.strip():
-                raise RuntimeError(err.decode("utf-8", "replace").strip().splitlines()[-1])
+        self._read_stderr(final=not data)
+        if not data and self._last_error:
+            raise RuntimeError(self._last_error)
         return data
+
+    def request_keyframe(self) -> bool:
+        """Ask the hardware encoder for a keyframe now (a viewer joined). False on the x264 path (no such request:
+        the relay then sends the frames since the last keyframe)."""
+        if self.info.get("encoder") != "hardware" or self.chan is None:
+            return False
+        try:
+            self.chan.sendall(b"k")
+            return True
+        except OSError:
+            return False
 
     def close(self) -> None:
         if self.chan is not None:
             try:
-                self.chan.shutdown_write()  # EOF on the script's stdin: it stops ffmpeg
+                self.chan.shutdown_write()  # EOF on the script's stdin: it stops the encoder
             finally:
                 self.chan.close()
 
@@ -437,7 +547,10 @@ class FrameSource:
 def start(frame, quality: str = DEFAULT_QUALITY) -> LiveStream:
     """Start streaming the Frame's headset view; open `.url` in a browser to watch."""
     src = FrameSource(frame, quality)
-    return LiveStream(src.open, src.close).start()
+    live = LiveStream(src.open, src.close)
+    live.relay.on_join = src.request_keyframe
+    live.source_info = lambda: dict(src.info)
+    return live.start()
 
 
 class LiveStream:
@@ -456,6 +569,17 @@ class LiveStream:
         self._threads: list[threading.Thread] = []
         self._stop = threading.Event()
         self.on_end = None  # callback(reason) when the source stops by itself
+        self.source_info = dict  # () -> {"encoder": "hardware"|"software", "fps": "32"} once the source said so
+
+    def status(self) -> dict:
+        """The relay's status + what the source reported (encoder, fps)."""
+        out = self.relay.status()
+        info = self.source_info()
+        if info.get("encoder"):
+            out["encoder"] = info["encoder"]
+        if str(info.get("fps", "")).isdigit():
+            out["fps"] = int(info["fps"])
+        return out
 
     @property
     def url(self) -> str:
