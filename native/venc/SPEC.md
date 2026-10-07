@@ -113,7 +113,10 @@ The input is sRGB-encoded full-range RGB; no linearisation (video expects gamma-
 outputs not more. Suggested shape (free to differ if output stays identical): NEON vertical accumulation of the rows of
 each output row into a uint16/uint32 row buffer, horizontal block sums + division (a per-block-size reciprocal table is
 fine only if it is exact for every possible sum; otherwise divide), NEON colour conversion with `vld3`/widening
-multiplies. The identity size gets a direct NEON path (no box step).
+multiplies. The identity size gets a direct NEON path (no box step). Exact 3:2 and 3:1 ratios (720p and 360p from
+1080p) get their own NEON paths: the boxes repeat every 3 source pixels (widths 1,2 resp. 3), so the averages are
+rounding shifts / an exact multiply (×7282 >> 16 = ÷9 for every possible sum). The self-test covers them, including
+columns left over after the 48-pixel steps (1158×648 → 432/216).
 
 ### Self-test (`--selftest`)
 Deterministic synthetic images (a 32-bit LCG noise image, a horizontal gradient, solid black/white/red/green/blue,

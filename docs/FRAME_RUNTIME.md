@@ -165,8 +165,12 @@
   - Measured 2026-10-07 with the headset asleep (still picture):
     - `fp_venc` alone at 32/36 fps: 1% of a core at 1080p, 2.5% at 720p.
     - Live view end to end: `fp_venc` 2.6% + ffmpeg 8.4% (AAC encoding + muxing).
-  - Conversion cost per new picture (self-test, NEON): 1.5 ms at 1080p→1080p. Box-scaling to 720p takes 5.6 ms
-    (~11 ms at idle clocks), so with live content 1080p costs the CPU *less* than the scaled qualities.
+  - Conversion cost per new picture (self-test, NEON, 2026-10-07):
+    - 1080p (no scaling): 0.6–1.0 ms.
+    - 720p (exact 3:2 fast path): 1.3–1.65 ms, down from 5.6 ms with the generic box loop (~11 ms at idle clocks).
+    - 360p (3:1 fast path): 0.7 ms.
+    - 480p: 2.8 ms; its 852-px width doesn't repeat cleanly, so it uses the generic path.
+    - At 36 fps with live content that is roughly 2–6% of a core.
   - ffmpeg with raw H.264 on a pipe:
     - `-framerate` is ignored.
     - `-fflags nobuffer` loses the first seconds of tiny frames.

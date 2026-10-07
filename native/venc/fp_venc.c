@@ -129,19 +129,20 @@ static void fill_image(uint8_t *p, int w, int h, int stride, int kind)
 
 static int selftest(void)
 {
-    static const int sizes[4][2] = {{1920, 1080}, {1922, 1080}, {333, 201}, {64, 64}};
-    static const int heights[5] = {0, 720, 480, 360, 100};
+    /* 1158x648: 3:2 (-> 432) and 3:1 (-> 216) fast paths with columns left over after their 48-pixel steps */
+    static const int sizes[5][2] = {{1920, 1080}, {1922, 1080}, {333, 201}, {64, 64}, {1158, 648}};
+    static const int heights[7] = {0, 720, 480, 360, 100, 432, 216};
     size_t src_cap = (size_t)(1922 * 3 + 13) * 1080, plane_cap = (size_t)(1922 + 37) * 1080;
     uint8_t *src = alloc(src_cap), *ya = alloc(plane_cap), *yb = alloc(plane_cap);
     uint8_t *uva = alloc(plane_cap), *uvb = alloc(plane_cap);
     void *scratch = alloc(fp_scratch_size(1922, 1080, 1922, 1080) + 4096);
     if (!src || !ya || !yb || !uva || !uvb || !scratch) return fail(1, "selftest memory", -ENOMEM);
     int cases = 0;
-    for (int s = 0; s < 4; s++)
+    for (int s = 0; s < 5; s++)
         for (int k = 0; k < 8; k++) {
             int w = sizes[s][0], h = sizes[s][1], stride = w * 3 + 13;   /* odd stride: catches stride bugs */
             fill_image(src, w, h, stride, k);
-            for (int hi = 0; hi < 5; hi++) {
+            for (int hi = 0; hi < 7; hi++) {
                 if (heights[hi] > h) continue;
                 int ow, oh;
                 fp_out_size(w, h, heights[hi], &ow, &oh);
@@ -175,9 +176,10 @@ static int selftest(void)
     write_all(2, ok.b, (size_t)ok.n);
     /* Speed of the real path on the real source size. */
     fill_image(src, 1920, 1080, 5760, 0);
-    for (int t = 0; t < 2; t++) {
+    static const int timed[4] = {1080, 720, 480, 360};
+    for (int t = 0; t < 4; t++) {
         int ow, oh;
-        fp_out_size(1920, 1080, t ? 720 : 1080, &ow, &oh);
+        fp_out_size(1920, 1080, timed[t], &ow, &oh);
         int64_t t0 = now_ns();
         for (int i = 0; i < 50; i++) fp_convert(src, 1920, 1080, 5760, ya, ow, uva, ow, ow, oh, scratch);
         struct line l = {.n = 0};

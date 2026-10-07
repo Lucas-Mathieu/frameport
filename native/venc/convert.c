@@ -171,6 +171,101 @@ static void vsum16(const uint8_t *src, int src_stride, int ya, int yb, int cols,
     }
 }
 
+/* Exact fast paths for the two ratios the live view uses from SteamVR's 1920x1080: 3:2 (720p) and 3:1 (360p). The
+ * box rule (x0 = i * src / out) then repeats every 3 source pixels: 3:2 gives widths 1, 2, 1, 2, ... (rows alike),
+ * 3:1 width 3. Same bytes as the generic path, without its per-pixel scalar loop. */
+
+/* 48 pixels of an RGB row -> ph[c][k] = channel c of pixels 3g+k, g = 0..15. */
+static inline void load48(const uint8_t *row, uint8x16_t ph[3][3])
+{
+    uint8_t planes[3][48];
+    for (int q = 0; q < 3; q++) {
+        uint8x16x3_t p = vld3q_u8(row + q * 48);
+        for (int c = 0; c < 3; c++) vst1q_u8(planes[c] + q * 16, p.val[c]);
+    }
+    for (int c = 0; c < 3; c++) {
+        uint8x16x3_t s = vld3q_u8(planes[c]);
+        ph[c][0] = s.val[0], ph[c][1] = s.val[1], ph[c][2] = s.val[2];
+    }
+}
+
+/* (a + b + c + d + 2) >> 2 for 16 lanes. */
+static inline uint8x16_t avg4(uint8x16_t a, uint8x16_t b, uint8x16_t c, uint8x16_t d)
+{
+    uint16x8_t lo = vaddq_u16(vaddl_u8(vget_low_u8(a), vget_low_u8(b)), vaddl_u8(vget_low_u8(c), vget_low_u8(d)));
+    uint16x8_t hi = vaddq_u16(vaddl_high_u8(a, b), vaddl_high_u8(c, d));
+    return vcombine_u8(vrshrn_n_u16(lo, 2), vrshrn_n_u16(hi, 2));
+}
+
+/* Store even/odd output pixels (16 each per channel) as 32 interleaved RGB pixels. */
+static inline void store_pairs(uint8_t *out, uint8x16_t even[3], uint8x16_t odd[3])
+{
+    uint8x16x3_t a, b;
+    for (int c = 0; c < 3; c++) a.val[c] = vzip1q_u8(even[c], odd[c]), b.val[c] = vzip2q_u8(even[c], odd[c]);
+    vst3q_u8(out, a);
+    vst3q_u8(out + 48, b);
+}
+
+/* 3 source rows -> 2 RGB output rows (3:2 both ways): row a from r0 alone, row b from r1 + r2. */
+static void rows_3to2(const uint8_t *r0, const uint8_t *r1, const uint8_t *r2, int src_w, uint8_t *oa, uint8_t *ob)
+{
+    int x = 0;
+    uint8_t *pa = oa, *pb = ob;
+    for (; x + 48 <= src_w; x += 48, pa += 96, pb += 96) {
+        uint8x16_t a[3][3], b[3][3], c[3][3], ea[3], odda[3], eb[3], oddb[3];
+        load48(r0 + x * 3, a), load48(r1 + x * 3, b), load48(r2 + x * 3, c);
+        for (int ch = 0; ch < 3; ch++) {
+            ea[ch] = a[ch][0];                                              /* 1x1 */
+            odda[ch] = vrhaddq_u8(a[ch][1], a[ch][2]);                      /* 2x1: (s + 1) >> 1 */
+            eb[ch] = vrhaddq_u8(b[ch][0], c[ch][0]);                        /* 1x2 */
+            oddb[ch] = avg4(b[ch][1], b[ch][2], c[ch][1], c[ch][2]);        /* 2x2: (s + 2) >> 2 */
+        }
+        store_pairs(pa, ea, odda);
+        store_pairs(pb, eb, oddb);
+    }
+    for (; x < src_w; x += 3, pa += 6, pb += 6)
+        for (int ch = 0; ch < 3; ch++) {
+            const uint8_t *p0 = r0 + x * 3 + ch, *p1 = r1 + x * 3 + ch, *p2 = r2 + x * 3 + ch;
+            pa[ch] = p0[0];
+            pa[3 + ch] = (uint8_t)((p0[3] + p0[6] + 1) >> 1);
+            pb[ch] = (uint8_t)((p1[0] + p2[0] + 1) >> 1);
+            pb[3 + ch] = (uint8_t)((p1[3] + p1[6] + p2[3] + p2[6] + 2) >> 2);
+        }
+}
+
+/* 3 source rows -> 1 RGB output row (3:1 both ways): (sum of 9 + 4) / 9, the division as *7282 >> 16 (exact for
+ * every sum up to 9 * 255 + 4). */
+static void row_3to1(const uint8_t *r0, const uint8_t *r1, const uint8_t *r2, int src_w, uint8_t *out)
+{
+    int x = 0;
+    uint8_t *p = out;
+    for (; x + 48 <= src_w; x += 48, p += 48) {
+        uint8x16_t a[3][3], b[3][3], c[3][3];
+        load48(r0 + x * 3, a), load48(r1 + x * 3, b), load48(r2 + x * 3, c);
+        uint8x16x3_t o;
+        for (int ch = 0; ch < 3; ch++) {
+            uint16x8_t lo = vdupq_n_u16(4), hi = vdupq_n_u16(4);
+            for (int k = 0; k < 3; k++) {
+                lo = vaddw_u8(vaddw_u8(vaddw_u8(lo, vget_low_u8(a[ch][k])), vget_low_u8(b[ch][k])), vget_low_u8(c[ch][k]));
+                hi = vaddw_high_u8(vaddw_high_u8(vaddw_high_u8(hi, a[ch][k]), b[ch][k]), c[ch][k]);
+            }
+            uint16x4_t m = vdup_n_u16(7282);
+            uint16x8_t qlo = vcombine_u16(vshrn_n_u32(vmull_u16(vget_low_u16(lo), m), 16),
+                                          vshrn_n_u32(vmull_u16(vget_high_u16(lo), m), 16));
+            uint16x8_t qhi = vcombine_u16(vshrn_n_u32(vmull_u16(vget_low_u16(hi), m), 16),
+                                          vshrn_n_u32(vmull_u16(vget_high_u16(hi), m), 16));
+            o.val[ch] = vcombine_u8(vmovn_u16(qlo), vmovn_u16(qhi));
+        }
+        vst3q_u8(p, o);
+    }
+    for (; x < src_w; x += 3, p += 3)
+        for (int ch = 0; ch < 3; ch++) {
+            int s = 4;
+            for (int k = 0; k < 3; k++) s += r0[(x + k) * 3 + ch] + r1[(x + k) * 3 + ch] + r2[(x + k) * 3 + ch];
+            p[ch] = (uint8_t)(s / 9);
+        }
+}
+
 #define MAX_RECIP_BW 64
 
 void fp_convert(const uint8_t *src, int src_w, int src_h, int src_stride,
@@ -181,6 +276,29 @@ void fp_convert(const uint8_t *src, int src_w, int src_h, int src_stride,
         for (int j = 0; j < out_h; j += 2)
             pair_neon(src + (size_t)j * src_stride, src + (size_t)(j + 1) * src_stride, out_w,
                       y + (size_t)j * y_stride, y + (size_t)(j + 1) * y_stride, uv + (size_t)(j / 2) * uv_stride);
+        return;
+    }
+    if (src_w * 2 == out_w * 3 && src_h * 2 == out_h * 3) {   /* 3:2 (out_h even: whole 3-row groups) */
+        struct layout l = split(scratch, src_w, out_w);
+        uint8_t *a = l.rgb, *b = l.rgb + (size_t)out_w * 3;
+        for (int t = 0; t < out_h / 2; t++) {
+            const uint8_t *r0 = src + (size_t)(3 * t) * src_stride;
+            rows_3to2(r0, r0 + src_stride, r0 + 2 * (size_t)src_stride, src_w, a, b);
+            pair_neon(a, b, out_w, y + (size_t)(2 * t) * y_stride, y + (size_t)(2 * t + 1) * y_stride,
+                      uv + (size_t)t * uv_stride);
+        }
+        return;
+    }
+    if (src_w == out_w * 3 && src_h == out_h * 3) {           /* 3:1 */
+        struct layout l = split(scratch, src_w, out_w);
+        uint8_t *a = l.rgb, *b = l.rgb + (size_t)out_w * 3;
+        for (int j = 0; j < out_h; j += 2) {
+            const uint8_t *r0 = src + (size_t)(3 * j) * src_stride, *r3 = r0 + 3 * (size_t)src_stride;
+            row_3to1(r0, r0 + src_stride, r0 + 2 * (size_t)src_stride, src_w, a);
+            row_3to1(r3, r3 + src_stride, r3 + 2 * (size_t)src_stride, src_w, b);
+            pair_neon(a, b, out_w, y + (size_t)j * y_stride, y + (size_t)(j + 1) * y_stride,
+                      uv + (size_t)(j / 2) * uv_stride);
+        }
         return;
     }
     int bh_max = (src_h + out_h - 1) / out_h + 1;
