@@ -79,6 +79,7 @@ class LiveView:
         self.open_btn = C.secondary(tr("Open viewer"), ft.Icons.OPEN_IN_NEW_ROUNDED, self._open)
         self.stop_btn = C.ghost(tr("Stop"), ft.Icons.STOP_ROUNDED, self._stop_click)
         self.url = C.meta("", selectable=True)
+        self._push = None  # components.LoopUpdater (updates from background threads; a direct update dropped patches)
 
     # ---------------------------------------------------------------- building
     def mount(self) -> ft.Control:
@@ -133,9 +134,11 @@ class LiveView:
         self.quality_dd.disabled = running or self._busy
         self.url.value = (tr("Viewer address on this PC: {url}").format(url=live.url) if running else "")
         self.url.visible = running
-        if update:
-            C.update(self.dot, self.state, self.detail, self.start_btn, self.open_btn, self.stop_btn,
-                     self.quality_dd, self.url)
+        if update:  # called from the ticker / start / stream-end threads: send through Flet's event loop
+            if self._push is None:
+                self._push = C.LoopUpdater(self.app.page)
+            self._push(self.dot, self.state, self.detail, self.start_btn, self.open_btn, self.stop_btn,
+                       self.quality_dd, self.url)
 
     def _ensure_ticker(self) -> None:
         if self._ticker and self._ticker.is_alive():
