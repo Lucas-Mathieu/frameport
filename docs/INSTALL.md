@@ -102,10 +102,10 @@ reality), showing only what matters for that game. Changes are kept with the gam
 
 ## Typing on the Frame
 
-- **Type on Frame** (Steam Frame page, a game's menu, or the keyboard icon on the sidebar's Frame card): while the
-  window is open, this computer's keyboard works as a keyboard plugged into the Frame. Select a text field in the
-  headset (in an app, Steam or the desktop) and type; Esc and shortcuts go to the Frame too. Paste longer text into
-  the box to type it in one go (US keyboard layout). Click **Done** to disconnect.
+- **Type on Frame** (its own tab in the sidebar; also on the Steam Frame page and in a game's menu): while the tab is
+  open, this computer's keyboard works as a keyboard plugged into the Frame. Select a text field in the headset (in
+  an app, Steam or the desktop) and type; Esc and shortcuts go to the Frame too. Paste longer text into the box to
+  type it in one go (US keyboard layout). Opening another tab disconnects the keyboard.
 - **Steam's on-screen keyboard** opens for text fields of apps shown as a window (2D apps, and VR apps with
   **Show the app's Android window**). Steam lists that window as **Gamescope** (the Frame's display compositor);
   leave it open: it's what receives the typing, the VR view isn't affected.

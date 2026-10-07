@@ -59,9 +59,9 @@ with OBB files): [docs/FAQ.md](docs/FAQ.md).
 ## Type on Frame
 
 Typing in VR is painful, so FramePort turns your computer's keyboard into a keyboard for the Frame. Open **Type on
-Frame** (keyboard icon on the sidebar's Frame card, the Steam Frame page, or a game's menu), select a text field in
-the headset and type: searches, logins, chat, in any app, in Steam or on the desktop. Paste longer text to type it in
-one go. Nothing to install: FramePort adds a virtual keyboard on the Frame while the window is open, without root.
+Frame** (its own tab in the sidebar), select a text field in the headset and type: searches, logins, chat, in any
+app, in Steam or on the desktop. Paste longer text to type it in one go. Nothing to install: FramePort adds a virtual
+keyboard on the Frame while the tab is open, without root.
 
 ![Type on Frame](docs/images/type-on-frame.png)
 

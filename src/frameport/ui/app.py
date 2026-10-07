@@ -33,6 +33,7 @@ NAV = [("library", tr("Library"), ft.Icons.GRID_VIEW_ROUNDED),
        ("files", tr("Files"), ft.Icons.FOLDER_OPEN_ROUNDED),
        ("screenshots", tr("Screenshots"), ft.Icons.PHOTO_LIBRARY_OUTLINED),
        ("live", tr("Live view"), ft.Icons.CAST_ROUNDED),
+       ("keyboard", tr("Type on Frame"), ft.Icons.KEYBOARD_ROUNDED),
        ("settings", tr("Settings"), ft.Icons.TUNE_ROUNDED)]
 POLL_SECONDS = 30
 
@@ -72,13 +73,16 @@ class FramePortApp:
         self.files_view = None  # likewise (views/files.FilesView): keeps the location/folder between visits
         self.screenshots_view = None  # likewise (views/screenshots.ScreenshotsView): keeps the game filter
         self.live_view = None  # likewise (views/live.LiveView): owns the running stream, which outlives the tab
+        self.keyboard_view = None  # likewise (views/keyboard.KeyboardView): its keyboard exists only while it's shown
+        self._typing_on_frame = False
         self.exe_queue: list[str] = []  # games whose executable the user should confirm (after a scan)
         self._failures: list[Job] = []  # failed installs/tests, shown together when the queue is done
         self.jobs = jobs_module.shared()  # one queue per process, shared by every window session
         self.jobs.subscribe(self._on_job)
         self._handled_jobs: set[int] = set()  # finished jobs this session has reacted to (pop-ups, refreshes)
         page.on_close = lambda e: (self.jobs.unsubscribe(self._on_job),  # session gone: stop drawing into it
-                                   self.stop_live())  # and stop a live view (it would keep the Frame encoding)
+                                   self.stop_live(),  # and stop a live view (it would keep the Frame encoding)
+                                   self.stop_keyboard())
         from .updater import Updater
 
         self.updater = Updater(self)  # new FramePort releases (sidebar card, Library bar, one-click update)
@@ -208,16 +212,10 @@ class FramePortApp:
         self._conn_bat = ft.Container(ft.Row([self._conn_bat_icon, self._conn_bat_text], spacing=T.px(2), tight=True,
                                              vertical_alignment=ft.CrossAxisAlignment.CENTER), visible=False)
         self._conn_extra = ft.Container(C.meta(""), visible=False, tooltip=C.tip(C.HELP["frame_summary"]))
-        # compact (no button padding) and next to the name: as a separate column it squeezed "Quest ✓  PC VR ✓"
-        self._conn_type = ft.IconButton(ft.Icons.KEYBOARD_ROUNDED, icon_size=T.px(16), icon_color=T.TEXT_2,
-                                        tooltip=tr("Type on Frame: use this keyboard on the Frame"), visible=False,
-                                        on_click=lambda e: self.type_on_frame(), padding=0,
-                                        width=T.px(22), height=T.px(22),
-                                        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=T.px(6))))
         self.conn_card.content = ft.Container(ft.Row([
             ft.Stack([ft.Icon(ft.Icons.VIEW_IN_AR_ROUNDED, size=T.px(22), color=T.TEXT_2),
                       ft.Container(self._conn_dot, right=0, bottom=0)], width=T.px(24), height=T.px(24)),
-            ft.Column([ft.Row([ft.Container(self._conn_name, expand=True), self._conn_bat, self._conn_type],
+            ft.Column([ft.Row([ft.Container(self._conn_name, expand=True), self._conn_bat],
                               spacing=T.px(6), vertical_alignment=ft.CrossAxisAlignment.CENTER),
                        self._conn_line, self._conn_extra], spacing=1, expand=True),
         ], spacing=T.S3), padding=T.S3, border_radius=T.RADIUS_SM, bgcolor=T.SURFACE, ink=True,
@@ -286,7 +284,6 @@ class FramePortApp:
         self._conn_line.color = color
         bat = (self.frame_info or {}).get("battery") if st == "connected" else None
         self._conn_bat.visible = bool(bat)
-        self._conn_type.visible = st == "connected"
         self.power_row.visible = st == "connected"
         if bat:
             from .battery import charging, icon, low
@@ -320,6 +317,8 @@ class FramePortApp:
         # another page or game starts at the top
         if not (route == "game" and self.route[:1] == ("game",) and self.route[1:2] == args[:1]):
             self.game_scroll = 0.0
+        if self.route[0] == "keyboard" and route != "keyboard":
+            self.stop_keyboard()  # leaving the tab removes the virtual keyboard from the Frame
         self.route = (route, *args)
         self.render()
 
@@ -358,6 +357,12 @@ class FramePortApp:
                 if self.live_view is None:
                     self.live_view = LiveView(self)
                 view = self.live_view.mount()
+            elif kind == "keyboard":
+                from .views.keyboard import KeyboardView
+
+                if self.keyboard_view is None:
+                    self.keyboard_view = KeyboardView(self)
+                view = self.keyboard_view.mount()
             elif kind == "settings":
                 view = SettingsView(self).build()
             else:
@@ -390,12 +395,21 @@ class FramePortApp:
         elif self.route[0] == "live" and (self.live_view is None or self.live_view.root is None
                                           or self.frame_state != "connected"):
             self.render()
+        elif self.route[0] == "keyboard" and (self.keyboard_view is None or self.keyboard_view.root is None
+                                              or self.keyboard_view.stopped or self.frame_state != "connected"):
+            if self.frame_state != "connected":
+                self.stop_keyboard()
+            self.render()
         else:
             self._refresh_sidebar()
 
     def stop_live(self) -> None:
         if self.live_view is not None:
             self.live_view.stop()
+
+    def stop_keyboard(self) -> None:
+        if self.keyboard_view is not None:
+            self.keyboard_view.stop()
 
     def open_game(self, package: str, advanced: bool = False, show_all: bool = False) -> None:
         self.go("game", package, advanced, show_all)
@@ -435,7 +449,7 @@ class FramePortApp:
             self.toast(tr("Copy failed; select the text instead"), error=True)
 
     def _on_key(self, e: ft.KeyboardEvent) -> None:
-        if getattr(self, "_typing_on_frame", False):
+        if self._typing_on_frame:
             return  # Type on Frame is open: Esc and shortcuts belong to the Frame
         if e.key == "Escape" and self.activity.open:
             self.show_activity(False)
@@ -722,7 +736,7 @@ class FramePortApp:
                     out.append((tr("Add videos and files…"), ft.Icons.VIDEO_LIBRARY_OUTLINED,
                                 lambda e: self.go("files", pkg)))
                 if on_frame:
-                    out.append((tr("Type on Frame…"), ft.Icons.KEYBOARD_ROUNDED, lambda e: self.type_on_frame()))
+                    out.append((tr("Type on Frame"), ft.Icons.KEYBOARD_ROUNDED, lambda e: self.type_on_frame()))
                 if not rift and not linux:
                     out.append((tr("Analyze again"), ft.Icons.MANAGE_SEARCH_ROUNDED, lambda e: self.reanalyze(pkg)))
                 if on_frame:
@@ -1539,9 +1553,7 @@ class FramePortApp:
         C.confirm(self.page, heading, text, label, go, danger=action != "sleep" or force)
 
     def type_on_frame(self) -> None:
-        from .views.type_dialog import show_type_dialog
-
-        show_type_dialog(self)
+        self.go("keyboard")
 
     def choose_exe(self, pkg: str) -> None:
         from .views.exe_dialog import show_exe_dialog
@@ -1856,6 +1868,7 @@ class FramePortApp:
 
     def disconnect(self):
         self.stop_live()
+        self.stop_keyboard()
         if self.target:
             try:
                 self.target.close()

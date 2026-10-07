@@ -182,17 +182,11 @@ class FakeKeyboardSession:
         self.closed = True
 
 
-def open_type_dialog(app: FramePortApp) -> None:
-    """Type on Frame over the Steam Frame page, with one key 'pressed' so the screenshot shows it working."""
-    from types import SimpleNamespace
-
-    app.navigate(1)
-    time.sleep(1.5)
+def open_type_tab(app: FramePortApp) -> None:
+    """The Type on Frame tab, with one key 'pressed' so the screenshot shows it working."""
     app.type_on_frame()
     time.sleep(1.5)
-    dialog = [d for d in app.page._dialogs.controls if d.open][-1]
-    listener = dialog.content.controls[1]
-    listener.on_key_down(SimpleNamespace(key="Enter"))
+    app.keyboard_view.press("Enter")
 
 
 LINUX_APPIMAGE = "linux.venera"  # --linux's packages
@@ -302,7 +296,8 @@ def main() -> int:
     game = args.game or (library.games()[0]["package"] if library.games() else None)
     steps = [("library", lambda a: a.navigate(0)), ("frame", lambda a: a.navigate(1)),
              ("files", lambda a: a.go("files")), ("screenshots", lambda a: a.go("screenshots")),
-             ("live", lambda a: a.go("live")), ("tools", lambda a: a.go("settings"))]
+             ("live", lambda a: a.go("live")), ("keyboard", lambda a: a.go("keyboard")),
+             ("tools", lambda a: a.go("settings"))]
     if game:
         steps.insert(1, ("game", lambda a: a.open_game(game)))
         steps.insert(2, ("game-customize", lambda a: a.open_game(game, advanced=True)))
@@ -323,7 +318,7 @@ def main() -> int:
                                                  for e in a.files_view.entries[1:3]]))
         steps.append(("screenshots", lambda a: a.go("screenshots")))
         steps.append(("screenshot-viewer", lambda a: a.screenshots_view.viewer(0)))
-        steps.append(("type-on-frame", lambda a: (a.page.pop_dialog(), open_type_dialog(a))))
+        steps.append(("type-on-frame", lambda a: (a.page.pop_dialog(), open_type_tab(a))))
         steps.append(("power-confirm", lambda a: (a.page.pop_dialog(), a.frame_power("restart"))))
     mouse: dict[str, callable] = {}  # step name -> mouse actions (Playwright page) after its screenshot
     if args.gestures:
