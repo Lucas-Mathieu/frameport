@@ -174,9 +174,15 @@
   - ffmpeg with raw H.264 on a pipe:
     - `-framerate` is ignored.
     - `-fflags nobuffer` loses the first seconds of tiny frames.
-    - Numbering frames from 0 (`setts`) next to pulse's wall-clock audio holds all output ~7 s.
-    - What works: `-probesize 32 -analyzeduration 0 -use_wallclock_as_timestamps 1`, plus `frag_keyframe` so that a
-      requested keyframe starts a fragment.
+    - Numbering frames from 0 (`setts`) with no input timestamps holds all output ~7 s next to pulse's audio.
+    - Arrival stamps alone (`-use_wallclock_as_timestamps 1`) bunch frames that are read together: gaps of 0–10 ms
+      and 45+ ms, seen in the headset test as dropped frames.
+    - What works: `-probesize 32 -analyzeduration 0 -use_wallclock_as_timestamps 1` on the input (ffmpeg reads it in
+      step with the audio), then `-bsf:v setts=ts=N*(1/fps)/TB` on the output (exactly even frames; audio still
+      0–N s alongside), plus `frag_keyframe` so that a requested keyframe starts a fragment.
+  - Quality (owner's headset test, 2026-10-07): 3 Mbit/s CBR at 720p36 showed heavy compression artifacts. The
+    hardware path now uses VBR with a 1.5× peak (the encoder accepts BITRATE_MODE VBR + BITRATE_PEAK) and higher
+    targets: 360p 1.5, 480p 2.5, 720p 5, 1080p 8, Full 10 Mbit/s. The x264 fallback keeps its rates.
   - The default sink is SUSPENDED while nothing plays; its monitor still delivers (silent) audio.
 
 ## Text input

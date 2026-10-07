@@ -52,14 +52,14 @@ static int out_all(const uint8_t *p, size_t n)
 /* ---------------------------------------------------------------- options */
 
 struct opts {
-    long height, bitrate, fps, max_fps, gop_seconds;
+    long height, bitrate, peak, fps, max_fps, gop_seconds;
     const char *source, *encoder;
     int probe, selftest;
 };
 
 static int parse_args(int argc, char **argv, struct opts *o)
 {
-    o->height = 0, o->bitrate = 3000000, o->fps = 0, o->max_fps = 45, o->gop_seconds = 4;
+    o->height = 0, o->bitrate = 3000000, o->peak = 0, o->fps = 0, o->max_fps = 45, o->gop_seconds = 4;
     o->source = o->encoder = 0;
     o->probe = o->selftest = 0;
     for (int i = 1; i < argc; i++) {
@@ -73,6 +73,7 @@ static int parse_args(int argc, char **argv, struct opts *o)
         if (str_eq(a, "--encoder")) { o->encoder = argv[++i]; continue; }
         if (str_eq(a, "--height")) num = &o->height, lo = 2;
         else if (str_eq(a, "--bitrate")) num = &o->bitrate, lo = 10000;
+        else if (str_eq(a, "--peak")) num = &o->peak, lo = 10000, hi = 245000000;
         else if (str_eq(a, "--fps")) num = &o->fps, hi = 240;
         else if (str_eq(a, "--max-fps")) num = &o->max_fps, hi = 240;
         else if (str_eq(a, "--gop-seconds")) num = &o->gop_seconds, hi = 3600;
@@ -504,10 +505,13 @@ static int enc_open(struct enc *e, const char *path, int w, int h, int fps, cons
     if (r < 0) msg_err("warning: VIDIOC_S_PARM", r);
 
     set_ctrl(e->fd, V4L2_CID_MPEG_VIDEO_H264_PROFILE, V4L2_MPEG_VIDEO_H264_PROFILE_HIGH, "H264_PROFILE", 0);
-    set_ctrl(e->fd, V4L2_CID_MPEG_VIDEO_H264_LEVEL, pick_level(w, h, fps, o->bitrate), "H264_LEVEL", 0);
-    set_ctrl(e->fd, V4L2_CID_MPEG_VIDEO_BITRATE_MODE, V4L2_MPEG_VIDEO_BITRATE_MODE_CBR, "BITRATE_MODE", 0);
+    /* --peak above the bitrate = VBR up to that peak (head turns get the bits they need; CBR blurred them), else CBR */
+    long peak = o->peak > o->bitrate ? o->peak : o->bitrate;
+    set_ctrl(e->fd, V4L2_CID_MPEG_VIDEO_H264_LEVEL, pick_level(w, h, fps, peak), "H264_LEVEL", 0);
+    set_ctrl(e->fd, V4L2_CID_MPEG_VIDEO_BITRATE_MODE,
+             peak > o->bitrate ? V4L2_MPEG_VIDEO_BITRATE_MODE_VBR : V4L2_MPEG_VIDEO_BITRATE_MODE_CBR, "BITRATE_MODE", 0);
     set_ctrl(e->fd, V4L2_CID_MPEG_VIDEO_BITRATE, (int32_t)o->bitrate, "BITRATE", 0);
-    set_ctrl(e->fd, V4L2_CID_MPEG_VIDEO_BITRATE_PEAK, (int32_t)o->bitrate, "BITRATE_PEAK", 0);
+    set_ctrl(e->fd, V4L2_CID_MPEG_VIDEO_BITRATE_PEAK, (int32_t)peak, "BITRATE_PEAK", 0);
     set_ctrl(e->fd, V4L2_CID_MPEG_VIDEO_FRAME_RC_ENABLE, 1, "FRAME_RC_ENABLE", 0);
     set_ctrl(e->fd, V4L2_CID_MPEG_VIDEO_B_FRAMES, 0, "B_FRAMES", 0);
     set_ctrl(e->fd, V4L2_CID_MPEG_VIDEO_GOP_SIZE, (int32_t)(fps * o->gop_seconds), "GOP_SIZE", 0);
@@ -635,7 +639,7 @@ int main(int argc, char **argv, char **envp)
 {
     struct opts o;
     if (!parse_args(argc, argv, &o)) {
-        msg("usage: fp_venc [--height N] [--bitrate BPS] [--fps N] [--max-fps N] [--gop-seconds N] "
+        msg("usage: fp_venc [--height N] [--bitrate BPS] [--peak BPS] [--fps N] [--max-fps N] [--gop-seconds N] "
             "[--source PATH] [--encoder PATH] [--probe | --selftest]");
         return 2;
     }

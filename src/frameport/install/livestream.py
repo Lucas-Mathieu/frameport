@@ -382,6 +382,11 @@ QUALITY = {  # max height (None = the headset view's own), bitrate
     "full": (None, "10M"),
 }
 DEFAULT_QUALITY = "720p"
+# Hardware path (fp_venc): bit/s targets, VBR up to HW_PEAK x the target. Bits are nearly free there (no CPU cost), and
+# 3 Mbit/s CBR at 720p36 showed heavy compression artifacts in the headset test (2026-10-07): head turns move the whole
+# picture, and CBR blurred exactly those frames.
+HW_BITRATE = {"360p": 1_500_000, "480p": 2_500_000, "720p": 5_000_000, "1080p": 8_000_000, "full": 10_000_000}
+HW_PEAK = 1.5
 FPS = 30  # software (x264) path only; the hardware path picks an even fraction of the panel rate
 # Clocks (x264 path): pulse stamps audio with the wall clock, v4l2 with CLOCK_MONOTONIC → `-ts mono2abs` puts the
 # picture on the wall clock too. (Forcing -use_wallclock_as_timestamps on the pulse input gave bursts of AAC packets
@@ -409,7 +414,9 @@ def source_command(quality: str = DEFAULT_QUALITY, fps: int = FPS) -> str:
     # width -2 keeps the aspect ratio (even, as yuv420p needs); full size only drops an odd last row/column
     scale = (",crop=trunc(iw/2)*2:trunc(ih/2)*2" if h is None
              else f",scale=-2:'min({h},ih)':flags=fast_bilinear")
-    venc_args = f'--source "$dev" --bitrate {bitrate_bps(rate)}' + (f" --height {h}" if h else "")
+    hw_rate = HW_BITRATE.get(quality, HW_BITRATE[DEFAULT_QUALITY])
+    venc_args = (f'--source "$dev" --bitrate {hw_rate} --peak {int(hw_rate * HW_PEAK)}'
+                 + (f" --height {h}" if h else ""))
     return f"""dev=
 for d in /sys/class/video4linux/video*; do
   [ "$(cat "$d/name" 2>/dev/null)" = "{DEVICE_NAME}" ] && dev=/dev/${{d##*/}} && break
@@ -429,14 +436,16 @@ hwfps=$(printf %s "$info" | sed -n 's/.*"fps":\\([0-9][0-9]*\\).*/\\1/p')
 if [ -n "$hwfps" ]; then
   echo "{INFO_PREFIX}encoder=hardware fps=$hwfps" >&2
   # fp_venc reads the SSH channel (stdin): "k" = keyframe, EOF = stop; ffmpeg then ends with it (-shortest).
-  # Raw H.264 has no timestamps: frames are stamped on arrival (wall clock, like pulse's audio; fp_venc sends them on
-  # its even fps grid, so arrival = capture + a constant). Measured on the Frame (2026-10-07): -framerate is ignored;
-  # numbering frames from 0 (setts) held all output ~7 s when sound was on (interleaving against pulse's wall clock);
+  # Raw H.264 has no timestamps. The input is stamped on arrival (wall clock, like pulse's audio) so ffmpeg reads both
+  # inputs in step; setts then numbers the frames on fp_venc's fps grid. Measured on the Frame (2026-10-07):
+  # arrival stamps alone bunched frames read together (gaps of 0-10 ms and 45+ ms: dropped-looking frames in the
+  # player); setts alone (no input stamps) held all output ~7 s next to the sound; -framerate is ignored;
   # -fflags nobuffer lost the first seconds of a still picture's tiny frames; a big probesize waits seconds for one.
   # frag_keyframe: a requested keyframe starts its own fragment, where a joining viewer can begin.
   "$venc" {venc_args} --fps "$hwfps" | nice -n 10 ffmpeg -nostdin -hide_banner -loglevel error \\
     -probesize 32 -analyzeduration 0 -use_wallclock_as_timestamps 1 -f h264 -i pipe:0 "${{audio[@]}}" \\
-    -c:v copy -shortest -f mp4 -movflags empty_moov+default_base_moof+frag_keyframe -frag_duration 100000 -
+    -c:v copy -bsf:v "setts=ts=N*(1/$hwfps)/TB:duration=(1/$hwfps)/TB" -shortest \\
+    -f mp4 -movflags empty_moov+default_base_moof+frag_keyframe -frag_duration 100000 -
   exit $?
 fi
 echo "{INFO_PREFIX}encoder=software fps={fps}" >&2
@@ -519,6 +528,8 @@ class FrameSource:
             line = raw.decode("utf-8", "replace").strip()
             if line.startswith(INFO_PREFIX):
                 self.info.update(kv.split("=", 1) for kv in line[len(INFO_PREFIX):].split() if "=" in kv)
+            elif line.startswith(("fp_venc: info ", "fp_venc: stats ")):  # stats every 10 s: late/skipped frames
+                log.info("live view: %s", line)
             elif line:
                 self._last_error = line
 

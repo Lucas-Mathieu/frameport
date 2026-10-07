@@ -294,11 +294,12 @@ def test_source_command_hardware_path(tmp_path):
     assert b"live: encoder=hardware fps=32" in p.stderr.read()
     args = (tmp_path / "ffmpeg.args").read_text()
     assert "-f h264 -i pipe:0" in args and "-c:v copy" in args and "libx264" not in args
-    assert "-use_wallclock_as_timestamps 1" in args and "nobuffer" not in args  # same clock as pulse's audio
+    assert "-use_wallclock_as_timestamps 1" in args and "nobuffer" not in args  # read in step with pulse's audio
+    assert "setts=ts=N*(1/32)/TB" in args  # output timestamps on fp_venc's 32 fps grid (no bunched frames)
     assert "+frag_keyframe" in args  # a requested keyframe starts a fragment (where a new viewer begins)
     venc_calls = (tmp_path / "venc.args").read_text().splitlines()
-    assert venc_calls[0].startswith("--probe ") and "--height 720" in venc_calls[0] and "--bitrate 3000000" in \
-        venc_calls[0]
+    assert venc_calls[0].startswith("--probe ") and "--height 720" in venc_calls[0]
+    assert "--bitrate 5000000 --peak 7500000" in venc_calls[0]  # hardware 720p: VBR, 1.5x peak
     assert "--fps 32" in venc_calls[1] and "--probe" not in venc_calls[1]
 
 
@@ -376,6 +377,10 @@ def test_frame_source_reads_info_and_errors():
     assert src.info == {"encoder": "hardware", "fps": "36"}
     assert src.request_keyframe() and src.chan.sent == b"k"
     with pytest.raises(RuntimeError, match="broken pipe"):  # the last stderr line explains the end
+        src.read(10)
+    src = L.FrameSource(frame=None, quality="720p")  # encoder stats only go to the log; an encoder error explains
+    src.chan = _Chan(b"", b"fp_venc: encoder QBUF (OUTPUT) failed, errno 22\nfp_venc: stats frames=9 late=0\n")
+    with pytest.raises(RuntimeError, match="QBUF"):
         src.read(10)
 
 

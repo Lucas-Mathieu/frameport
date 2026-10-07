@@ -42,11 +42,12 @@ clang --target=aarch64-linux-gnu -ffreestanding -nostdlib -nostdlibinc -static -
 
 ## Command line
 ```
-fp_venc [--height N] [--bitrate BPS] [--fps N] [--max-fps N] [--gop-seconds N]
+fp_venc [--height N] [--bitrate BPS] [--peak BPS] [--fps N] [--max-fps N] [--gop-seconds N]
         [--source PATH] [--encoder PATH] [--probe | --selftest]
 ```
 - `--height N`: output height, scaled **down** only. Default: the source height. See "Output size".
-- `--bitrate BPS`: constant bitrate in bit/s. Default 3000000.
+- `--bitrate BPS`: target bitrate in bit/s. Default 3000000.
+- `--peak BPS`: above the bitrate = VBR capped at this peak (the live view uses 1.5×), else CBR.
 - `--fps N`: output frame rate; overrides the automatic choice.
 - `--max-fps N`: cap for the automatic choice. Default 45.
 - `--gop-seconds N`: keyframe interval in seconds. Default 4.

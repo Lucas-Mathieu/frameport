@@ -12,6 +12,6 @@ c10412dd76a65a1d587b7ed226367d1a6f2bec238c733c97ee67eb8870c868e8  ./armeabi-v7a/
 1871eae093432d277da4bc751bf5f3269dfcf11f9168260b0c3caadb0dedb19d  ./dex/oculusos-stubs.dex
 1aa733117cf57ccff7cf23f0425dbfd73b0332a3ef1c905ceeca0ccd0449c4e0  ./linux-arm64/XR_APILAYER_FRAMEPORT_timefix.json
 28c2430a02bbd8902c5bfb9562c6fd0e318654f9e05c095bfeb94b0450ab1b07  ./linux-arm64/libxr_frameport_timefix.so
-94ec462718f539b0d00e44dfd276305e7e7f3ccdd01a3cf8c8ce763112e66b1c  ./linux-arm64-bin/fp_venc
+fd8579f84c49a434bb11929038632570a48db14c160320014337e61bb95068be  ./linux-arm64-bin/fp_venc
 c2c70f4af1a5c3e6089dff1130161dd417f8044f99ec639eeecf1083930aab16  ./win-x64/fp_oculushmd.exe
 60ebc5fea05b8945082e2ca8b9f2eb74616012a26eb50133af273dff0fcddc42  ./win-x64/fp_vrsettings.exe
