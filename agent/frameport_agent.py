@@ -36,7 +36,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 59
+AGENT_VERSION = 61
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -205,11 +205,11 @@ def arm64_compat_tools():
     return best
 
 
-def proton_tools():
-    """Proton builds for Windows games on this (ARM64) device, newest first, with install state."""
+def _compat_entries(keep):
+    """Compat tools from the ARM64 compat list that `keep(name, entry)` selects, newest first, with install state."""
     out = []
     for name, t in arm64_compat_tools().items():
-        if t.get("from_oslist") != "windows" or not isinstance(t, dict) or "appid" not in t:
+        if not isinstance(t, dict) or "appid" not in t or not keep(name, t):
             continue
         app = find_app_id(t["appid"])
         req = t.get("require_tool_appid")
@@ -226,6 +226,31 @@ def proton_tools():
                     "sort": (0 if "experimental" in name else 1, int(ver[0]) if ver else 0)})
     out.sort(key=lambda t: t.pop("sort"), reverse=True)
     return out
+
+
+def proton_tools():
+    """Proton builds for Windows games on this (ARM64) device, newest first, with install state."""
+    return _compat_entries(lambda name, t: t.get("from_oslist") == "windows")
+
+
+def linux_x86_tools():
+    """Compat tools that run Linux x86_64 programs on this ARM64 device: FEX-Emu (app "fex" 3127680; its
+    fex-compat-tool runs the program with FEX on SteamOS's x86 guest root /usr/share/guestos/fex-mesa)."""
+    # (the Steam Linux Runtimes are listed as Linux tools too: they are what FEX needs, not a translator)
+    return _compat_entries(lambda name, t: "fex" in f"{name} {t.get('display_name', '')}".lower())
+
+
+def compat_tools(kind):
+    return linux_x86_tools() if kind == "linux_x86" else proton_tools()
+
+
+def pick_tool(kind, tools, wanted=None):
+    if kind != "linux_x86":
+        return pick_proton(tools, wanted)
+    if wanted:
+        return next((t for t in tools if wanted in (t["name"], t["display_name"])), None)
+    ready = [t for t in tools if t["installed"] and t["require_installed"]]
+    return (ready or tools or [None])[0]
 
 
 def tool_manifest(tool_dir):
@@ -288,11 +313,13 @@ def openxr_runtime():
 
 
 def cmd_proton_status(args):
+    """Proton (kind "proton", the default) or the Linux x86_64 tool FEX (kind "linux_x86"): installed or not."""
+    kind = args.get("kind") or "proton"
     try:
-        tools = proton_tools()
+        tools = compat_tools(kind)
     except (OSError, AgentError) as exc:
         return {"tools": [], "ready": None, "error": str(exc), "openxr": openxr_runtime()}
-    ready = pick_proton(tools, args.get("tool"))
+    ready = pick_tool(kind, tools, args.get("tool"))
     ok = bool(ready and ready["installed"] and ready["require_installed"])
     download = {"done": 0, "total": 0}
     if ready and not ok:
@@ -501,11 +528,13 @@ def write_stub_manifest(appid, name, installdir, lib=None):
 def cmd_install_proton(args):
     """Install Proton for Windows games (plus the Steam Linux Runtime it needs). mode "request" asks Steam
     (steam://install; the user confirms in the headset); mode "unattended" writes appmanifest stubs and restarts
-    Steam so it downloads them by itself."""
-    tools = proton_tools()
-    tool = pick_proton(tools, args.get("tool"))
+    Steam so it downloads them by itself. kind "linux_x86": FEX (+ its runtime) for x86_64 Linux apps instead."""
+    kind = args.get("kind") or "proton"
+    tools = compat_tools(kind)
+    tool = pick_tool(kind, tools, args.get("tool"))
     if not tool:
-        raise AgentError("this Steam has no ARM64 Proton in its compat list (update SteamOS/Steam)")
+        raise AgentError("this Steam has no ARM64 Proton in its compat list (update SteamOS/Steam)" if kind == "proton"
+                         else "this Steam has no x86 translation tool (FEX) in its compat list (update SteamOS/Steam)")
     need = [a for a, ok in ((tool["appid"], tool["installed"]),
                             (tool["require_tool_appid"], tool["require_installed"])) if a and not ok]
     if not need:
@@ -524,7 +553,8 @@ def cmd_install_proton(args):
         run(["systemd-run", "--user", "--collect", "--quiet", f"--unit={unit}", "--setenv=HOME=" + HOME,
              sys.executable, os.path.abspath(__file__), "_tools_worker", payload])
         return {"tool": tool["name"], "installed": False, "requested": need, "mode": "unattended", "unit": unit,
-                "hint": "Steam restarts once and downloads Proton in the background (a few hundred MB)."}
+                "hint": f"Steam restarts once and downloads {tool['display_name']} in the background "
+                        "(a few hundred MB)."}
     for a in need:
         subprocess.Popen(["steam", "-ifrunning", f"steam://install/{a}"], stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, start_new_session=True)
@@ -2840,9 +2870,18 @@ def cmd_finalize_linux(args):
     shutil.rmtree(incoming, ignore_errors=True)
     os.chmod(exe, os.stat(exe).st_mode | 0o111)
     appimage = bool(args.get("appimage"))
+    x86 = bool(args.get("x86_64"))
+    prefix = []
+    if x86:  # an x86_64 build: FEX runs it on SteamOS's x86 guest system (the chain Steam itself would use)
+        tool = pick_tool("linux_x86", linux_x86_tools())
+        if not tool or not tool["installed"] or not tool["require_installed"]:
+            raise AgentError("FEX (x86 translation for Linux apps) isn't installed on the Frame yet")
+        prefix = compat_command(tool["dir"])
     if appimage:
         shutil.rmtree(os.path.join(app, "squashfs-root"), ignore_errors=True)
-        p = subprocess.run([exe, "--appimage-extract"], cwd=app, capture_output=True, text=True, timeout=600)
+        # an x86_64 AppImage's own extractor is x86 code too: it runs through FEX like the app
+        p = subprocess.run(prefix + [exe, "--appimage-extract"], cwd=app, capture_output=True, text=True,
+                           timeout=600)
         if not os.path.isfile(os.path.join(app, "squashfs-root", "AppRun")):
             raise AgentError(f"couldn't unpack the AppImage: {(p.stderr or p.stdout).strip()[-300:]}")
     run_dir, program = linux_run_target(base, exe_rel, appimage)
@@ -2850,12 +2889,18 @@ def cmd_finalize_linux(args):
         q = os.path.normpath(os.path.join(app, name))
         if q.startswith(app + os.sep) and os.path.isfile(q):
             os.chmod(q, os.stat(q).st_mode | 0o111)
-    missing = missing_libraries(app, appimage_programs(run_dir) if appimage else [exe])
+    command = prefix + [program]
+    # ldd can't read x86_64 programs here: their libraries come from FEX's x86 root (/usr/share/guestos/fex-mesa)
+    missing = [] if x86 else missing_libraries(app, appimage_programs(run_dir) if appimage else [exe])
     os.makedirs(anchor, exist_ok=True)
     extra = "".join(f"export {k}={shlex.quote(str(v))}\n" for k, v in (args.get("env") or {}).items()
                     if re.fullmatch(r"[A-Z_][A-Z0-9_]*", k))
+    if x86:  # fex-compat-tool exits ("No compat data path?") without it; FEX keeps its config in <it>/fex-emu
+        data = shlex.quote(os.path.join(base, "compatdata"))
+        extra = f"mkdir -p {data}\nexport STEAM_COMPAT_DATA_PATH={data}\n" + extra
     text = LINUX_LAUNCH_SH.format(title=title.replace("\n", " "), pkg=pkg, run_dir_q=shlex.quote(run_dir),
-                                  exe_q=shlex.quote(program), log_q=shlex.quote(os.path.join(base, "launch.log")),
+                                  exe_q=" ".join(shlex.quote(a) for a in command),
+                                  log_q=shlex.quote(os.path.join(base, "launch.log")),
                                   extra_env=extra)
     path = os.path.join(anchor, "launch.sh")
     with open(path + ".tmp", "w") as f:
@@ -2868,7 +2913,8 @@ def cmd_finalize_linux(args):
         shutil.move(art_in, os.path.join(anchor, "artwork"))
     vr = bool(args.get("openxr"))
     dep = {"package": pkg, "kind": "linux", "appid": int(appid), "base": base, "title": title, "exe": exe_rel,
-           "appimage": appimage, "vr": vr, "tags": args.get("tags") or [], "sha256": args.get("exe_sha256"),
+           "appimage": appimage, "vr": vr, "x86_64": x86, "tags": args.get("tags") or [],
+           "sha256": args.get("exe_sha256"),
            "missing_libraries": missing, "recipe": args.get("recipe"), "installed_by": "frameport",
            "files": {"app": want or {}}, "agent_version": AGENT_VERSION, "time": time.time()}
     with open(os.path.join(anchor, "deployment.json"), "w") as f:

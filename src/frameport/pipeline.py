@@ -285,8 +285,8 @@ def is_linux(entry: dict) -> bool:
 
 
 def add_linux_app(path: Path | str, reporter: Reporter | None = None, exe: str | None = None) -> dict:
-    """Add an arm64 Linux app to the library (no conversion: it's installed as it is). `exe` overrides the program
-    FramePort picked (relative to the app's folder)."""
+    """Add a Linux app to the library (no conversion: it's installed as it is): arm64, or x86_64 (run through FEX on
+    the Frame). `exe` overrides the program FramePort picked (relative to the app's folder)."""
     from .analysis import linux
     from .core.models import Recipe
 
@@ -294,18 +294,22 @@ def add_linux_app(path: Path | str, reporter: Reporter | None = None, exe: str |
     info = linux.inspect(path)
     if exe:
         info["exe"] = exe
-    if not info["arch_ok"]:
-        arch = "x86_64" if info["machine"] == linux.EM_X86_64 else f"machine {info['machine']}"
-        raise ValueError(f"{path.name} is built for {arch}, not arm64 (aarch64): it can't run on the Frame. Look for "
-                         "an aarch64/arm64 download of it.")
+    x86 = info["machine"] == linux.EM_X86_64
+    if not linux.runs_on_frame(info["machine"]):
+        raise ValueError(f"{path.name} is built for machine {info['machine']}, not arm64 (aarch64) or x86_64: it "
+                         "can't run on the Frame. Look for an aarch64/arm64 download of it.")
+    if x86 and reporter:
+        reporter.log(f"{path.name} is an x86_64 build: the Frame runs it through FEX (x86 translation; an arm64 "
+                     "build runs faster if there is one)")
     package = f"linux.{linux.slug(info['title'])}"
     if reporter:
         reporter.log(f"{info['title']}: program {info['exe']}{' (AppImage)' if info['appimage'] else ''}"
                      f"{', OpenXR (VR)' if info['openxr'] else ''}")
     recipe = Recipe(package=package, title=info["title"], overport=False, as_is=True, source="heuristics")
     analysis = {"package": package, "label": info["title"], "engine": "Linux", "xr": "OpenXR" if info["openxr"]
-                else "none", "abis": ["arm64-v8a"], "libs": [], "extra": {**info, "vr_kind": "openxr" if info["openxr"]
-                                                                            else "none", "source": str(path)}}
+                else "none", "abis": ["x86_64" if x86 else "arm64-v8a"], "libs": [],
+                "extra": {**info, "vr_kind": "openxr" if info["openxr"] else "none", "x86_64": x86,
+                          "source": str(path)}}
     old = library.game(package) or {}
     root = Path(info["root"])
     try:  # what an install uploads (the library's size sort, the Frame's free-space check)
@@ -331,13 +335,86 @@ def add_linux_app(path: Path | str, reporter: Reporter | None = None, exe: str |
     return library.game(package)
 
 
+USER_FOLDERS = ("Downloads", "Desktop", "Documents", "Download")
+
+
+def _shared_folder(folder: Path) -> bool:
+    """A folder a lone program shouldn't take with it to the Frame: home, a user folder (Downloads…) or a drive root."""
+    folder = folder.resolve()
+    if folder.parent == folder or (str(folder).startswith("/mnt/") and str(folder).rstrip("/").count("/") <= 2):
+        return True
+    if folder == Path.home() or folder.name in USER_FOLDERS:
+        return True
+    try:
+        from .core import winhost
+
+        prof = winhost.env_path("USERPROFILE") if winhost.available() else None
+        return bool(prof) and (folder == prof or folder.parent == prof and folder.name in USER_FOLDERS)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def add_windows_exe(exe: Path | str, reporter: Reporter | None = None) -> dict:
+    """Add one Windows program (.exe): a game folder whose program is that exe, run by Proton on the Frame (flat
+    unless a VR runtime is found). A program in Downloads, the home folder or a drive root is copied alone into
+    FramePort's data folder first, so an install doesn't upload everything next to it."""
+    import shutil
+
+    from .core.paths import user_data_dir
+
+    exe = Path(exe)
+    if exe.suffix.lower() != ".exe" or not exe.is_file():
+        raise ValueError(f"{exe.name} isn't a Windows program (.exe)")
+    folder = exe.parent
+    if _shared_folder(folder):
+        from .analysis import linux
+
+        folder = user_data_dir() / "windows-apps" / linux.slug(exe.stem)
+        folder.mkdir(parents=True, exist_ok=True)
+        if not (folder / exe.name).exists() or (folder / exe.name).stat().st_size != exe.stat().st_size:
+            if reporter:
+                reporter.log(f"copying {exe.name} into {folder} (it sits in a shared folder)")
+            shutil.copy2(exe, folder / exe.name)
+    entry = add_rift_game(folder, reporter, exe=exe.name, force=True, art=True)
+    if entry is None:
+        raise ValueError(f"{exe.name} couldn't be added")
+    return library.upsert_game(entry["package"], exe_confirmed=True)
+
+
+def add_from_link(manifest, path: Path, reporter: Reporter | None = None) -> dict:
+    """Add a build downloaded from an install link (deeplink.download) to the library: an APK (with any OBB files
+    next to it), a Linux build or a Windows program. A manifest's name becomes the title (FrameDrop: "name is what
+    shows up in Steam"); a direct file link keeps the title FramePort finds."""
+    from . import deeplink
+
+    kind = deeplink.classify(path.name)
+    if kind == deeplink.APK:
+        added = add_path(path, reporter, art=True)
+        if not added:
+            raise ValueError(f"{path.name} couldn't be read as an Android app")
+        entry = added[0]
+    elif kind == deeplink.LINUX:
+        entry = add_linux_app(path, reporter)
+    elif kind == deeplink.EXE:
+        entry = add_windows_exe(path, reporter)
+    else:
+        raise ValueError(f"FramePort can't install {path.name}")
+    fields = {"link": {"source": manifest.source, "name": manifest.name, "time": time.time()}}
+    if not manifest.direct:  # a manifest (not a bare file link) names it
+        fields.update(title=manifest.name, title_locked=True)
+    return library.upsert_game(entry["package"], **fields)
+
+
 def install_linux(package: str, target: Target, reporter: Reporter, add_to_library: bool = True) -> dict:
     entry = library.game(package)
     extra = (entry.get("analysis") or {}).get("extra") or {}
     result = target.install_linux(package, steam_title(entry), Path(entry["game_dir"]), entry["exe"],
                                   extra.get("files"), bool(extra.get("appimage")), bool(extra.get("openxr")),
-                                  reporter)
-    if result.get("missing_libraries"):
+                                  reporter, x86_64=bool(extra.get("x86_64")))
+    if extra.get("x86_64"):
+        reporter.check("x86 translation", True, "runs through FEX on SteamOS's x86 system (its libraries come from "
+                                                 "there; not checked ahead)")
+    elif result.get("missing_libraries"):
         reporter.check("Libraries on the Frame", False, "missing: " + ", ".join(result["missing_libraries"]) +
                        " (SteamOS doesn't have them and the app doesn't bundle them: it won't start)")
     else:

@@ -36,6 +36,21 @@ NAV = [("library", tr("Library"), ft.Icons.GRID_VIEW_ROUNDED),
        ("keyboard", tr("Type on Frame"), ft.Icons.KEYBOARD_ROUNDED),
        ("settings", tr("Settings"), ft.Icons.TUNE_ROUNDED)]
 POLL_SECONDS = 30
+_link_state = {"owner": None, "thread": None}  # install links go to the newest window session (one watcher/process)
+
+
+def _watch_links() -> None:
+    """Heartbeat for the link handler scripts (FramePort runs) + hand queued install links to the window."""
+    from .. import urlhandler
+
+    while True:
+        urlhandler.heartbeat()
+        app = _link_state["owner"]
+        if app is not None:
+            for link in urlhandler.take_links():
+                applog.log.info("install link received")
+                app.page.run_thread(app.open_install_link, link, True)
+        time.sleep(1)
 
 
 
@@ -82,7 +97,8 @@ class FramePortApp:
         self._handled_jobs: set[int] = set()  # finished jobs this session has reacted to (pop-ups, refreshes)
         page.on_close = lambda e: (self.jobs.unsubscribe(self._on_job),  # session gone: stop drawing into it
                                    self.stop_live(),  # and stop a live view (it would keep the Frame encoding)
-                                   self.stop_keyboard())
+                                   self.stop_keyboard(),
+                                   _link_state.update(owner=None) if _link_state["owner"] is self else None)
         from .updater import Updater
 
         self.updater = Updater(self)  # new FramePort releases (sidebar card, Library bar, one-click update)
@@ -135,6 +151,13 @@ class FramePortApp:
         threading.Thread(target=self._backfill_covers, daemon=True).start()
         self.updater.start()
         self.run_bg(self._refresh_catalog)  # confirmed game configs from GitHub main (no release needed)
+        _link_state["owner"] = self
+        if _link_state["thread"] is None:
+            from .. import urlhandler
+
+            _link_state["thread"] = threading.Thread(target=_watch_links, daemon=True)
+            _link_state["thread"].start()
+            self.run_bg(urlhandler.apply_setting)  # framedrop:// + frameport:// → FramePort (Settings → General)
 
     # ================================================================== shell
     def _on_window_event(self, e) -> None:
@@ -1386,12 +1409,71 @@ class FramePortApp:
             if f.path:
                 self.scan(f.path)
 
+    async def pick_windows_exe(self, e=None):
+        files = await ft.FilePicker().pick_files(dialog_title=tr("A Windows program (.exe)"), allow_multiple=True,
+                                                 allowed_extensions=["exe"])
+        for f in files or []:
+            if f.path:
+                self.add_windows_exe(f.path)
+
+    def add_windows_exe(self, path: str) -> Job:
+        """One Windows program: run by Proton on the Frame (flat unless it has VR), like "Add one game folder…"."""
+        def run(job: Job):
+            job.reporter.stage("Looking at the program")
+            g = pipeline.add_windows_exe(path, job.reporter)
+            try:
+                from ..artwork import thumbs
+
+                thumbs.prewarm(g["package"])
+            except Exception:  # noqa: BLE001 - artwork is optional
+                pass
+            library.set_setting("ui.welcome_done", True)
+            self.open_game(g["package"])
+            return tr("Added {title}").format(title=g.get("title"))
+        return self.submit(tr("Add {name}").format(name=Path(path).name), run, None, "task")
+
+    def pick_link(self, e=None) -> None:
+        from .views.link_dialog import show_paste_dialog
+
+        show_paste_dialog(self)
+
+    def open_install_link(self, text: str, from_web: bool = False) -> None:
+        """A framedrop:// / frameport:// link (from a web page's button) or a pasted one: ask, download, install."""
+        from .views.link_dialog import open_link
+
+        if from_web and not self.page.web:
+            try:
+                self.page.run_task(self.page.window.to_front)
+            except Exception:  # noqa: BLE001
+                pass
+        open_link(self, text, pasted=not from_web)
+
+    def add_dropped(self, paths: list[str]) -> None:
+        """Files dropped on the Library: APKs, Linux builds, Windows programs, folders, FrameDrop manifests."""
+        from . import dropped
+
+        for kind, path in dropped.route(paths):
+            if kind == "apk":
+                self.scan(path)
+            elif kind == "linux":
+                self.add_linux(path)
+            elif kind == "exe":
+                self.add_windows_exe(path)
+            elif kind == "manifest":
+                self.open_install_link(path)
+            elif kind == "folder":
+                self.scan(path)
+            else:
+                self.toast(tr("FramePort can't add {name}: drop an APK, a Linux build (.zip, AppImage), a Windows "
+                              "program (.exe) or a folder").format(name=Path(path).name), error=True)
+
     async def pick_linux_app(self, e=None):
         """An AppImage or an archive (.zip/.tar.*) with an arm64 Linux app. Any file can be picked: AppImages often
         have no extension."""
         from ..analysis import linux
 
-        files = await ft.FilePicker().pick_files(dialog_title=tr("A Linux app for arm64 (AppImage, .zip or .tar.gz)"),
+        files = await ft.FilePicker().pick_files(dialog_title=tr("A Linux app (AppImage, .zip or .tar.gz; arm64, or x86_64 "
+                                                                 "through translation)"),
                                                  allow_multiple=True)
         for f in files or []:
             if not f.path:
@@ -1403,17 +1485,17 @@ class FramePortApp:
                            .format(name=Path(f.path).name), error=True)
 
     async def pick_linux_folder(self, e=None):
-        path = await ft.FilePicker().get_directory_path(dialog_title=tr("Folder with a Linux app for arm64"))
+        path = await ft.FilePicker().get_directory_path(dialog_title=tr("Folder with a Linux app"))
         if path:
             self.add_linux(path)
 
     def add_linux(self, path: str) -> Job:
-        """Add a native arm64 Linux app (GitHub #31) in the background, then open its page."""
+        """Add a Linux app (GitHub #31; arm64, or x86_64 through FEX) in the background, then open its page."""
         name = Path(path).name
 
         def run(job: Job):
             job.reporter.stage("Looking at the app")
-            g = pipeline.add_linux_app(path, job.reporter)  # ValueError (e.g. an x86_64 build): the job fails with it
+            g = pipeline.add_linux_app(path, job.reporter)  # ValueError (not a Linux program): the job fails with it
             pkg = g["package"]
             try:
                 from ..artwork import thumbs
@@ -2067,6 +2149,16 @@ def serialize_flet_updates() -> None:
 
 
 def main(argv=None):
+    import sys
+
+    from .. import urlhandler
+
+    args = list(sys.argv[1:] if argv is None else argv)
+    links = [a for a in args if "://" in a or a.lower().endswith(".json")]
+    for link in links:  # `frameport-gui <install link>` (source/wheel installs; bundles go through the handler script)
+        urlhandler.drop_link(link)
+    if links and urlhandler.app_running():
+        return  # the open window takes it
     applog.setup("gui")
     serialize_flet_updates()
     from ..core import library

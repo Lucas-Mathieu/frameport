@@ -155,3 +155,11 @@ def test_avatar_driver_missing():
            "driver (-1)!\n10-06 18:42:51.351  1130  1158 F OVRAvatar-Loader: DisplayErrorAndExit: Failed to launch "
            "SystemActivities\n")
     assert triage(log, "EXITED", "ru.targem.blazerush").suggestions() == ["frame.avatar_stub"]
+
+
+def test_x86_linux_program_without_fex():
+    from frameport.validate import triage
+
+    log = "launch.sh: line 20: /home/steamos/Applications/quest-frame/linux.x/app/x: cannot execute binary file: " \
+          "Exec format error\n"
+    assert "linux-x86-no-fex" in [f.id for f in triage.triage(log).findings]

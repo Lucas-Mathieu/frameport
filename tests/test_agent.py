@@ -1459,3 +1459,37 @@ def test_dashboard_worker_keeps_watching_for_two_minutes(monkeypatch, tmp_path):
 
     sig = inspect.signature(a.dashboard_worker)
     assert sig.parameters["window"].default == 120 and sig.parameters["max_hides"].default == 10
+
+
+def test_linux_x86_apps_run_through_fex(monkeypatch, tmp_path):
+    """x86_64 Linux apps: FEX is found in the compat list like Proton, and the launcher starts the program through
+    the tool's command chain with STEAM_COMPAT_DATA_PATH set; no ldd check (it can't read x86 programs)."""
+    import shutil
+
+    a = load_agent(monkeypatch, tmp_path)
+    apps = fake_steam_tools(a, tmp_path)
+    tools = a.arm64_compat_tools()
+    tools["fex"] = {"appid": 3127680, "display_name": "FEX-Emu", "from_oslist": "linux", "require_tool_appid": 4185400}
+    a.arm64_compat_tools = lambda: tools
+    assert [t["name"] for t in a.linux_x86_tools()] == ["fex"]  # the runtimes aren't translators
+    st = a.cmd_proton_status({"kind": "linux_x86"})
+    assert st["ready"] is None and st["suggested"]["name"] == "fex"
+    assert a.cmd_proton_status({})["ready"]["name"] == "proton_11-arm64"  # Proton unchanged
+    (apps / "common/FEX").mkdir(parents=True)
+    (apps / "common/FEX/toolmanifest.vdf").write_text(
+        '"manifest"\n{\n  "commandline" "/fex-compat-tool %verb%"\n  "require_tool_appid" "4185400"\n}\n')
+    (apps / "appmanifest_3127680.acf").write_text(
+        '"AppState"\n{\n\t"appid"\t\t"3127680"\n\t"name"\t\t"FEX"\n\t"StateFlags"\t\t"4"\n'
+        '\t"installdir"\t\t"FEX"\n}\n')
+    assert a.cmd_proton_status({"kind": "linux_x86"})["ready"]["name"] == "fex"
+    prep = a.cmd_prepare_linux({"package": "linux.thing", "title": "Thing"})
+    shutil.copy("/bin/true", os.path.join(prep["incoming"], "app", "thing"))
+    monkeypatch.setattr(a, "missing_libraries", lambda *x: pytest.fail("ldd on an x86 program"))
+    res = a.cmd_finalize_linux({"package": "linux.thing", "title": "Thing", "exe": "thing", "x86_64": True})
+    assert res["missing_libraries"] == [] and a.deployment("linux.thing")["x86_64"] is True
+    text = open(os.path.join(prep["anchor"], "launch.sh")).read()
+    line = next(x for x in text.splitlines() if "launch.log" in x and "_v2-entry-point" in x)
+    assert line.index("_v2-entry-point") < line.index("fex-compat-tool") < line.index("app/thing")
+    data = os.path.join(prep["base"], "compatdata")
+    assert f"export STEAM_COMPAT_DATA_PATH={data}" in text and f"mkdir -p {data}" in text  # FEX exits without it
+    assert text.index("STEAM_COMPAT_DATA_PATH") < text.index("fex-compat-tool")

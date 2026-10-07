@@ -8,6 +8,11 @@ signatures:
     severity: fatal
     diagnosis: Lepton found no activity with category LAUNCHER.
     suggest: [frame.launcher]
+  - id: linux-x86-no-fex
+    pattern: '(cannot execute binary file: Exec format error|exec format error)'
+    severity: fatal
+    diagnosis: An x86_64 Linux program was started directly; the Frame's arm64 CPU needs FEX (x86 translation) for it. Reinstall the app with FramePort 0.12 or newer, which installs FEX and starts the program through it.
+    suggest: []
   - id: no-arm64
     pattern: 'INSTALL_FAILED_NO_MATCHING_ABIS'
     severity: fatal

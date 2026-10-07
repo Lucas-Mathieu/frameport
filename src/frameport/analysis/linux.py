@@ -1,5 +1,5 @@
-"""Native arm64 Linux apps for the Frame (GitHub #31): an AppImage, a folder, or a .zip/.tar.* archive with an
-aarch64 program. Finds the program to start, checks the CPU architecture (x86_64 builds can't run natively) and
+"""Linux apps for the Frame (GitHub #31): an AppImage, a folder, or a .zip/.tar.* archive with an aarch64 program
+(or an x86_64 one, which the Frame runs through FEX). Finds the program to start, checks the CPU architecture and
 whether it's an OpenXR (VR) app. Archives are unpacked once into FramePort's data folder, so installs upload a
 plain folder like PC VR games do."""
 from __future__ import annotations
@@ -147,8 +147,14 @@ def uses_openxr(paths: list[Path]) -> bool:
     return False
 
 
+def runs_on_frame(machine: int | None) -> bool:
+    """aarch64 natively, x86_64 through FEX (x86 translation, slower)."""
+    return machine in (EM_AARCH64, EM_X86_64)
+
+
 def inspect(path: Path) -> dict:
-    """{root, exe (relative to root), appimage, machine, arch_ok, openxr, title, candidates} for an AppImage, a
+    """{root, exe (relative to root), appimage, machine, arch_ok (aarch64: native), openxr, title, candidates} for an
+    AppImage, a
     folder or an archive. Raises ValueError when there's no Linux program in it."""
     path = Path(path)
     if path.is_file() and is_archive(path):
@@ -174,6 +180,11 @@ def inspect(path: Path) -> dict:
     programs = rank_programs(root)
     if not programs:
         raise ValueError(f"no Linux program found in {path.name}")
+    # an arm64 build wins; x86_64 programs only when there is nothing else (they run through FEX on the Frame)
+    for want in (EM_AARCH64, EM_X86_64):
+        if any(m == want for _p, m in programs):
+            programs = [(p, m) for p, m in programs if m == want]
+            break
     appimages = [p for p, _m in programs if is_appimage(p)]
     exe, machine = (appimages[0], elf_machine(appimages[0])) if appimages else programs[0]
     libs = app_libraries(root, exe)
@@ -181,4 +192,4 @@ def inspect(path: Path) -> dict:
     return {"root": str(root), "exe": exe.relative_to(root).as_posix(), "files": None,
             "appimage": is_appimage(exe), "machine": machine, "arch_ok": machine == EM_AARCH64,
             "openxr": uses_openxr([exe] + libs), "title": title,
-            "candidates": [p.relative_to(root).as_posix() for p, m in programs[:20] if m == EM_AARCH64]}
+            "candidates": [p.relative_to(root).as_posix() for p, m in programs[:20] if m == machine]}

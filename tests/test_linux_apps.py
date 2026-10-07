@@ -1,4 +1,4 @@
-"""Native arm64 Linux apps (GitHub #31): detection of AppImages, folders and archives."""
+"""Linux apps (GitHub #31; arm64, x86_64 through FEX): detection of AppImages, folders and archives."""
 import tarfile
 import zipfile
 
@@ -26,11 +26,28 @@ def test_appimage_detection_and_title(tmp_path):
     assert not info["openxr"]
 
 
-def test_x86_64_builds_are_refused(tmp_path):
+def test_x86_64_builds_run_through_fex(tmp_path):
     p = tmp_path / "Thing-1.0-x86_64.AppImage"
     p.write_bytes(elf(linux.EM_X86_64, appimage=True))
-    with pytest.raises(ValueError, match="x86_64"):
-        pipeline.add_linux_app(p)
+    g = pipeline.add_linux_app(p)
+    extra = g["analysis"]["extra"]
+    assert extra["x86_64"] and g["analysis"]["abis"] == ["x86_64"]
+    other = tmp_path / "riscv-tool"
+    other.write_bytes(elf(243))
+    with pytest.raises(ValueError, match="machine 243"):
+        pipeline.add_linux_app(other)
+
+
+def test_arm64_program_wins_over_x86_64(tmp_path):
+    root = tmp_path / "Both"
+    (root / "x86").mkdir(parents=True)
+    (root / "x86" / "Both").write_bytes(elf(linux.EM_X86_64, extra=b"\0" * 4096))  # bigger: ranked first by size
+    (root / "Both").write_bytes(elf(linux.EM_AARCH64))
+    info = linux.inspect(root)
+    assert info["exe"] == "Both" and info["arch_ok"] and info["candidates"] == ["Both"]
+    (root / "Both").unlink()
+    info = linux.inspect(root)
+    assert info["exe"] == "x86/Both" and info["machine"] == linux.EM_X86_64 and not info["arch_ok"]
 
 
 def test_archive_program_ranking_and_openxr(tmp_path):

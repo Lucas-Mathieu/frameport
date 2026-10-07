@@ -431,6 +431,8 @@ class GameView:
             C.kv(tr("Program"), ft.Row([C.body(g.get("exe") or "", T.TEXT, selectable=True)]
                                        + ([change] if change else []), spacing=T.S2, wrap=True)),
             C.kv(tr("AppImage"), tr("Yes") if extra.get("appimage") else tr("No"), "appimage"),
+            C.kv(tr("CPU"), tr("x86_64: runs through FEX (x86 translation, slower; FramePort installs FEX on the "
+                               "Frame)") if extra.get("x86_64") else tr("arm64 (runs natively)"), "linux_x86"),
             C.kv(tr("VR (OpenXR)"), tr("Yes: uses the Frame's OpenXR runtime") if vr else
                  tr("No: a 2D app")),
             C.kv(tr("Source"), extra.get("source") or g.get("game_dir") or ""),

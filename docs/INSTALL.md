@@ -91,7 +91,33 @@ which would end Desktop Mode). This is new: please report anything odd with **Re
   mixed-reality options in plain words, only those that matter for the game. Changes are kept with the game and,
   when it's installed, used the next time it starts.
 - Ordinary Android apps (no VR) are installed unchanged and shown as a flat window in the headset. Android's
-  back/home/recents buttons are hidden by default (patch **Hide Android's navigation bar**).
+  back/home/recents buttons are hidden by default (patch **Hide Android's navigation bar**). If FramePort guesses
+  wrong (a phone app shows nothing in the headset, or a VR app opens as a flat window), choose **VR** or **Flat
+  window** under **Show as VR or as a flat window** in the game's **Customize** section, then **Update on Frame**.
+- **Add games → Add a Windows program (.exe)…** adds a single Windows program; the Frame runs it through Proton (as a
+  window unless it is a VR game). A program sitting in Downloads, the home folder or a drive root is copied on its
+  own first, so the install doesn't upload everything next to it.
+- In the packaged app you can also **drag files onto the Library**: APKs, Linux apps (AppImage, `.zip`/`.tar.gz`),
+  Windows programs (`.exe`), folders, or a FrameDrop manifest (`.json`).
+
+### Install links ("Install with FrameDrop" buttons)
+
+Some developers put an **Install with FrameDrop** button on their site (the one-click protocol of the FrameDrop
+sideloader, documented at framedropvr.com/docs). FramePort understands the same links:
+
+- **Clicking a button** opens FramePort (or the window that's already open) on Windows and Linux. FramePort shows
+  the title, the files, their size and whether a checksum is given, and asks before it downloads anything. Then it
+  downloads the build, adds it to your library and starts the usual install on the Frame. If no Frame is connected,
+  the game is added now and installs once the Frame is back.
+- **Add games → Install from a link…** takes the button's address (right-click → Copy link), a `framedrop://` or
+  `frameport://` link, a manifest (`.json`) or a direct link to an APK, a Linux build or a Windows program. Use it on
+  macOS, where web pages can't hand links to FramePort yet.
+- **Settings → Install links** has one switch for `framedrop://` links (the buttons) and one for FramePort's own
+  `frameport://` links. Both are on by default. If FrameDrop is installed too and already opens `framedrop://`
+  links, FramePort leaves them to it; **Use FramePort for these links** takes them over (turn the switch off to give
+  them back).
+- Only `https://` links to public servers are used (plain `http://` only on this PC, for testing); links with a
+  user name or password, or pointing into your local network, are refused. Only install from sites you trust.
 
 ![Game page](images/game.png)
 
@@ -156,17 +182,21 @@ starts it if asked). FramePort installs it on the Frame and Proton runs it as a 
 it shows up in the Frame's Steam library tagged "Windows game on Frame". Whether a game runs depends on Proton on ARM
 (x86 games run through emulation).
 
-## Linux apps (arm64)
+## Linux apps
 
 The Frame runs SteamOS on an arm64 CPU, so native Linux apps built for **aarch64/arm64** run on it directly (no
-Android container, no Proton). **Add games → Add a Linux app (arm64)…** takes an AppImage or a `.zip`/`.tar.gz`/
+Android container, no Proton). **Add games → Add a Linux app…** takes an AppImage or a `.zip`/`.tar.gz`/
 `.tar.xz` archive; **Add a Linux app folder…** takes an unpacked app. FramePort finds the program that starts it (the
 game page's **Change…** picks another one) and whether it's a VR (OpenXR) app. **Install on Frame** uploads it
 unchanged and adds it to the Frame's Steam library, tagged "Linux app on Frame"; Play, launch tests and Uninstall
 work like for other games.
 
-- x86_64 builds can't run on the Frame: FramePort says so when you add one. Look for an aarch64/arm64 download.
-- The app must bring the libraries SteamOS doesn't have. If some are missing, the install reports them and the game
+- **x86_64 builds** run through **FEX**, Valve's x86 translator, with the x86 system libraries SteamOS ships for it
+  (the way Steam on the Frame runs x86 Linux games). The first install of one installs FEX on the Frame (Steam
+  restarts once and downloads it, a few MB). They run slower than arm64 builds: when an app offers both, FramePort picks the arm64 one. The game
+  page shows which CPU a build is for.
+- The app must bring the libraries SteamOS doesn't have (checked for arm64 builds; x86_64 builds use FEX's x86
+  system, which has glibc and Mesa, and aren't checked ahead). If some are missing, the install reports them and the game
   page lists them: look for a build that includes them.
 - From the command line: `frameport add-linux <AppImage, folder or archive> [--exe <program>]`.
 
@@ -207,12 +237,13 @@ and `frameport <command> --help` describe every option. The main ones:
 | Command | What it does |
 |---|---|
 | `scan <folder>` / `list` / `show <game>` | add games, list the library, show a game's analysis and patches |
-| `add-linux <path>` | add an arm64 Linux app (AppImage, folder or archive) |
+| `add-linux <path>` | add a Linux app, arm64 or x86_64 (AppImage, folder or archive) |
 | `recipe <game> --enable/--disable <patch>` | change a game's patches (`patches` lists them all) |
 | `build <game>` / `install <game>` / `test <game>` | build, install on the Frame (`--to pc` for PC VR on this PC), launch test |
 | `frame discover` / `frame connect` / `frame info` | find, pair with and describe the Frame |
 | `frame send` / `frame storage` / `frame cleanup` | copy files to the Frame, show where they go, free space |
 | `tools status` / `tools install` | the tools FramePort downloads |
+| `open-link "<link>"` | install from an "Install with FrameDrop" button's address or a manifest/APK/zip link (`--yes`, `--no-install`) |
 | `diag report <game>` / `share-recipe <game>` | report a problem / share a working recipe |
 | `update` | update FramePort |
 

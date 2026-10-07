@@ -82,6 +82,8 @@ SUMMARIES = {
     "device.hide_navbar": "Hides Android's back/home/recents buttons, which cover the app's own buttons.",
     "device.text_input_window": "Lets typing reach this app: Steam's on-screen keyboard or your computer's keyboard "
                                 "(VR is unaffected).",
+    "device.display_mode": "Choose \"Flat window\" if a phone/tablet app shows nothing in the headset, \"VR\" if a VR "
+                           "app opens as a flat window.",
     "device.lepton_env": "Extra settings for the Android container (for testing).",
     "device.foveation": "Try \"Fixed\" or \"Off\" if one eye shimmers or jitters while menus look fine.",
     # PC VR

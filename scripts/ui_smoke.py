@@ -282,6 +282,9 @@ def main() -> int:
     ap.add_argument("--gestures", action="store_true", help="with --fake-frame: real mouse drags (drag-select) and "
                     "right-clicks (menus) in Files, Screenshots and the Library; prints what got selected")
     ap.add_argument("--linux", action="store_true", help="add two pretend arm64 Linux apps and render their pages")
+    ap.add_argument("--links", action="store_true", help="install links: the Add games menu, the paste dialog, the "
+                    "confirmation for a pretend FrameDrop manifest, Settings → Install links and (with --game) the "
+                    "VR / flat window choice")
     args = ap.parse_args()
     if args.linux:
         add_fake_linux_apps()
@@ -377,6 +380,31 @@ def main() -> int:
                  ("linux-change-program", lambda a: a.choose_exe(LINUX_FOLDER)),
                  ("frame", lambda a: (a.page.pop_dialog(), a.navigate(1))),
                  ("linux-menu", lambda a: (a.navigate(0), time.sleep(3), a.library_view.open_menu(LINUX_APPIMAGE)))]
+    if args.links:
+        from frameport import deeplink
+        from frameport.ui.views import link_dialog
+
+        fake = deeplink.Manifest("Example Game", [
+            deeplink.ManifestFile("https://cdn.example.com/example-game-arm64.apk", "ab" * 32),
+            deeplink.ManifestFile("https://cdn.example.com/main.1.com.example.game.obb")],
+            "https://example.com/example-game.framedrop.json")
+        sizes = {fake.files[0].url: 412_000_000, fake.files[1].url: 1_900_000_000}
+
+        def add_menu(a):
+            a.navigate(0)
+            time.sleep(2)
+        steps = [("library", add_menu),
+                 ("links-paste", lambda a: a.pick_link()),
+                 ("links-confirm", lambda a: (a.page.pop_dialog(), link_dialog._confirm(a, fake, sizes, False))),
+                 ("links-settings", lambda a: (a.page.pop_dialog(), a.go("settings")))]
+        if game:
+            steps.append(("links-display-mode", lambda a: a.open_game(game, advanced=True)))
+        def add_menu_open(page):
+            page.mouse.click(1194, 94)  # Add games (1280-wide viewport)
+            time.sleep(2)
+            page.screenshot(path=str(args.out / "library-add-menu.png"))
+            page.mouse.click(120, 520)  # outside the menu (Flutter's popup ignores Escape)
+        mouse["library"] = add_menu_open  # tall pages: run with e.g. --viewport 1280x3200
     if args.usb_setup:
         def continue_usb(a):
             dialog = [d for d in a.page._dialogs.controls if d.open and type(d).__name__ == "AlertDialog"][-1]

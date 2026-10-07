@@ -165,6 +165,66 @@ class SettingsView:
                      on_change=toggle),
         ], spacing=T.S2)
 
+    def links_card(self) -> ft.Control:
+        """Settings → Install links: one switch per scheme — framedrop:// ("Install with FrameDrop" buttons on web
+        pages) and frameport:// (FramePort's own links) open FramePort (urlhandler)."""
+        from ... import urlhandler
+
+        app = self.app
+        rows = {}
+        last: dict = {}
+
+        def show(st: dict | None):
+            last.clear()
+            last.update(st or {})
+            for scheme, (switch, state, take) in rows.items():
+                take.visible = False
+                if not last.get("supported", True):
+                    state.value = tr("This system can't send web links to FramePort: use Add games → Install from a "
+                                     "link…")
+                elif not urlhandler.enabled(scheme):
+                    state.value = tr("Off: these links open whatever app is set up for them, if any.")
+                elif last.get(scheme) == "other":
+                    state.value = tr("{app} opens these links on this PC.").format(
+                        app=last.get(f"{scheme}_by") or tr("Another app"))
+                    take.visible = True
+                elif last.get(scheme) == "ours":
+                    state.value = tr("These links open FramePort.")
+                else:
+                    state.value = tr("Not set up yet (FramePort registers itself when it starts).")
+            C.update(*[c for r in rows.values() for c in r[1:]])
+
+        def toggle(scheme):
+            def changed(e):
+                on = bool(e.control.value)
+                app.run_bg(lambda: show(urlhandler.set_enabled(scheme, on)))
+            return changed
+
+        def force(scheme):
+            def clicked(e):
+                other = last.get(f"{scheme}_by") or tr("the other app")
+                C.confirm(app.page, tr("Open {scheme}:// links with FramePort?").format(scheme=scheme),
+                          tr("These links will open FramePort instead of {app}. You can switch back in {app}, or by "
+                             "turning this setting off.").format(app=other),
+                          tr("Use FramePort"), lambda: app.run_bg(lambda: show(urlhandler.register([scheme],
+                                                                                                    force=True))))
+            return clicked
+
+        labels = {"framedrop": tr("Open \"Install with FrameDrop\" buttons (framedrop:// links) in FramePort"),
+                  "frameport": tr("Open frameport:// links in FramePort")}
+        controls = []
+        for scheme in urlhandler.SCHEMES:
+            switch = C.switch(labels[scheme], value=urlhandler.enabled(scheme), on_change=toggle(scheme))
+            state = C.meta(tr("Checking which app opens these links…"))
+            take = C.secondary(tr("Use FramePort for these links"), ft.Icons.LINK_ROUNDED, on_click=force(scheme))
+            take.visible = False
+            rows[scheme] = (switch, state, take)
+            controls.append(ft.Column([switch, ft.Container(ft.Column([state, take], spacing=T.S2),
+                                                            padding=ft.Padding(T.px(4), 0, 0, 0))],
+                                      spacing=T.px(4)))
+        app.run_bg(lambda: show(urlhandler.status()))
+        return ft.Column(controls, spacing=T.S4)
+
     def appearance(self) -> ft.Control:
         from ...core import library
 
@@ -260,6 +320,7 @@ class SettingsView:
                                                        shape=ft.RoundedRectangleBorder(radius=T.RADIUS_SM))),
             ], spacing=T.S3, horizontal_alignment=ft.CrossAxisAlignment.START))),
             C.section(tr("Installing"), C.card(self.installing(), padding=T.S4), help="launch_test"),
+            C.section(tr("Install links"), C.card(self.links_card(), padding=T.S4), help="install_links"),
             C.section(tr("Appearance"), C.card(self.appearance(), padding=T.S4), help="ui_scale"),
             C.section(tr("About"), C.card(ft.Column([
                 C.kv(tr("Version"), ver),

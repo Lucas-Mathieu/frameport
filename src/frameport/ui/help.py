@@ -65,6 +65,17 @@ HELP: dict[str, str] = _Translated({
     "launch_test": "Starts the game on the Frame while nobody is wearing it and reads the log: did it start, create a "
                    "VR session and render frames. It can't check what you'd see: tracking only runs with the "
                    "headset on.",
+    "install_links": "Some developers put an \"Install with FrameDrop\" button on their site (the protocol of the "
+                     "FrameDrop sideloader). FramePort reads the same links: it shows what the link offers, asks, "
+                     "downloads it, adds it to your library and installs it on the Frame. Only https links to "
+                     "public servers are used. Windows and Linux open these links in FramePort; on macOS, paste the "
+                     "link into Add games → Install from a link….",
+    "linux_x86": "The Frame's CPU is arm64. Programs built for x86_64 PCs run through FEX, Valve's x86 translator, "
+                 "with the x86 libraries SteamOS ships for it (glibc, Mesa) - the way Steam on the Frame runs x86 "
+                 "Linux games. That works for many programs but is slower: use an arm64 build when there is one.",
+    "flatscreen": "How Lepton shows an Android app: VR (the headset shows what the app draws through OpenXR) or a "
+                  "flat window (a phone/tablet app on a screen in the headset). Automatic picks a window for apps "
+                  "without VR code.",
     "uninstall": "Removes the game from the Frame. Saves are kept, so a reinstall picks up where you left off.",
     "experimental": "Not verified on many games yet: try it if the game doesn't work without it.",
     "abis": "The CPU types the game ships code for. The Frame runs only 64-bit ARM (arm64-v8a); 32-bit-only games "

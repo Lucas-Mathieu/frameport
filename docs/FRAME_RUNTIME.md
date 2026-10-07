@@ -69,6 +69,17 @@
   SteamLinuxRuntime_4). None are installed by default.
 - `steam -ifrunning steam://install/<appid>` only opens a confirmation dialog in the headset. The agent's unattended
   mode writes an appmanifest stub (StateFlags 1026, installdir from appinfo) and restarts Steam, which then downloads it.
+- **x86_64 Linux apps (agent v61; verified on the device 2026-10-07: an x86_64 glibc test program installed + launch test RUNNING, "machine=x86_64 glibc=2.41"):**
+  FEX is Steam app 3127680 (`fex`, installs as `common/FEX-Emu`, ~6 MB, 21 s via the appmanifest-stub path:
+  `install_proton` / `proton_status` with `kind: linux_x86`). Its toolmanifest commandline is
+  `/fex-compat-tool %verb% --`, **no** require_tool_appid: it does not use the Steam Linux Runtime. fex-compat-tool
+  (Python) runs `<FEX-Emu>/usr/bin/FEX` with RootFS `/usr/share/guestos/fex-mesa` (part of the SteamOS image: an
+  x86 Arch-style root with glibc 2.41, Mesa, graphics_provider.json for x86_64 + i386), emulates x86_64 and i386
+  (emulator.json), honours `STEAM_FEX_TSOENABLED`, `STEAM_FEX_MULTIBLOCK`, `STEAM_COMPAT_FEX_CONFIG`, sets
+  `tu_override_uncached_as_cache_coherent=true` and logs to `/tmp/fex-compat-tool-<pid>.log`. It **exits 1 ("No compat
+  data path?") without `STEAM_COMPAT_DATA_PATH`** (keeps Config.json/AppConfig/Server/Telemetry in `<it>/fex-emu/`):
+  the Linux launcher exports `<base>/compatdata`. Version seen: FEX-2607-76-g37265b1. ldd can't read x86 programs,
+  so the missing-library check is skipped for them; an x86_64 AppImage is extracted through the same chain.
 - The command Steam runs is built from each tool's `toolmanifest.vdf` (`commandline`, `require_tool_appid`):
   `<SLR4-arm64>/_v2-entry-point --verb=waitforexitandrun -- <Proton>/proton waitforexitandrun <exe>`.
 - Proton sets up VR (vrclient/wineopenxr registry) only when `SteamGameId` is set (steam_helper `setup_vr_registry`).

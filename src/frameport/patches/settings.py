@@ -456,6 +456,24 @@ class Foveation(Patch):
         ctx.env.update(self.ENV.get(ctx.params.get("mode") or "", {}))
 
 
+class DisplayMode(Patch):
+    id = "device.display_mode"
+    title = "Show as VR or as a flat window"
+    description = ("How Lepton runs the app: VR (headless Android, only what the app draws through OpenXR reaches the "
+                   "headset) or a flat window (Lepton's lepton-show-flatscreen marker: the Android window on a screen "
+                   "in the headset, like a phone or tablet app). Automatic uses a flat window for apps without VR code. "
+                   "Choose \"Flat window\" for a 2D app FramePort took for VR (it shows nothing in the headset), "
+                   "\"VR\" for a VR app FramePort took for 2D.")
+    category = "device"
+    needs_vr = False
+    stage = "install"
+    params = [Param("mode", "str", "", "vr or flat (empty = automatic)")]
+    CHOICES = (("", "Automatic"), ("vr", "VR"), ("flat", "Flat window"))
+
+    def install(self, ctx: InstallContext) -> None:
+        ctx.display = ctx.params.get("mode") if ctx.params.get("mode") in ("vr", "flat") else ""
+
+
 class TextInputWindow(Patch):
     id = "device.text_input_window"
     title = "Show the app's Android window (for typing)"
@@ -486,4 +504,5 @@ register(DeviceFiles)
 register(LeptonEnv)
 register(HideNavBar)
 register(TextInputWindow)
+register(DisplayMode)
 register(Foveation)

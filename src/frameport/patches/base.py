@@ -58,6 +58,7 @@ class InstallContext:
     env: dict[str, str]  # extra Lepton env exports
     adapter_settings: dict[str, Any]
     flatscreen: bool = False  # show the app's Android window (Lepton's lepton-show-flatscreen) even for a VR app
+    display: str = ""  # device.display_mode: "vr" / "flat" = the user's choice, "" = automatic (2D apps get a window)
 
 
 class Patch:

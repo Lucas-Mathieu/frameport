@@ -28,8 +28,10 @@ Install games that target the Meta Quest, Android, or general PCVR onto your **V
   curved and 360° layers); game settings as simple switches.
 - **Beyond Quest:** Android apps as windows, PC VR via Proton or Revive, Windows (non-VR) games via Proton, a Files
   tab with drag and drop.
-- **Linux apps:** install arm64 Linux apps (AppImage, a folder, or a zip/tar archive) on the Frame with a Steam
-  shortcut; they run natively on SteamOS.
+- **Linux apps:** install Linux apps (AppImage, a folder, or a zip/tar archive) on the Frame with a Steam
+  shortcut; arm64 builds run natively on SteamOS, x86_64 builds through Valve's FEX translator.
+- **Install links:** "Install with FrameDrop" buttons on web pages (the one-click protocol of the FrameDrop
+  sideloader) and pasted links open in FramePort, which asks, downloads, adds and installs the build.
 - **Screenshots tab:** the screenshots you took in the headset, sorted by game (matched by play time) and day;
   view them and download them to your computer.
 - **Live view tab:** watch what the headset shows, with sound, in a browser window on your computer.

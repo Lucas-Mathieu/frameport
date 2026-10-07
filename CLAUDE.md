@@ -111,7 +111,11 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
     set: the name on a colour from the title hash + the APK icon, `steam_set_for`; 2D Android apps get no store lookups) and tags: how it runs, the original platform
     (Meta Quest / Oculus Rift), genres, user tags — merged with tags set in Steam (non-Steam shortcuts can't hold a
     description).
-  - Linux apps (GitHub #31, library kind `linux`, `linux.<slug>`): GUI = Add games → "Add a Linux app (arm64)…" /
+  - Linux apps (GitHub #31, library kind `linux`, `linux.<slug>`; x86_64 builds run through FEX (app 3127680, no SLR:
+    RootFS /usr/share/guestos/fex-mesa from the OS image; needs `STEAM_COMPAT_DATA_PATH`, see docs/FRAME_RUNTIME.md):
+    agent v61 `linux_x86_tools`/`pick_tool`, `install_proton`/`proton_status` `kind: linux_x86`, `finalize_linux
+    x86_64`, `installer.ensure_proton(kind=)`; an arm64 program wins over an x86_64 one): GUI = Add
+    games → "Add a Linux app…" /
     "…folder…" (`app.add_linux` job → `pipeline.add_linux_app`); game page `linux_summary` (program + Change…, AppImage,
     OpenXR, source) instead of recipe/patches, `C.missing_libraries` callout (Frame deployment, else last install);
     no Analyze/Rebuild/recipe/share/Game settings actions, Frame only; platform "Linux" badge + library filter; Steam
@@ -612,6 +616,32 @@ head-pose deadline ends VR mode without a worn headset (not a game bug).
 **Unresolved (as of 2026-09-28):** Arcsmith (right-eye distortion) and Time Stall (both eyes) — swap, tracking, Valve
 layers, depth, pacing ruled out. Sniper Elite VR (DEVICE LOST), Espire 1 (Mesa GL upload crash), HITMAN 3 (freedreno
 crash): use PC versions.
+
+**Install links / FrameDrop button protocol (2026-10-07, not yet clicked end to end from a browser):** FrameDrop
+(framedropvr.com, a closed-source Windows sideloader) defines "Install with FrameDrop" buttons:
+`https://framedropvr.com/install?manifest=<url>|url=<file>` → that page opens `framedrop://install?…` (1.6 s, else its
+home page); manifest `{"schema":"framedrop.install/v1","name","files":[{"url","sha256"}]}` (name = Steam title; .apk
+or Linux .zip). `deeplink.py` (no Flet) parses framedrop://, frameport:// and the pasted https link, enforces its
+rules (https; http only on loopback; no credentials; no LAN/loopback/link-local IPs, also after DNS and redirects; URL
+ends in a file name), caps manifests at 256 KiB, ignores non-hex sha256 (FrameDrop's own example has a placeholder),
+downloads into `<data>/downloads/<slug>-<hash>/` (OBBs → `obb/` next to the APK, `.part` removed on cancel/mismatch);
+`pipeline.add_from_link` routes APK / Linux / exe and sets `title` + `title_locked` + `link` (a bare file link keeps
+FramePort's title). GUI: `views/link_dialog.py` (always asks first), Add games → "Install from a link…", CLI
+`frameport open-link [--yes --no-install --gui]`. **A `flet build` bundle can't take a URL argument** (the Flutter
+host treats any argv as a developer page URL), so `urlhandler.py` registers a script, not FramePort.exe: Windows
+HKCU `Software\Classes\{framedrop,frameport}` → hidden PowerShell `frameport-link-handler.ps1`; WSL (source runs)
+the same keys → `wsl.exe -d <distro> -e sh frameport-link-handler.sh`; Linux `frameport-links.desktop` +
+`xdg-mime`; macOS unsupported (Apple Events, paste instead). The script drops the link into `<data>/links/*.link`
+and starts FramePort unless `<data>/gui.alive` is < 10 s old (`gui.starting` stops double starts); the GUI's
+`_watch_links` thread touches the heartbeat and opens links (newest window session). Settings → Install links: one
+switch per scheme (`links.framedrop`, `links.frameport`, default on); a scheme another program owns (FrameDrop) is
+only taken with "Use FramePort for these links" (`register([s], force=True)`); off removes only FramePort's own
+registration (`MARK` in the command). Never registered with FRAMEPORT_HOME/FRAMEPORT_NO_LINK_HANDLER (tests,
+screenshots). Same round: files dropped on the Library (`ui/dropped.py`, bundles only like the Files tab), "Add a
+Windows program (.exe)…" (`pipeline.add_windows_exe`: exe in Downloads/home/drive root copied alone into
+`<data>/windows-apps/<slug>/`), patch `device.display_mode` (Automatic / VR / Flat window → `InstallContext.display`,
+`installer.show_window`). Screens: `scripts/ui_smoke.py --links --fake-frame --game <pkg>` (tall pages: `--viewport
+1280x7000`; Flutter's popup menu ignores Escape).
 
 ## Releases, CI, GitHub
 Maintainer-only notes (accounts, credentials, key locations) live in the git-ignored `CLAUDE.local.md`.

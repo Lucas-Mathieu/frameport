@@ -113,7 +113,7 @@ def install(frame: Frame, plan: InstallPlan, reporter: Reporter) -> dict:
         tags=_tags(plan.package),
         apk_name=plan.apk.name, settings=ctx.adapter_settings,
         files={k: v.decode() if isinstance(v, bytes) else v for k, v in ctx.files.items()}, env=ctx.env,
-        obb_manifest=manifest or None, flatscreen=_flatscreen(plan.package) or ctx.flatscreen,
+        obb_manifest=manifest or None, flatscreen=show_window(ctx, _flatscreen(plan.package)),
         recipe={"patches": sorted(plan.recipe.patches), "source": plan.recipe.source, "alt": plan.recipe.use_alt},
     )
     reporter.log(f"installed at {result['base']} (Steam shortcut id {result['appid']})")
@@ -227,11 +227,14 @@ class LinuxPlan:
     files: list[str] | None = None  # only these files of root (a lone AppImage), else the whole folder
     appimage: bool = False
     openxr: bool = False
+    x86_64: bool = False  # runs through FEX (installed on the Frame first, like Proton)
 
 
 def install_linux(frame: Frame, plan: LinuxPlan, reporter: Reporter) -> dict:
     """Upload an arm64 Linux app to the Frame (resumable, unchanged files aren't re-sent); the agent extracts
     AppImages, checks the app's libraries and writes its launcher (GitHub #31)."""
+    if plan.x86_64:
+        ensure_proton(frame, reporter, kind="linux_x86")
     reporter.stage("Prepare Frame")
     prep = frame.agent("prepare_linux", package=plan.package, title=plan.title)
     if plan.files:
@@ -255,7 +258,7 @@ def install_linux(frame: Frame, plan: LinuxPlan, reporter: Reporter) -> dict:
     reporter.stage("Finalize install")
     executables = [rel for rel in manifest if rel != plan.exe and _is_elf(plan.root / rel)][:200]
     result = frame.agent("finalize_linux", package=plan.package, title=plan.title, exe=plan.exe,
-                         appimage=plan.appimage, openxr=plan.openxr, manifests={"app": manifest},
+                         appimage=plan.appimage, openxr=plan.openxr, x86_64=plan.x86_64, manifests={"app": manifest},
                          executables=executables, tags=_tags(plan.package), timeout=900)
     reporter.log(f"installed at {result['base']} (Steam shortcut id {result['appid']})")
     return result
@@ -269,16 +272,19 @@ def _is_elf(path: Path) -> bool:
         return False
 
 
-def ensure_proton(frame: Frame, reporter: Reporter, tool: str | None = None, timeout: float = 45 * 60) -> dict:
+def ensure_proton(frame: Frame, reporter: Reporter, tool: str | None = None, timeout: float = 45 * 60,
+                  kind: str = "proton") -> dict:
     """Install Proton (ARM64) + its runtime on the Frame without user interaction: the agent writes Steam appmanifest
-    stubs and restarts Steam, which downloads them. Waits until they're installed (progress from the appmanifests)."""
+    stubs and restarts Steam, which downloads them. Waits until they're installed (progress from the appmanifests).
+    kind "linux_x86": FEX + its runtime instead, for x86_64 Linux apps (agent v60)."""
     import time
 
-    st = frame.agent("proton_status", tool=tool)
+    name = "Proton" if kind == "proton" else "FEX (x86 translation)"
+    st = frame.agent("proton_status", tool=tool, kind=kind)
     if st.get("ready"):
         return st["ready"]
-    reporter.stage("Install Proton on the Frame")
-    r = frame.agent("install_proton", mode="unattended", tool=tool)
+    reporter.stage(f"Install {name} on the Frame")
+    r = frame.agent("install_proton", mode="unattended", tool=tool, kind=kind)
     reporter.log(r.get("hint") or f"installing {r.get('tool')}")
     end = time.time() + timeout
     last = None
@@ -287,11 +293,11 @@ def ensure_proton(frame: Frame, reporter: Reporter, tool: str | None = None, tim
         reporter.check_cancel()
         time.sleep(10)
         try:
-            st = frame.agent("proton_status", tool=tool, timeout=60)
+            st = frame.agent("proton_status", tool=tool, kind=kind, timeout=60)
         except Exception:  # SSH can hiccup while Steam restarts
             continue
         if st.get("ready"):
-            reporter.check("Proton installed", True, st["ready"]["display_name"])
+            reporter.check(f"{name} installed", True, st["ready"]["display_name"])
             return st["ready"]
         dl = st.get("download") or {}
         sug = st.get("suggested") or {}
@@ -300,15 +306,15 @@ def ensure_proton(frame: Frame, reporter: Reporter, tool: str | None = None, tim
             # for it now
             asked_runtime = True
             reporter.log("installing the Steam Linux Runtime this Proton needs")
-            frame.agent("install_proton", mode="unattended", tool=tool)
+            frame.agent("install_proton", mode="unattended", tool=tool, kind=kind)
             continue
         if dl.get("total"):
-            reporter.progress(dl["done"] / dl["total"], f"downloading Proton {dl['done'] / 2**20:.0f}/"
+            reporter.progress(dl["done"] / dl["total"], f"downloading {name} {dl['done'] / 2**20:.0f}/"
                                                          f"{dl['total'] / 2**20:.0f} MiB")
         elif dl != last:
             reporter.log("waiting for Steam to start the download…")
         last = dl
-    raise RuntimeError("Proton didn't finish installing on the Frame in time; check Steam's downloads on the Frame")
+    raise RuntimeError(f"{name} didn't finish installing on the Frame in time; check Steam's downloads on the Frame")
 
 
 BIG_FILE = 8 << 20  # bigger files go one by one (resumable); smaller ones are streamed in batches
@@ -392,6 +398,14 @@ def is_flat_windows(package: str) -> bool:
 
     g = library.game(package) or {}
     return bool(((g.get("analysis") or {}).get("extra") or {}).get("flat"))
+
+
+def show_window(ctx: base.InstallContext, automatic: bool) -> bool:
+    """Lepton's flat window for this install: the user's device.display_mode choice, else automatic (an app without VR
+    code), plus device.text_input_window (a VR app's window behind its VR view, for typing)."""
+    if ctx.display == "flat" or ctx.flatscreen:
+        return True
+    return automatic and ctx.display != "vr"
 
 
 def _flatscreen(package: str) -> bool:

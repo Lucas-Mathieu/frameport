@@ -19,6 +19,7 @@ Errors are one line on stderr; FRAMEPORT_DEBUG=1 shows the traceback.
     frameport diag inspect <zip>                 # re-triage a diagnostics zip (no game files or Frame needed)
     frameport diag report <pkg>                  # zip + prefilled GitHub problem report
     frameport share-recipe <pkg> --status works  # prefilled GitHub issue submitting a working recipe
+    frameport open-link "<install link>"         # FrameDrop button / frameport:// link: download, add, install
 """
 from __future__ import annotations
 
@@ -253,6 +254,54 @@ def add_linux(path: Path = typer.Argument(..., help="an arm64 AppImage, a folder
     extra = g["analysis"]["extra"]
     typer.echo(f"{g['package']:40} {g.get('title', '')[:34]:34} program {extra['exe']}"
                f"{' (AppImage)' if extra['appimage'] else ''}{' VR' if extra['openxr'] else ''}")
+
+
+@app.command("open-link")
+def open_link(link: str = typer.Argument(..., help="an \"Install with FrameDrop\" button's address, a framedrop:// "
+                                                   "or frameport:// link, a manifest (.json) or an APK/zip/exe URL"),
+              yes: bool = typer.Option(False, "--yes", "-y", help="don't ask before downloading"),
+              no_install: bool = typer.Option(False, help="only download and add to the library"),
+              frame: Optional[str] = typer.Option(None, help=FRAME_HELP),
+              gui: bool = typer.Option(False, help="hand the link to the GUI (started if it isn't running)")):
+    """Install from a link (FrameDrop's button protocol): download, add to the library, install on the Frame."""
+    from . import deeplink
+
+    if gui:
+        from . import urlhandler
+
+        urlhandler.drop_link(link)
+        if not urlhandler.app_running():
+            import subprocess
+
+            subprocess.Popen(urlhandler.start_command(), start_new_session=True, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        typer.echo("handed to the FramePort window")
+        return
+    try:
+        m = deeplink.fetch_manifest(deeplink.parse(link))
+    except deeplink.LinkError as exc:
+        raise typer.BadParameter(str(exc)) from None
+    typer.echo(f"{m.name}  (from {m.host or m.source})")
+    for f in m.files:
+        size = deeplink.head_size(f.url)
+        typer.echo(f"  {f.filename}  {f.kind or 'other'}"
+                   f"{f'  {size / 2**20:.0f} MiB' if size else ''}  {'sha256 checked' if f.sha256 else 'no checksum'}")
+    if not yes and not typer.confirm("Only install software from sites you trust. Download and install it?"):
+        raise typer.Exit(1)
+    rep = printing_reporter(verbose=False)
+    path = deeplink.download(m, rep)
+    g = pipeline.add_from_link(m, path, rep)
+    pkg = g["package"]
+    typer.echo(f"added {pkg} ({g.get('title')})")
+    if no_install:
+        return
+    target = _target(frame)
+    info = pipeline.build_game(pkg, rep)
+    if not info["ok"]:
+        typer.echo(f"{pkg}: the game didn't pass its checks", err=True)
+        raise typer.Exit(1)
+    pipeline.install_game(pkg, target, rep)
+    typer.echo(f"installed {pkg} on {target.label}")
 
 
 @app.command("list")

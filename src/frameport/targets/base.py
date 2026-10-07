@@ -33,8 +33,8 @@ class Target(ABC):
         """Start an installed game for playing, through the target's Steam (Steam library shortcut)."""
         raise NotImplementedError(f"{self.label} can't launch games")
 
-    def install_linux(self, package, title, root, exe, files, appimage, openxr, reporter) -> dict:
-        """Install a native arm64 Linux app (only the Frame runs them)."""
+    def install_linux(self, package, title, root, exe, files, appimage, openxr, reporter, x86_64=False) -> dict:
+        """Install a Linux app (only the Frame runs them; x86_64 ones through FEX)."""
         raise NotImplementedError(f"{self.label} can't install Linux apps")
 
     def collect_diag(self, package: str | None = None) -> dict:

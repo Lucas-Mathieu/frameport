@@ -63,8 +63,8 @@ class FrameLeptonTarget(Target):
                                   extra.get("exe_sha256"), extra.get("revive_version"), extra.get("art_lookup"))
         return installer.install_pcvr(self.connect().frame, plan, reporter)
 
-    def install_linux(self, package, title, root, exe, files, appimage, openxr, reporter):
-        plan = installer.LinuxPlan(package, title, Path(root), exe, files, appimage, openxr)
+    def install_linux(self, package, title, root, exe, files, appimage, openxr, reporter, x86_64=False):
+        plan = installer.LinuxPlan(package, title, Path(root), exe, files, appimage, openxr, x86_64)
         return installer.install_linux(self.connect().frame, plan, reporter)
 
     def proton_status(self, tool: str | None = None) -> dict:

@@ -225,8 +225,12 @@ class LibraryView:
                                     icon=ft.Icons.CREATE_NEW_FOLDER_ROUNDED, on_click=app.pick_game_folder),
                    ft.PopupMenuItem(content=ft.Text(tr("Add an APK file…")), icon=ft.Icons.ANDROID_ROUNDED,
                                     on_click=app.pick_apk),
+                   ft.PopupMenuItem(content=ft.Text(tr("Add a Windows program (.exe)…")),
+                                    icon=ft.Icons.DESKTOP_WINDOWS_ROUNDED, on_click=app.pick_windows_exe),
+                   ft.PopupMenuItem(content=ft.Text(tr("Install from a link…")), icon=ft.Icons.LINK_ROUNDED,
+                                    on_click=app.pick_link),
                    ft.PopupMenuItem(),  # divider: native Linux apps (GitHub #31)
-                   ft.PopupMenuItem(content=ft.Text(tr("Add a Linux app (arm64)…")), icon=ft.Icons.TERMINAL_ROUNDED,
+                   ft.PopupMenuItem(content=ft.Text(tr("Add a Linux app…")), icon=ft.Icons.TERMINAL_ROUNDED,
                                     on_click=app.pick_linux_app),
                    ft.PopupMenuItem(content=ft.Text(tr("Add a Linux app folder…")), icon=ft.Icons.FOLDER_ROUNDED,
                                     on_click=app.pick_linux_folder)],
@@ -247,12 +251,27 @@ class LibraryView:
                                         alignment=ft.MainAxisAlignment.END,
                                         vertical_alignment=ft.CrossAxisAlignment.CENTER), expand=3)],
                    vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=T.S3),
-            self.update_bar, self.resume_bar, self.hint, self.filters, self.body, self.sel_bar,
+            self.update_bar, self.resume_bar, self.hint, self.filters, self._drop_area(self.body), self.sel_bar,
         ], expand=True, spacing=T.S4)
         # skeleton cards until the first batch arrives
         n = min(len(library.games()), 15)
         self.grid.controls = [ft.Container(bgcolor=T.SURFACE, border_radius=T.RADIUS, border=ft.Border.all(1, T.BORDER),
                                            opacity=0.6) for _ in range(n)]
+
+    def _drop_area(self, content: ft.Control) -> ft.Control:
+        """APKs, Linux builds, Windows programs, folders and FrameDrop manifests dragged in from the file manager are
+        added (packaged app only: flet-dropzone, see files.dropzone_available)."""
+        from .files import dropzone_available
+
+        if not dropzone_available():
+            return content
+        import flet_dropzone as ftd
+
+        def dropped(e):
+            paths = [f.path for f in e.files if f.path and not f.path.startswith("blob:")]
+            if paths:
+                self.app.add_dropped(paths)
+        return ftd.Dropzone(content=content, expand=True, on_dropped=dropped)
 
     # ---------------------------------------------------------------- public
     def mount(self) -> ft.Control:
