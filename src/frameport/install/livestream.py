@@ -495,6 +495,24 @@ def ensure_helper(frame) -> bool:
         return False
 
 
+DROP_WARN = 0.05  # share of a stats window's frame slots that were late or skipped before the panel warns
+
+
+def window_stats(line: str, prev: dict[str, int]) -> tuple[dict[str, int], dict]:
+    """One `fp_venc: stats k=v ...` line (counters since the start) → (its counters, this window's figures:
+    frames, dropped = late + skipped slots, dropping = at least DROP_WARN of the window's slots, kbps)."""
+    counters = {}
+    for kv in line.split():
+        k, _, v = kv.partition("=")
+        if v.isdigit():
+            counters[k] = int(v)
+    d = {k: counters.get(k, 0) - prev.get(k, 0) for k in ("frames", "late", "skipped")}
+    dropped = d["late"] + d["skipped"]
+    slots = d["frames"] + d["skipped"]
+    return counters, {"frames": d["frames"], "dropped": dropped, "kbps": counters.get("kbps", 0),
+                      "dropping": slots > 0 and dropped >= DROP_WARN * slots}
+
+
 class FrameSource:
     """The stdout of `source_command` on the Frame, on its own SSH channel of the existing connection."""
 
@@ -503,6 +521,8 @@ class FrameSource:
         self.quality = quality
         self.chan = None
         self.info: dict[str, str] = {}  # from the script's `live: k=v ...` stderr lines (encoder, fps)
+        self.stats: dict = {}  # the hardware encoder's last 10 s (window_stats), for the panel
+        self._counters: dict[str, int] = {}
         self._err = b""
         self._last_error = ""
 
@@ -530,6 +550,8 @@ class FrameSource:
                 self.info.update(kv.split("=", 1) for kv in line[len(INFO_PREFIX):].split() if "=" in kv)
             elif line.startswith(("fp_venc: info ", "fp_venc: stats ")):  # stats every 10 s: late/skipped frames
                 log.info("live view: %s", line)
+                if line.startswith("fp_venc: stats "):
+                    self._counters, self.stats = window_stats(line, self._counters)
             elif line:
                 self._last_error = line
 
@@ -564,7 +586,7 @@ def start(frame, quality: str = DEFAULT_QUALITY) -> LiveStream:
     src = FrameSource(frame, quality)
     live = LiveStream(src.open, src.close)
     live.relay.on_join = src.request_keyframe
-    live.source_info = lambda: dict(src.info)
+    live.source_info = lambda: {**src.info, "stats": dict(src.stats)}
     return live.start()
 
 
@@ -584,16 +606,20 @@ class LiveStream:
         self._threads: list[threading.Thread] = []
         self._stop = threading.Event()
         self.on_end = None  # callback(reason) when the source stops by itself
-        self.source_info = dict  # () -> {"encoder": "hardware"|"software", "fps": "32"} once the source said so
+        # () -> {"encoder": "hardware"|"software", "fps": "32", "stats": window_stats(...)[1]} once the source said so
+        self.source_info = dict
 
     def status(self) -> dict:
-        """The relay's status + what the source reported (encoder, fps)."""
+        """The relay's status + what the source reported (encoder, fps, the encoder's last 10 s: dropped frames)."""
         out = self.relay.status()
         info = self.source_info()
         if info.get("encoder"):
             out["encoder"] = info["encoder"]
         if str(info.get("fps", "")).isdigit():
             out["fps"] = int(info["fps"])
+        stats = info.get("stats") or {}
+        if stats:
+            out["dropped"], out["dropping"] = stats.get("dropped", 0), bool(stats.get("dropping"))
         return out
 
     @property

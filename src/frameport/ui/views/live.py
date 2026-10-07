@@ -45,6 +45,16 @@ def status_text(st: dict) -> str:
     return " · ".join(parts)
 
 
+def health_text(st: dict) -> str:
+    """A warning when the Frame dropped frames in the encoder's last 10 s (hardware encoder only), else ""."""
+    if not st.get("dropping") or st.get("ended"):
+        return ""
+    return tr_n("The Frame can't keep up at this quality: {n} frame dropped in the last 10 seconds. "
+                "Choose a lower quality for a smoother picture.",
+                "The Frame can't keep up at this quality: {n} frames dropped in the last 10 seconds. "
+                "Choose a lower quality for a smoother picture.", st.get("dropped") or 0)
+
+
 def default_quality() -> str:
     from ...install.livestream import DEFAULT_QUALITY
 
@@ -112,9 +122,11 @@ class LiveView:
         else:
             st = live.status()
             ok = running and st.get("ready")
-            self.dot.bgcolor = T.OK if ok else T.ERROR if st.get("ended") else T.WARN
+            warning = health_text(st) if ok else ""
+            self.dot.bgcolor = T.WARN if warning else T.OK if ok else T.ERROR if st.get("ended") else T.WARN
             self.state.value = status_text(st)
-            self.detail.value = "" if ok or st.get("ended") else tr("The first picture takes a few seconds.")
+            self.detail.value = (warning if ok else "" if st.get("ended")
+                                 else tr("The first picture takes a few seconds."))
         self.start_btn.visible = not running
         self.start_btn.disabled = self._busy
         self.open_btn.visible = self.stop_btn.visible = running

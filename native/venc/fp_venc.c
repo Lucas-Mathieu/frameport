@@ -552,7 +552,15 @@ static int enc_open(struct enc *e, const char *path, int w, int h, int fps, cons
 
 /* ---------------------------------------------------------------- streaming */
 
-struct stats { long frames, repeats, late, skipped, errors; uint64_t bytes; };
+/* Counters since the start; the timing part (per stats window, reset after each line) says where a slow loop's time
+ * goes: converting pictures, writing coded frames to stdout (ffmpeg not draining the pipe), or waiting for the
+ * encoder to free an OUTPUT buffer. */
+struct stats {
+    long frames, repeats, late, skipped, errors;
+    uint64_t bytes;
+    int64_t conv_ns, conv_max, write_ns, write_max;
+    long convs, writes, nobuf;
+};
 
 /* Dequeue finished OUTPUT buffers (free again) and coded CAPTURE buffers (written to stdout, re-queued).
  * Returns 1 when the encoder signalled the last buffer, -1 when stdout is gone, else 0. */
@@ -581,7 +589,11 @@ static int enc_reap(struct enc *e, struct stats *st)
             st->errors++;
         } else if (p.bytesused > p.data_offset && p.bytesused <= e->cap_len[b.index]) {
             uint32_t n = p.bytesused - p.data_offset;
+            int64_t tw = now_ns();
             if (out_all(e->cap_mem[b.index] + p.data_offset, n) < 0) return -1;
+            tw = now_ns() - tw;
+            st->write_ns += tw, st->writes++;
+            if (tw > st->write_max) st->write_max = tw;
             st->bytes += n;
         }
         if (last) return 1;
@@ -624,15 +636,21 @@ static void info_json(struct line *l, const char *enc, const char *srcp, const s
     ls(l, "}\n");
 }
 
-static void stats_line(const struct stats *st, int64_t elapsed)
+static void stats_line(struct stats *st, int64_t elapsed)
 {
     struct line l = {.n = 0};
     ls(&l, TAG "stats frames="), ln(&l, st->frames), ls(&l, " repeats="), ln(&l, st->repeats);
     ls(&l, " late="), ln(&l, st->late), ls(&l, " skipped="), ln(&l, st->skipped);
     ls(&l, " kbps="), ln(&l, elapsed > 0 ? (long)(st->bytes * 8 * 1000000 / (uint64_t)elapsed) : 0);
     if (st->errors) ls(&l, " errors="), ln(&l, st->errors);
+    /* this window: average/max ms per conversion and per stdout write, slots that found no free OUTPUT buffer */
+    ls(&l, " convert_ms="), lms(&l, st->convs ? st->conv_ns / st->convs : 0), ls(&l, "/"), lms(&l, st->conv_max);
+    ls(&l, " write_ms="), lms(&l, st->writes ? st->write_ns / st->writes : 0), ls(&l, "/"), lms(&l, st->write_max);
+    ls(&l, " no_buffer="), ln(&l, st->nobuf);
     ls(&l, "\n");
     write_all(2, l.b, (size_t)l.n);
+    st->conv_ns = st->conv_max = st->write_ns = st->write_max = 0;
+    st->convs = st->writes = st->nobuf = 0;
 }
 
 int main(int argc, char **argv, char **envp)
@@ -716,7 +734,7 @@ int main(int argc, char **argv, char **envp)
     t = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     if ((r = sys_ioctl(s.fd, VIDIOC_STREAMON, &t)) < 0) return fail(3, "source STREAMON", r);
 
-    struct stats st = {0, 0, 0, 0, 0, 0};
+    struct stats st = {0};
     const int64_t t0 = now_ns(), period = 1000000000 / fps;
     int64_t next_stats = t0 + 10000000000LL, quiet_src = 0, quiet_enc = 0;
     long slot = 0;                 /* next slot to submit; due at t0 + slot * 1e9 / fps */
@@ -736,13 +754,20 @@ int main(int argc, char **argv, char **envp)
         while (slot <= due_upto) {
             int i = 0;
             while (i < ENC_BUFS && !e.out_free[i]) i++;
-            if (i == ENC_BUFS) break;
+            if (i == ENC_BUFS) {
+                st.nobuf++;
+                break;
+            }
             uint8_t *m = e.out_mem[i];
             if (s.held >= 0 && s.fresh) pic++;
             if (e.out_pic[i] != pic) {
                 if (s.held >= 0) {
+                    int64_t tc = now_ns();
                     fp_convert(s.mem[s.held], s.w, s.h, s.stride, m, e.stride, m + (size_t)e.stride * e.hpad,
                                e.stride, ow, oh, scratch);
+                    tc = now_ns() - tc;
+                    st.conv_ns += tc, st.convs++;
+                    if (tc > st.conv_max) st.conv_max = tc;
                 } else {   /* no source frame yet: black */
                     memset(m, 16, (size_t)e.stride * oh);
                     memset(m + (size_t)e.stride * e.hpad, 128, (size_t)e.stride * oh / 2);

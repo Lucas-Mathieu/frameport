@@ -432,3 +432,28 @@ def test_status_text_names_encoder():
     line = status_text({"ready": True, "width": 1280, "height": 720, "fps": 32, "encoder": "hardware",
                         "bytes": 1000, "seconds": 1, "viewers": 1})
     assert "32 fps" in line and "hardware encoder" in line
+
+
+def test_window_stats_and_panel_warning():
+    c, w = L.window_stats("fp_venc: stats frames=320 repeats=5 late=0 skipped=0 kbps=4900", {})
+    assert w == {"frames": 320, "dropped": 0, "kbps": 4900, "dropping": False}
+    c, w = L.window_stats("fp_venc: stats frames=528 repeats=140 late=172 skipped=104 kbps=6627", c)
+    assert w["frames"] == 208 and w["dropped"] == 276 and w["dropping"]  # the owner's 1080p run
+    c, w = L.window_stats("fp_venc: stats frames=846 repeats=140 late=176 skipped=104 kbps=6600", c)
+    assert w["dropped"] == 4 and not w["dropping"]  # a few late slots in 10 s: no warning
+    from frameport.ui.views.live import health_text
+
+    assert "lower quality" in health_text({"dropping": True, "dropped": 276})
+    assert health_text({"dropping": False, "dropped": 4}) == "" and health_text({}) == ""
+
+
+def test_status_has_dropped_frames():
+    live = L.LiveStream(lambda: _Source(b""))
+    try:
+        live.source_info = lambda: {"encoder": "hardware", "fps": "32", "stats": {"dropped": 9, "dropping": True}}
+        st = live.status()
+        assert st["dropped"] == 9 and st["dropping"]
+        live.source_info = lambda: {"encoder": "software", "fps": "30", "stats": {}}
+        assert "dropping" not in live.status()  # x264 path: no stats
+    finally:
+        live.server.server_close()

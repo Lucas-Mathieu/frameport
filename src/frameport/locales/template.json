@@ -1134,6 +1134,10 @@
  "The CPU types the game ships code for. The Frame runs only 64-bit ARM (arm64-v8a); 32-bit-only games can't run on it.": "",
  "The download didn't finish. Check your internet connection.": "",
  "The first picture takes a few seconds.": "",
+ "The Frame can't keep up at this quality: {n} frame dropped in the last 10 seconds. Choose a lower quality for a smoother picture.": [
+  "",
+  ""
+ ],
  "The Frame can't show curved panels; this shows them as gently bent strips.": "",
  "The Frame goes to sleep in a few seconds. Wake it with its power button.": "",
  "The Frame goes to sleep now.": "",
