@@ -26,6 +26,8 @@ WEB_HOSTS = ("framedropvr.com", "www.framedropvr.com")
 SCHEMA = "framedrop.install/v1"
 MAX_MANIFEST = 256 << 10
 MAX_FILES = 16
+MAX_DESCRIPTION = 2000
+MAX_ICON = 2 << 20
 LOOPBACK = ("localhost", "127.0.0.1", "[::1]", "::1")
 APK, LINUX, EXE, OBB = "apk", "linux", "exe", "obb"
 LINUX_EXTS = (".zip", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tar", ".appimage")
@@ -66,6 +68,9 @@ class Manifest:
     files: list[ManifestFile] = field(default_factory=list)
     source: str = ""  # the manifest's (or the file's) URL
     direct: bool = False  # made from a bare file link (the name is only a guess from the file name)
+    # FramePort-only extension (FrameDrop ignores it): "frameport": {"description": "…", "icon": "https://….png"}
+    description: str = ""
+    icon: str | None = None
 
     @property
     def host(self) -> str:
@@ -182,9 +187,17 @@ def make_link(manifest_url: str | None = None, file_url: str | None = None, sche
 
 # ------------------------------------------------------------------------------------------------- manifest
 def title_from_filename(filename: str) -> str:
+    """A readable guess from a file name: "net.sourceforge.opencamera_96.apk" → "Opencamera",
+    "Cool_Game-v1.2.3-arm64-v8a.apk" → "Cool Game" (the real title comes from the build once it's downloaded)."""
     stem = re.sub(r"(?i)(\.tar)?\.[a-z0-9]{2,8}$", "", filename)
-    stem = re.sub(r"(?i)[-_.](arm64(-v8a)?|aarch64|x86_64|universal|release|signed|linux|android)\b", "", stem)
-    return re.sub(r"[-_]+", " ", stem).strip() or filename
+    stem = re.sub(r"(?i)[-_.](arm64(-v8a)?|aarch64|x86_64|amd64|universal|release|signed|linux|android)\b", "", stem)
+    stem = re.sub(r"(?i)[-_ ]v?\d+(\.\d+)*([-_.]?(beta|alpha|rc)\d*)?$", "", stem)  # a version number at the end
+    if re.fullmatch(r"[a-z][a-z0-9_]*(\.[A-Za-z0-9_]+){2,}", stem):  # an Android package name: its last part
+        stem = stem.rsplit(".", 1)[-1]
+    words = re.sub(r"[-_.]+", " ", stem).strip()
+    if words and words == words.lower():
+        words = " ".join(w[:1].upper() + w[1:] for w in words.split())
+    return words or filename
 
 
 def manifest_from_data(data, source: str = "") -> Manifest:
@@ -210,6 +223,17 @@ def manifest_from_data(data, source: str = "") -> Manifest:
         out.append(ManifestFile(check_url(f["url"], "file address"), sha.lower() if sha else None))
     m = Manifest(" ".join(name.split())[:120], out, source)
     m.main  # noqa: B018 - raises when nothing installable is listed
+    extra = data.get("frameport")  # FramePort-only fields; anything wrong in them is ignored (they're optional)
+    if isinstance(extra, dict):
+        desc = extra.get("description")
+        if isinstance(desc, str):
+            m.description = desc.strip()[:MAX_DESCRIPTION]
+        icon = extra.get("icon")
+        if isinstance(icon, str):
+            try:
+                m.icon = check_url(icon, "icon address")
+            except LinkError:
+                pass
     return m
 
 
@@ -256,6 +280,41 @@ def head_size(url: str) -> int | None:
         resp = _session.head(url, allow_redirects=True, timeout=10)
         return int(resp.headers["content-length"]) if resp.ok and "content-length" in resp.headers else None
     except Exception:  # noqa: BLE001 - only for the confirmation's size column
+        return None
+
+
+def fetch_icon(m: Manifest) -> Path | None:
+    """The manifest's icon (FramePort extension) as a checked PNG in the data folder, or None. Same URL rules as
+    the files; at most 2 MiB; must be an image of at least 32 px."""
+    if not m.icon:
+        return None
+    from io import BytesIO
+
+    from PIL import Image
+
+    from .core.cache import _session
+    from .core.paths import user_data_dir
+
+    try:
+        check_url(m.icon, "icon address", resolve=True)
+        raw = b""
+        with _session.get(m.icon, stream=True, timeout=20) as resp:
+            resp.raise_for_status()
+            check_url(resp.url, "icon address")
+            for chunk in resp.iter_content(64 << 10):
+                raw += chunk
+                if len(raw) > MAX_ICON:
+                    return None
+        with Image.open(BytesIO(raw)) as im:
+            if min(im.size) < 32:
+                return None
+            im = im.convert("RGBA")
+            im.thumbnail((512, 512))
+            out = user_data_dir() / "downloads" / "icons" / (hashlib.sha256(m.icon.encode()).hexdigest()[:16] + ".png")
+            out.parent.mkdir(parents=True, exist_ok=True)
+            im.save(out, "PNG")
+            return out
+    except Exception:  # noqa: BLE001 - the icon is decoration: no icon rather than no install
         return None
 
 

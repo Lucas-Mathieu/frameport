@@ -116,6 +116,12 @@ sideloader, documented at framedropvr.com/docs). FramePort understands the same 
   `frameport://` links. Both are on by default. If FrameDrop is installed too and already opens `framedrop://`
   links, FramePort leaves them to it; **Use FramePort for these links** takes them over (turn the switch off to give
   them back).
+- **For developers:** a FrameDrop manifest works as it is
+  (`{"schema": "framedrop.install/v1", "name": "…", "files": [{"url": "https://…", "sha256": "…"}]}`). FramePort
+  also reads an optional `"frameport": {"description": "…", "icon": "https://….png"}` object (FrameDrop ignores
+  it): the install question then shows the icon and description, and they become the game's icon and "About this
+  game" text when no store has them. Without a manifest (a bare file link) FramePort guesses the title from the
+  file name and replaces it with the app's own name once it's downloaded.
 - Only `https://` links to public servers are used (plain `http://` only on this PC, for testing); links with a
   user name or password, or pointing into your local network, are refused. Only install from sites you trust.
 

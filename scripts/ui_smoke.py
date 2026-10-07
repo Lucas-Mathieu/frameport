@@ -387,15 +387,28 @@ def main() -> int:
         fake = deeplink.Manifest("Example Game", [
             deeplink.ManifestFile("https://cdn.example.com/example-game-arm64.apk", "ab" * 32),
             deeplink.ManifestFile("https://cdn.example.com/main.1.com.example.game.obb")],
-            "https://example.com/example-game.framedrop.json")
+            "https://example.com/example-game.framedrop.json",
+            description="A puzzle adventure across floating islands: build bridges, bend light and find your way home. "
+                        "Room-scale or seated, with smooth or snap turning.",
+            icon="https://example.com/icon.png")
         sizes = {fake.files[0].url: 412_000_000, fake.files[1].url: 1_900_000_000}
+        from PIL import Image, ImageDraw
+
+        from frameport.core.paths import user_data_dir
+
+        icon = user_data_dir() / "downloads" / "icons" / "smoke-example.png"  # a stand-in for the downloaded icon
+        icon.parent.mkdir(parents=True, exist_ok=True)
+        im = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+        ImageDraw.Draw(im).rounded_rectangle((8, 8, 248, 248), 48, fill=(124, 92, 255, 255))
+        ImageDraw.Draw(im).ellipse((72, 72, 184, 184), fill=(255, 214, 102, 255))
+        im.save(icon)
 
         def add_menu(a):
             a.navigate(0)
             time.sleep(2)
         steps = [("library", add_menu),
                  ("links-paste", lambda a: a.pick_link()),
-                 ("links-confirm", lambda a: (a.page.pop_dialog(), link_dialog._confirm(a, fake, sizes, False))),
+                 ("links-confirm", lambda a: (a.page.pop_dialog(), link_dialog._confirm(a, fake, sizes, False, icon))),
                  ("links-settings", lambda a: (a.page.pop_dialog(), a.go("settings")))]
         if game:
             steps.append(("links-display-mode", lambda a: a.open_game(game, advanced=True)))

@@ -60,7 +60,8 @@ def open_link(app: FramePortApp, text: str, pasted: bool = False) -> None:
         job.reporter.stage("Reading the install link")
         m = deeplink.fetch_manifest(req)
         sizes = {f.url: deeplink.head_size(f.url) for f in m.files}
-        app.page.run_thread(lambda: _confirm(app, m, sizes, pasted))
+        icon = deeplink.fetch_icon(m)  # FramePort's manifest extension (None without one)
+        app.page.run_thread(lambda: _confirm(app, m, sizes, pasted, icon))
         return tr("{name}: waiting for your answer").format(name=m.name)
     app.submit(tr("Install link: {host}").format(host=_host(req.source)), run, None, "task")
 
@@ -71,8 +72,27 @@ def _host(url: str) -> str:
     return (urlsplit(url).hostname or url) if "://" in url else url
 
 
-def _confirm(app: FramePortApp, m: deeplink.Manifest, sizes: dict, pasted: bool) -> None:
+def _header(m: deeplink.Manifest, icon) -> ft.Control | None:
+    """The manifest's icon and description (FramePort-only fields), when it has them."""
+    from ...artwork import thumbs
+
+    if not icon and not m.description:
+        return None
+    text = m.description if len(m.description) <= 400 else m.description[:400].rsplit(" ", 1)[0] + "…"
+    parts = []
+    if icon:
+        parts.append(ft.Image(src=thumbs.asset_url(icon), width=T.px(64), height=T.px(64), fit=ft.BoxFit.CONTAIN,
+                              border_radius=T.RADIUS_SM))
+    if text:
+        parts.append(ft.Container(C.body(text, T.TEXT, selectable=True), expand=True))
+    return ft.Row(parts, spacing=T.S3, vertical_alignment=ft.CrossAxisAlignment.START)
+
+
+def _confirm(app: FramePortApp, m: deeplink.Manifest, sizes: dict, pasted: bool, icon=None) -> None:
     rows = []
+    header = _header(m, icon)
+    if header:
+        rows.append(header)
     for f in m.files:
         size = sizes.get(f.url)
         rows.append(C.kv(f.filename, " · ".join(p for p in (
@@ -90,16 +110,16 @@ def _confirm(app: FramePortApp, m: deeplink.Manifest, sizes: dict, pasted: bool)
     heading = tr("Install {name}?").format(name=m.name)
     intro = tr("You pasted a link to {name}.") if pasted else tr("A web page asked FramePort to install {name}.")
     C.confirm(app.page, heading, intro.format(name=m.name), tr("Download and install"),
-              lambda: download_and_install(app, m),
+              lambda: download_and_install(app, m, icon),
               extra=ft.Column([*rows, *notes], spacing=T.S2, tight=True))
 
 
-def download_and_install(app: FramePortApp, m: deeplink.Manifest) -> Job:
+def download_and_install(app: FramePortApp, m: deeplink.Manifest, icon=None) -> Job:
     def run(job: Job):
         rep = job.reporter
         path = deeplink.download(m, rep)
         rep.stage("Adding to the library")
-        g = pipeline.add_from_link(m, path, rep)
+        g = pipeline.add_from_link(m, path, rep, icon=icon)
         pkg = g["package"]
         try:
             from ...artwork import thumbs

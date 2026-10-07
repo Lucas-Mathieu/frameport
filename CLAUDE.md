@@ -640,7 +640,15 @@ registration (`MARK` in the command). Never registered with FRAMEPORT_HOME/FRAME
 screenshots). Same round: files dropped on the Library (`ui/dropped.py`, bundles only like the Files tab), "Add a
 Windows program (.exe)…" (`pipeline.add_windows_exe`: exe in Downloads/home/drive root copied alone into
 `<data>/windows-apps/<slug>/`), patch `device.display_mode` (Automatic / VR / Flat window → `InstallContext.display`,
-`installer.show_window`). Screens: `scripts/ui_smoke.py --links --fake-frame --game <pkg>` (tall pages: `--viewport
+`installer.show_window`). FramePort-only manifest extension `"frameport": {"description", "icon"}` (bad values ignored; icon: same URL rules,
+≤2 MiB, Pillow-checked, ≥32 px, saved as PNG in `<data>/downloads/icons/`, shown in the question by asset URL, then
+`sources.apply_custom(pkg, "icon")` unless `.picked` exists; description fills `details.description` only when
+empty). Bare file links get a title guessed from the file name (`title_from_filename`: version/arch dropped, package
+names → last part). Windows test of 0.12.1.dev191 (2026-10-07): a button click opened the dialog; but a click right
+after closing FramePort did nothing (the closed window's heartbeat was < 10 s old) → the handler scripts now wait
+up to 4 s for the link file to be taken before trusting the heartbeat, the window's CLOSE event / atexit delete
+`gui.alive`, and the Windows command runs under `conhost.exe --headless` (plain `-WindowStyle Hidden` flashed a
+console). Screens: `scripts/ui_smoke.py --links --fake-frame --game <pkg>` (tall pages: `--viewport
 1280x7000`; Flutter's popup menu ignores Escape).
 
 ## Releases, CI, GitHub

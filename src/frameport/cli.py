@@ -282,6 +282,8 @@ def open_link(link: str = typer.Argument(..., help="an \"Install with FrameDrop\
     except deeplink.LinkError as exc:
         raise typer.BadParameter(str(exc)) from None
     typer.echo(f"{m.name}  (from {m.host or m.source})")
+    if m.description:
+        typer.echo(f"  {m.description[:400]}")
     for f in m.files:
         size = deeplink.head_size(f.url)
         typer.echo(f"  {f.filename}  {f.kind or 'other'}"
@@ -290,7 +292,7 @@ def open_link(link: str = typer.Argument(..., help="an \"Install with FrameDrop\
         raise typer.Exit(1)
     rep = printing_reporter(verbose=False)
     path = deeplink.download(m, rep)
-    g = pipeline.add_from_link(m, path, rep)
+    g = pipeline.add_from_link(m, path, rep, icon=deeplink.fetch_icon(m))
     pkg = g["package"]
     typer.echo(f"added {pkg} ({g.get('title')})")
     if no_install:

@@ -381,7 +381,7 @@ def add_windows_exe(exe: Path | str, reporter: Reporter | None = None) -> dict:
     return library.upsert_game(entry["package"], exe_confirmed=True)
 
 
-def add_from_link(manifest, path: Path, reporter: Reporter | None = None) -> dict:
+def add_from_link(manifest, path: Path, reporter: Reporter | None = None, icon: Path | None = None) -> dict:
     """Add a build downloaded from an install link (deeplink.download) to the library: an APK (with any OBB files
     next to it), a Linux build or a Windows program. A manifest's name becomes the title (FrameDrop: "name is what
     shows up in Steam"); a direct file link keeps the title FramePort finds."""
@@ -399,10 +399,26 @@ def add_from_link(manifest, path: Path, reporter: Reporter | None = None) -> dic
         entry = add_windows_exe(path, reporter)
     else:
         raise ValueError(f"FramePort can't install {path.name}")
+    pkg = entry["package"]
     fields = {"link": {"source": manifest.source, "name": manifest.name, "time": time.time()}}
     if not manifest.direct:  # a manifest (not a bare file link) names it
         fields.update(title=manifest.name, title_locked=True)
-    return library.upsert_game(entry["package"], **fields)
+    # FramePort's manifest extension: a description where no store has one, the icon unless the user picked one
+    details = dict(library.game(pkg).get("details") or {})
+    if manifest.description and not details.get("description"):
+        details.update(description=manifest.description, sources=[*(details.get("sources") or []), "link"])
+        fields["details"] = details
+    library.upsert_game(pkg, **fields)
+    if icon:
+        from .artwork import fetch, sources
+
+        try:
+            if not (fetch.artwork_dir(pkg) / fetch.PICKED).exists():  # the user's own pick stays
+                sources.apply_custom(pkg, "icon", icon)
+        except Exception as exc:  # noqa: BLE001 - artwork is optional
+            if reporter:
+                reporter.log(f"icon from the link not used: {exc}")
+    return library.game(pkg)
 
 
 def install_linux(package: str, target: Target, reporter: Reporter, add_to_library: bool = True) -> dict:

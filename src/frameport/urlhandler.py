@@ -26,6 +26,7 @@ from .core.paths import user_data_dir, write_atomic
 from .deeplink import SCHEMES
 
 HEARTBEAT_EVERY = 2.0  # seconds between the app's heartbeat touches
+TAKEN_WAIT = 4  # seconds a handler script waits for a running FramePort to take the link before starting one
 FRESH = 10.0  # a heartbeat younger than this = FramePort runs
 STARTING = 30  # seconds the handler script waits for an app it started before starting another
 MAX_LINK_AGE = 600  # links older than this (FramePort never came up) are dropped unopened
@@ -132,9 +133,16 @@ $links = {_ps_quote(str(links))}
 New-Item -ItemType Directory -Force -Path $links | Out-Null
 $name = [string][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + '-' + $PID
 [IO.File]::WriteAllText((Join-Path $links ($name + '.tmp')), $Link)
-Move-Item -Force (Join-Path $links ($name + '.tmp')) (Join-Path $links ($name + '.link'))
+$queued = Join-Path $links ($name + '.link')
+Move-Item -Force (Join-Path $links ($name + '.tmp')) $queued
 function Age($p) {{ if (Test-Path $p) {{ ((Get-Date) - (Get-Item $p).LastWriteTime).TotalSeconds }} else {{ 1e9 }} }}
-if ((Age {_ps_quote(str(alive))}) -lt {int(FRESH)}) {{ exit 0 }}
+# a fresh heartbeat may be a window that was just closed: only trust it once that window took the link
+if ((Age {_ps_quote(str(alive))}) -lt {int(FRESH)}) {{
+    for ($i = 0; $i -lt {TAKEN_WAIT * 4}; $i++) {{
+        if (-not (Test-Path $queued)) {{ exit 0 }}
+        Start-Sleep -Milliseconds 250
+    }}
+}}
 if ((Age {_ps_quote(str(starting))}) -lt {STARTING}) {{ exit 0 }}
 Set-Content -Path {_ps_quote(str(starting))} -Value $PID
 {start}
@@ -149,9 +157,14 @@ def sh_script(data: Path, cmd: list[str]) -> str:
 [ -n "$1" ] || exit 0
 mkdir -p {q(str(links))}
 name="$(date +%s%N 2>/dev/null || date +%s)-$$"
-printf '%s' "$1" > {q(str(links))}/"$name.tmp" && mv -f {q(str(links))}/"$name.tmp" {q(str(links))}/"$name.link"
+queued={q(str(links))}/"$name.link"
+printf '%s' "$1" > {q(str(links))}/"$name.tmp" && mv -f {q(str(links))}/"$name.tmp" "$queued"
 age() {{ [ -e "$1" ] && echo $(( $(date +%s) - $(stat -c %Y "$1") )) || echo 1000000000; }}
-[ "$(age {q(str(alive))})" -lt {int(FRESH)} ] && exit 0
+# a fresh heartbeat may be a window that was just closed: only trust it once that window took the link
+if [ "$(age {q(str(alive))})" -lt {int(FRESH)} ]; then
+    i=0
+    while [ $i -lt {TAKEN_WAIT * 4} ]; do [ -e "$queued" ] || exit 0; sleep 0.25; i=$((i + 1)); done
+fi
 [ "$(age {q(str(starting))})" -lt {STARTING} ] && exit 0
 echo $$ > {q(str(starting))}
 nohup setsid {" ".join(q(a) for a in cmd)} >/dev/null 2>&1 &
@@ -174,8 +187,11 @@ def platform_kind() -> str | None:
 def handler_command(kind: str) -> str:
     """The open command written to the registry / .desktop file (%1 / %u = the link)."""
     if kind == "windows":
-        ps = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
-        return (f'"{ps}" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File '
+        system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+        ps = system32 / "WindowsPowerShell/v1.0/powershell.exe"
+        # conhost --headless: no console window at all (-WindowStyle Hidden alone still flashes one for a moment)
+        host = f'"{system32 / "conhost.exe"}" --headless ' if (system32 / "conhost.exe").exists() else ""
+        return (f'{host}"{ps}" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File '
                 f'"{script_path("ps1")}" "%1"')
     if kind == "wsl":
         distro = os.environ.get("WSL_DISTRO_NAME", "")

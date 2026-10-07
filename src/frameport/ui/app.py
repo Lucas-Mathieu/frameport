@@ -36,14 +36,23 @@ NAV = [("library", tr("Library"), ft.Icons.GRID_VIEW_ROUNDED),
        ("keyboard", tr("Type on Frame"), ft.Icons.KEYBOARD_ROUNDED),
        ("settings", tr("Settings"), ft.Icons.TUNE_ROUNDED)]
 POLL_SECONDS = 30
-_link_state = {"owner": None, "thread": None}  # install links go to the newest window session (one watcher/process)
+_link_state = {"owner": None, "thread": None, "closing": False}  # install links go to the newest window session
+
+
+def _stop_link_watch() -> None:
+    """The window is closing: no more heartbeats, so a link clicked now starts FramePort again (a heartbeat left
+    behind made the handler script think the closed window would take it)."""
+    from .. import urlhandler
+
+    _link_state["closing"] = True
+    urlhandler.stop_heartbeat()
 
 
 def _watch_links() -> None:
     """Heartbeat for the link handler scripts (FramePort runs) + hand queued install links to the window."""
     from .. import urlhandler
 
-    while True:
+    while not _link_state["closing"]:
         urlhandler.heartbeat()
         app = _link_state["owner"]
         if app is not None:
@@ -153,10 +162,13 @@ class FramePortApp:
         self.run_bg(self._refresh_catalog)  # confirmed game configs from GitHub main (no release needed)
         _link_state["owner"] = self
         if _link_state["thread"] is None:
+            import atexit
+
             from .. import urlhandler
 
             _link_state["thread"] = threading.Thread(target=_watch_links, daemon=True)
             _link_state["thread"].start()
+            atexit.register(_stop_link_watch)
             self.run_bg(urlhandler.apply_setting)  # framedrop:// + frameport:// → FramePort (Settings → General)
 
     # ================================================================== shell
@@ -164,6 +176,8 @@ class FramePortApp:
         """Remember the window's size and position (once a resize/move ends; not while maximized or full screen) and
         whether it is maximized."""
         win, change = self.page.window, None
+        if e.type == ft.WindowEventType.CLOSE:
+            _stop_link_watch()  # also when maximized (that returns below)
         if e.type in (ft.WindowEventType.MAXIMIZE, ft.WindowEventType.UNMAXIMIZE):
             change = {"maximized": e.type == ft.WindowEventType.MAXIMIZE}
         elif win.maximized or win.full_screen:

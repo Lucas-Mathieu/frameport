@@ -92,7 +92,7 @@ def test_manifest_validation():
 
 def test_direct_link_manifest_and_titles():
     m = deeplink.fetch_manifest(deeplink.InstallRequest(file_url="https://a.com/dl/Cool_Game-1.2-arm64-v8a.apk"))
-    assert m.direct and m.main.kind == deeplink.APK and m.name == "Cool Game 1.2"
+    assert m.direct and m.main.kind == deeplink.APK and m.name == "Cool Game"
     assert deeplink.classify("thing-linux-arm64.tar.gz") == deeplink.LINUX
     assert deeplink.classify("Tool.AppImage") == deeplink.LINUX and deeplink.classify("Setup.EXE") == deeplink.EXE
 
