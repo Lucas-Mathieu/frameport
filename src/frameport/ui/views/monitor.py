@@ -425,15 +425,22 @@ class MonitorView:
             legend.append(ft.Row([C.dot(color, T.px(8)), t], spacing=T.px(6), tight=True))
         self.power_legend.controls = legend
         self.net.controls, self.net_texts = [], {}
-        C.update(self.cores, self.temps, self.power_legend, self.net)
+        # through the event loop like the ticks: sent directly from this (connect) thread, the patch adding these
+        # boxes could arrive after a tick's patch for them ("dropped a patch for unknown control")
+        self._updater()(self.cores, self.temps, self.power_legend, self.net)
+
+    def _updater(self):
+        """The one components.LoopUpdater of this view: every update from the stream's threads goes through it, in
+        order, on Flet's event loop."""
+        if self.push is None:
+            self.push = C.LoopUpdater(self.app.page)
+        return self.push
 
     # ---------------------------------------------------------------- samples
     def _on_sample(self, gen: int, s: dict) -> None:
         if gen != self._gen or self.root is None:
             return
         self.last_sample = s
-        if self.push is None:
-            self.push = C.LoopUpdater(self.app.page)
         for name, value in M.series_of(s).items():
             self.history.add(name, value, s.get("t"))
         changed = [self._apply_tiles(s), self._apply_game(s), self._apply_details(s)]
@@ -443,7 +450,7 @@ class MonitorView:
         cpu_share = (s.get("self_ms") or 0) / 10 / max(1.0, s.get("dt") or 1.0) / max(1, self.static.get("cores", 1))
         self.overhead.value = tr("Monitor is using {pct} % of the Frame's CPU").format(pct=f"{cpu_share:.2f}")
         self.overhead.tooltip = tr("The time the Frame spends collecting these numbers")
-        self.push(self.overhead, *[c for group in changed for c in group])
+        self._updater()(self.overhead, *[c for group in changed for c in group])
 
     def _apply_tiles(self, s: dict) -> list:
         h, st = self.history, self.static
