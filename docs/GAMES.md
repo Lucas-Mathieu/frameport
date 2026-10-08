@@ -8,6 +8,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 |---|---|---|---|
 | 4XVR Video Player | Quest | ✅ Works |  |
 | Accounting+ | Quest | ✅ Works |  |
+| AgeOfJoy | Quest | ✅ Works |  |
 | AllInOneSports | Quest | ✅ Works |  |
 | Asgard's Wrath 2 | Quest | ✅ Works |  |
 | BAM | Quest | ✅ Works |  |
