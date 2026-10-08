@@ -54,6 +54,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Rick and Morty: Virtual Rick-ality | PC VR | ✅ Works |  |
 | Riven | Quest | ✅ Works |  |
 | Robo Recall | Quest | ✅ Works |  |
+| RUINSMAGUS | Quest | ✅ Works |  |
 | Sniper Elite VR: Winter Warrior | Quest | ✅ Works |  |
 | Space Pirate Trainer Quest | Quest | ✅ Works |  |
 | Stremio | Quest | ✅ Works |  |
