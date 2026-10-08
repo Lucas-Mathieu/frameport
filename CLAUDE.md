@@ -71,6 +71,14 @@ Read `docs/PLAYBOOK.md` (symptom → fix) before debugging a game, and `docs/FRA
     uploads are interruptible (Cancel checked per MiB) and resumable (big files via SFTP `.part` append, small files
     streamed in tar batches; the agent counts files already in `incoming/`). Multi-select in the Library queues
     installs after asking every needed question up front. Failures end in one pop-up (Resume / Uninstall / log).
+  - Other drives (GitHub #90, agent v63): anchors stay in ~/Applications/quest-frame, a game's files may live in
+    `<mount>/FramePort/<pkg>` (`deployment.json` base). Agent `drives` (/proc/mounts, /run/media + Steam library
+    drives; vfat/exfat/ntfs/read-only refused), prepare*/finalize_linux `dest` (unmounted = error, never a fallback;
+    installed games keep their base), `move` (detached systemd-run + `move_status`; cp -a under podman unshare,
+    count+bytes check, symlink retarget, launch.sh: Quest app_dir line / Linux+PC VR rewritten from the record's
+    `launcher` field, else text swap), list_installed `drive`/`drive_missing` (install_state keeps such games
+    "installed"). PC: `install/drives.py`, library setting `install.drive` (Frame page → Storage), game menu
+    "Move to…" (job kind tool-frame), CLI `frame drives`/`frame move`/`install --dest`. Untested on the device.
   - **PC VR repacks are pre-patched to run directly** (proven: Rick and Morty, Vader Immortal run when the exe is
     launched directly; Revive breaks them). So Rift games default to `as_is` = install the copy unchanged and launch
     the exe directly (`pcvr.xr_timefix` for the Frame OpenXR-1.1→1.0 fix, `pcvr.no_crash_reporter` for Unreal).

@@ -31,11 +31,17 @@ def set_install_dest(install_dir: str | None) -> None:
     library.set_setting(SETTING, install_dir or INTERNAL)
 
 
-def drive_text(d: dict) -> str:
-    """"SD Card · 112.4 GB free" (labels for menus and dropdowns)."""
+def free_text(d: dict) -> str:
+    """"112.4 GiB free" ("" when unknown)."""
+    from ..i18n import tr
+
     free = d.get("free_bytes")
-    size = f" · {free / 1e9:.1f} GB free" if isinstance(free, (int, float)) else ""
-    return f"{d.get('label') or d.get('path')}{size}"
+    return tr("{size:.1f} GiB free").format(size=free / 2**30) if isinstance(free, (int, float)) else ""
+
+
+def drive_text(d: dict) -> str:
+    """"SD Card · 112.4 GiB free" (labels for menus and dropdowns)."""
+    return " · ".join(filter(None, [d.get("label") or d.get("path"), free_text(d)]))
 
 
 def game_drive(dep: dict | None) -> dict | None:

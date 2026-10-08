@@ -28,6 +28,23 @@
   work on Android 11: `policy_control` is gone, `cmd statusbar send-disable-flag home recents` has no `back` and
   moves the back button onto the app's controls, the `sysui_nav_bar` layout and disabling SystemUI had no effect.
 
+## Where FramePort keeps games (internal storage, microSD)
+- Every game has an **anchor** on internal storage: `~/Applications/quest-frame/<pkg>/` with `launch.sh`,
+  `deployment.json`, `artwork/` and `plays.log`. Steam's shortcut points at the anchor's `launch.sh`, so it never
+  changes when the files move.
+- The game's files (`lepton-app/`, `lepton-data/` = saves, `lepton-shaders/`, `settings.conf`, `launch.log`; PC VR:
+  `game/`, `revive/`, `compatdata/` = Proton prefix; Linux: `app/`) live in `deployment.json["base"]`: the anchor
+  itself on internal storage, or `<mount>/FramePort/<pkg>` on another drive (GitHub #90, agent v63).
+- SteamOS mounts removable drives (microSD) under `/run/media/<user>/<label or uuid>`; the agent's `drives` reads
+  `/proc/mounts` (plus the drives of Steam library folders) and refuses vfat/exfat/ntfs (Lepton's data and Proton
+  prefixes need Unix owners, permissions and symlinks) and read-only mounts. A drive that isn't mounted is an error for
+  new installs (never a silent fallback to internal storage); `list_installed` marks games on it `drive_missing` and
+  their launchers stop with "storage not mounted?".
+- `move` copies with `cp -a` inside `podman unshare` (files Lepton's containers own belong to subordinate user ids),
+  compares file count + bytes, retargets absolute symlinks into the old folder (the LibOVRRT → Revive redirect), points
+  `launch.sh` at the new folder and only then deletes the old copy; on the same filesystem it renames instead.
+  Moving a game whose Lepton data holds absolute paths, or a PC VR prefix, is not yet verified on the device.
+
 ## OpenXR runtime (as seen by games through overport's loader)
 - Instance extensions present include KHR_android_create_instance (must be enabled; the adapter adds it),
   KHR_vulkan_enable(2), KHR_opengl_es_enable, KHR_composition_layer_depth, FB_display_refresh_rate, EXT_hand_tracking

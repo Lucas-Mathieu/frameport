@@ -102,9 +102,9 @@ def test_move_picks_up_a_running_move_and_reports_failures():
 
 
 def test_drive_helpers():
-    d_int = {"internal": True, "path": "/home/steamos", "label": "Internal storage", "free_bytes": 12.5e9}
+    d_int = {"internal": True, "path": "/home/steamos", "label": "Internal storage", "free_bytes": 12.5 * 2**30}
     d_sd = {"internal": False, "path": "/run/media/steamos/SD", "label": "SD", "free_bytes": None}
-    assert drives.drive_text(d_int) == "Internal storage · 12.5 GB free" and drives.drive_text(d_sd) == "SD"
+    assert drives.drive_text(d_int) == "Internal storage · 12.5 GiB free" and drives.drive_text(d_sd) == "SD"
     on_sd = {"drive": {"internal": False, "path": "/run/media/steamos/SD", "label": "SD"}, "drive_missing": True}
     assert drives.game_drive(on_sd)["missing"] is True and drives.game_drive({"package": "x"}) is None
     assert drives.is_on(on_sd, d_sd) and not drives.is_on(on_sd, d_int)

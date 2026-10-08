@@ -579,7 +579,7 @@ def frame_drives(frame: Optional[str] = typer.Option(None, help=FRAME_HELP),
         return
     current = drives.install_dest()
     for d in found:
-        free = f"{d['free_bytes'] / 1e9:.1f} GB free" if d.get("free_bytes") is not None else "?"
+        free = drives.free_text(d) or "?"
         mark = "*" if (d["internal"] and not current) or current in (d["install_dir"], d["path"]) else " "
         state = f"{d.get('games', 0)} game(s)" if d.get("usable") else f"can't be used: {d.get('reason')}"
         typer.echo(f"{mark} {d['label']:20} {d.get('fstype') or '':6} {free:>16}  {state}")

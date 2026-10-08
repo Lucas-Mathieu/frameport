@@ -169,6 +169,10 @@ class GameView:
         rift_platform = self.rift and (g["analysis"].get("extra") or {}).get("platform_sdk")
         frame_color = (T.TEXT_3 if (rift_oculus or rift_platform) and not frame_ok else
                        T.OK if st == "installed" else T.WARN if st == "outdated" else T.TEXT_3)
+        drive = C.frame_drive(g, app.frame_info) if frame_ok else None  # a microSD card (GitHub #90)
+        frame_line += C.drive_note(drive)
+        if drive and drive.get("missing"):
+            frame_color = T.WARN
         frame_sub = (tr("Oculus game — needs Revive, which doesn't run on the Frame. Play it on this PC (SteamVR).")
                      if rift_oculus else
                      tr("Needs the Oculus Platform (Meta Horizon app) for its license check, which the Frame doesn't "

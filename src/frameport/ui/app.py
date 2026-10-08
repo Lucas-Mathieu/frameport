@@ -818,6 +818,8 @@ class FramePortApp:
                 C.install_state(g, self.frame_info) in ("installed", "outdated"):
             out.append((tr("Update Steam art on Frame"), ft.Icons.WALLPAPER_ROUNDED,
                         lambda e: self.update_steam_art(pkg)))
+            if C.frame_drive(g, self.frame_info) is not None:  # agent v63+: games can live on a microSD card
+                out.append((tr("Move to…"), ft.Icons.DRIVE_FILE_MOVE_OUTLINED, lambda e: self.move_game(pkg)))
         out.append((tr("Refresh store details"), ft.Icons.SYNC_ROUNDED, lambda e: self.refresh_details(pkg)))
         if not job and not linux:
             out.append((tr("Rebuild only (no install)") if not rift else tr("Check game files"), ft.Icons.BUILD_ROUNDED,
@@ -1267,6 +1269,69 @@ class FramePortApp:
             library.update_game(pkg, lambda e: e.pop("steam_art_stale", None))
             return tr("{title}: Steam artwork updated on the Frame").format(title=self._title(pkg))
         return self.submit(tr("Update Steam art: {title}").format(title=self._title(pkg)), run, pkg, "art")
+
+    def move_game(self, pkg: str) -> None:
+        """Move to…: pick another drive of the Frame (microSD card, internal storage) for an installed game; the copy
+        runs as a Frame job (GitHub #90)."""
+        from ..install import drives
+
+        title = self._title(pkg)
+        here = C.frame_drive(library.game(pkg) or {"package": pkg}, self.frame_info)
+        group = ft.RadioGroup(content=ft.Column([C.meta(tr("Looking for drives…"))], spacing=T.S2))
+        go = C.primary(tr("Move"), ft.Icons.DRIVE_FILE_MOVE_OUTLINED, disabled=True)
+        found: dict[str, dict] = {}
+
+        def picked(e):
+            go.disabled = not group.value
+            C.update(go)
+
+        group.on_change = picked
+
+        def fill():
+            try:
+                listed = self._target_for("frame").drives()
+            except Exception as exc:  # noqa: BLE001
+                group.content.controls = [C.meta(tr("Couldn't list the Frame's drives: {error}")
+                                                 .format(error=explain(exc)))]
+                C.update(group)
+                return
+            rows = []
+            for d in listed:
+                key = drives.INTERNAL if d["internal"] else d["install_dir"]
+                current = drives.is_on({"drive": here}, d) if here else d["internal"]
+                found[key] = d
+                note = tr("it's here now") if current else \
+                    (d.get("reason") or "") if not d.get("usable") else drives.free_text(d)
+                rows.append(ft.Row([
+                    ft.Radio(value=key, active_color=T.ACCENT, disabled=current or not d.get("usable")),
+                    ft.Icon(ft.Icons.SD_CARD_ROUNDED if d.get("removable") else ft.Icons.STORAGE_ROUNDED,
+                            size=T.px(18), color=T.TEXT_2),
+                    ft.Column([C.body(tr("Internal storage") if d["internal"] else d["label"], T.TEXT),
+                               C.meta(note)], spacing=T.px(2), expand=True),
+                ], spacing=T.S2))
+            group.content.controls = rows or [C.meta(tr("Only internal storage"))]
+            C.update(group)
+
+        def start(e):
+            dest = group.value
+            if not dest:
+                return
+            self.page.pop_dialog()
+            label = tr("Internal storage") if dest == drives.INTERNAL else found.get(dest, {}).get("label", dest)
+
+            def run(job: Job):
+                self._target_for("frame").move(pkg, dest, job.reporter)
+                return tr("{title} moved to {label}").format(title=title, label=label)
+            self.submit(tr("Move {title} to {label}").format(title=title, label=label), run, pkg, "tool-frame")
+
+        go.on_click = start
+        self.page.show_dialog(ft.AlertDialog(
+            title=ft.Text(tr("Move {title} to…").format(title=title), weight=ft.FontWeight.W_600),
+            content=ft.Container(ft.Column([C.body(C.HELP["move_game"]), group], spacing=T.S3, tight=True),
+                                 width=T.px(460)),
+            bgcolor=T.SURFACE_2, shape=ft.RoundedRectangleBorder(radius=T.RADIUS),
+            actions=[C.ghost(tr("Cancel"), on_click=lambda e: self.page.pop_dialog()), go]))
+        self.run_bg(fill)
 
     def build_game(self, pkg: str) -> Job:
         def run(job: Job):
