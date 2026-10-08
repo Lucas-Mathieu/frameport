@@ -51,6 +51,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Path of the Warrior | Quest | ✅ Works |  |
 | PowerWash Simulator VR | Quest | ✅ Works |  |
 | QuestCraft | Quest | ✅ Works |  |
+| Richie's Plank Experience | Quest | ✅ Works |  |
 | Rick and Morty: Virtual Rick-ality | PC VR | ✅ Works |  |
 | Riven | Quest | ✅ Works |  |
 | Robo Recall | Quest | ✅ Works |  |
