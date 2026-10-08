@@ -69,6 +69,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Time Crisis VR (Experimental) | Quest | ✅ Works |  |
 | Toy Master | Quest | ✅ Works |  |
 | Under Cover | Quest | ✅ Works |  |
+| VR HOT Quest | Quest | ✅ Works |  |
 | VR4 | Quest | ✅ Works |  |
 | Wallace & Gromit in The Grand Getaway | Quest | ✅ Works |  |
 | Waltz of the Wizard: Extended Edition | Quest | ✅ Works |  |
