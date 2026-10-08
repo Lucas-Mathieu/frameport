@@ -15,6 +15,13 @@ logging.getLogger("pyaxmlparser").setLevel(logging.ERROR)
 UNITY_GGM = "assets/bin/Data/globalgamemanagers"
 IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 
+# The version of what analyze() stores (Analysis.extra["analysis_version"]). BUMP IT whenever analyze() gains a field
+# or detects something differently that patches/heuristics read: library entries analysed by an older FramePort are
+# then analysed again in the background at the next start (pipeline.refresh_analyses), so their new patches are
+# offered (GitHub #104: entries from before `sdl_java` never got frame.sdl_clipboard). Entries without it are 0.
+# 1: sdl_java, min_sdk, web_wrapper, expects_obb, vr_activity, unity_version (2026-10)
+ANALYSIS_VERSION = 1
+
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
 ANDROID_VERSIONS = {29: "10", 30: "11", 31: "12", 32: "12L", 33: "13", 34: "14", 35: "15", 36: "16", 37: "17"}
@@ -234,6 +241,7 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         is_overport_output=is_overport,
         debuggable=bool(axml.Axml(manifest).get_bool("application", "debuggable")),
         extra={
+            "analysis_version": ANALYSIS_VERSION,
             "frame_patched": "libframe_settings.so" in libset,  # already has FramePort's FrameBridge adapter
             # Team Beef's TBXR ports pick their OpenXR path by headset maker (frame.tbxr_vendor): their libraries
             # the game asks Meta's platform for asset files (content shipped as separate files, frame.asset_files)

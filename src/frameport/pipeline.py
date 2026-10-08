@@ -487,19 +487,90 @@ def reanalyze(package: str, reporter: Reporter | None = None) -> dict:
     """Read a Quest/Android game's APK again (e.g. after FramePort learned to detect something new). The suggestion is
     refreshed; the recipe too unless the user changed it (then their choices stay)."""
     entry = library.game(package)
-    if entry is None or is_rift(entry):
+    if entry is None or is_rift(entry) or is_linux(entry):
         raise ValueError("only Quest/Android games can be analyzed again")
+    return _store_analysis(package, _analyze_entry(entry, reporter))
+
+
+def _analyze_entry(entry: dict, reporter: Reporter | None = None):
     src = source_of(entry)
     if reporter:
         reporter.log(f"analyzing {src.apk.name}")
     a = analyze(src.apk, data_bytes=src.data_bytes())
     a.extra["lang_packs"] = langpacks.find_tags(src.data_dir)
     a.extra["asset_files"] = langpacks.find_content_files(src.data_dir)
+    return a
+
+
+def _store_analysis(package: str, a) -> dict:
+    """Replace only the entry's analysis and suggestion; the recipe follows unless it is the user's own (tags, art,
+    title, builds and installs are untouched)."""
     suggested = engine.suggest(a)
-    keep = library.recipe_from_dict(entry["recipe"]).source == "user"
-    return library.upsert_game(package, analysis=a.to_dict(), suggested=library.recipe_to_dict(suggested),
-                               **({} if keep else {"recipe": library.recipe_to_dict(suggested),
-                                                   "status": suggested.status}))
+
+    def change(g: dict) -> None:
+        g["analysis"] = a.to_dict()
+        g["suggested"] = library.recipe_to_dict(suggested)
+        g.pop("analysis_failed", None)
+        # checked under the library lock: the user may have saved a recipe while the APK was read
+        if library.recipe_from_dict(g.get("recipe") or {"package": package}).source != "user":
+            g["recipe"] = library.recipe_to_dict(suggested)
+            g["status"] = suggested.status
+    return library.update_game(package, change)
+
+
+def analysis_outdated(entry: dict) -> bool:
+    """A Quest/Android entry analysed by an older FramePort (fields newer patches depend on are missing) whose APK is
+    still there, and whose re-analysis didn't already fail for this analysis version. Rift/Linux entries: no."""
+    from .analysis.detect import ANALYSIS_VERSION
+
+    a = entry.get("analysis")
+    if not isinstance(a, dict) or not entry.get("apk") or is_rift(entry) or is_linux(entry):
+        return False
+    if str(a.get("package") or "").startswith("rift."):
+        return False
+    if ((a.get("extra") or {}).get("analysis_version") or 0) >= ANALYSIS_VERSION:
+        return False
+    if entry.get("analysis_failed") == ANALYSIS_VERSION:
+        return False
+    try:
+        return Path(entry["apk"]).is_file()  # on a drive that isn't connected now: tried again at a later start
+    except OSError:
+        return False
+
+
+def outdated_analyses() -> list[str]:
+    return [g["package"] for g in library.games() if analysis_outdated(g)]
+
+
+def refresh_analyses(packages: list[str] | None = None, reporter: Reporter | None = None) -> int:
+    """Analyse again the entries an older FramePort analysed (see detect.ANALYSIS_VERSION): runs in the background at
+    start (GUI) and before a build (CLI and GUI). Only the APK analysis (no OVRPort, no Cpp2IL). An APK that can't be
+    read leaves the entry as it was and is marked, so it isn't read again at every start. Returns how many changed."""
+    from .analysis.detect import ANALYSIS_VERSION
+
+    todo = outdated_analyses() if packages is None else \
+        [p for p in packages if analysis_outdated(library.game(p) or {})]
+    done = 0
+    for i, pkg in enumerate(todo):
+        entry = library.game(pkg)
+        if entry is None or not analysis_outdated(entry):
+            continue
+        if reporter:
+            reporter.check_cancel()
+            reporter.progress(i / len(todo), entry.get("title") or pkg)
+        try:
+            a = _analyze_entry(entry, reporter)
+        except Exception as exc:  # noqa: BLE001 - unreadable APK: keep the old analysis, don't retry every start
+            if reporter:
+                reporter.log(f"{pkg}: couldn't analyze the APK again: {exc}")
+            library.update_game(pkg, lambda g: g.__setitem__("analysis_failed", ANALYSIS_VERSION))
+            continue
+        if a.package != pkg:  # a different APK at that path now: leave the entry alone
+            library.update_game(pkg, lambda g: g.__setitem__("analysis_failed", ANALYSIS_VERSION))
+            continue
+        _store_analysis(pkg, a)
+        done += 1
+    return done
 
 
 def source_of(entry: dict) -> SourceGame:
@@ -627,6 +698,8 @@ def _build_lock(package: str) -> threading.Lock:
 
 
 def build_game(package: str, reporter: Reporter, outdir: Path | None = None) -> dict:
+    if analysis_outdated(library.game(package) or {}):  # analysed by an older FramePort: new fields first
+        refresh_analyses([package], reporter)
     entry = library.game(package)
     if is_linux(entry):  # nothing to convert: installed as it is
         return {"ok": True, "linux": True}

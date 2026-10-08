@@ -1795,6 +1795,7 @@ class FramePortApp:
     def _startup(self):
         from ..frame.connection import parse_target, saved_targets
 
+        self.run_bg(self._analysis_refresh)
         self._art_backfill()
         saved = saved_targets()
         if saved:
@@ -1805,6 +1806,18 @@ class FramePortApp:
         for f in browse(4, scan=False):
             self.connect(parse_target(f"{f.user}@{f.host}"), quiet=True)
             break
+
+    def _analysis_refresh(self) -> None:
+        """Games analysed by an older FramePort lack fields newer fixes depend on (GitHub #104): their APKs are read
+        again once, in the background. Not a job: ~8 s per large APK, and the queue would hold the user's installs
+        for minutes (a build of such a game analyses it first itself). Recipes the user didn't edit then follow."""
+        if not pipeline.outdated_analyses():
+            return
+        n = pipeline.refresh_analyses()
+        if n:
+            self.refresh_view()
+            self.toast(tr_n("{n} game was analyzed again for new fixes", "{n} games were analyzed again for new fixes",
+                            n))
 
     def _art_backfill(self) -> None:
         """Rift games added before automatic artwork (or while offline): fetch it once in the background."""

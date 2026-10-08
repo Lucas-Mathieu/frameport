@@ -537,7 +537,7 @@ recipe keeps it on). I Am Cat works with issues (judder; scale 0.8 no help). Rob
 libroblox, also with the Vulkan shim). Installs skip the Steam restart when the shortcut is unchanged and wait while a
 game runs (agent v37). New default fixes in FramePort's code reach games already in a library: after every app update
 `library._follow_catalog` re-derives each non-user recipe once (setting `recipes.app_version`; tests switch it off via
-`library.REFRESH_ON_UPDATE`); analysis fields added later still need a re-analysis. Troubleshooting techniques: docs/PLAYBOOK.md "Debugging techniques". Unity `boot.config` "vulkan" substring mislabels GLES games as Vulkan
+`library.REFRESH_ON_UPDATE`). Analysis fields added later: **bump `analysis/detect.ANALYSIS_VERSION`** (stored as `analysis.extra.analysis_version`); older entries whose APK is still there are analysed again at the GUI's start (background thread, not a job: ~8 s per 900 MB APK) and before a build (`pipeline.refresh_analyses`, GitHub #104); only `analysis`/`suggested` change, user recipes stay; an unreadable APK gets `analysis_failed` = the version (not retried until the next bump). Troubleshooting techniques: docs/PLAYBOOK.md "Debugging techniques". Unity `boot.config` "vulkan" substring mislabels GLES games as Vulkan
 (I Am Cat ran GLES); OVRPlugin's "Unavailable OpenXR extension: XR_FB_scene" is routine (no longer triaged).
 **Round 4 (2026-10-04):** XR_KHR_android_surface_swapchain is listed by the Frame's runtime but returns
 FUNCTION_UNSUPPORTED → adapter `surface_emul` (default on, `native/adapter/surface_swapchain.c`): an ordinary runtime
