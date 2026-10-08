@@ -428,6 +428,8 @@ def install(package: Optional[str] = typer.Argument(None), all_: bool = typer.Op
     if apk and len(pkgs) != 1:
         raise typer.BadParameter("--apk needs exactly one game")
     for pkg in pkgs:
+        if not apk_only and pipeline.missing_obb(library.game(pkg) or {}):
+            typer.echo(f"{pkg}: warning: " + pipeline.MISSING_OBB_NOTE.format(package=pkg), err=True)
         pipeline.install_game(pkg, target, printing_reporter(False), apk_only, add_to_library=False, apk=apk)
     if not no_library:
         target.add_to_library(pkgs, printing_reporter(False))

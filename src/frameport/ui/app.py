@@ -914,11 +914,11 @@ class FramePortApp:
         def ask_frame_oculus():
             # Installing an Oculus/LibOVR Rift game on the Frame: warn that it needs Revive (which can't run there)
             if to != "frame":
-                return ask_license()
+                return ask_obb()
             oculus = [g for g in games if g.get("kind") == "rift"
                       and "pcvr.revive" in (g.get("recipe") or {}).get("patches", {})]
             if not oculus:
-                return ask_license()
+                return ask_obb()
             boxes = {g["package"]: ft.Checkbox(label=self._title(g["package"]), value=False, active_color=T.ACCENT)
                      for g in oculus}
             pick = C.one_choice()
@@ -933,7 +933,7 @@ class FramePortApp:
                                   "those Oculus games need PC mode (SteamVR + Revive)."))
                     finished()
                     return
-                ask_license()
+                ask_obb()
             self.page.show_dialog(ft.AlertDialog(
                 title=ft.Text(tr("These games can't run on the Steam Frame"), weight=ft.FontWeight.W_600),
                 content=ft.Container(ft.Column([
@@ -942,6 +942,39 @@ class FramePortApp:
                            "want to put on the Frame to experiment (they'll likely run flat or crash).")),
                     *boxes.values()], spacing=T.S2, tight=True, scroll=ft.ScrollMode.AUTO), width=T.px(520),
                     height=T.px(min(130 + 36 * len(boxes), 480))),  # fits the list; scrolls when long
+                bgcolor=T.SURFACE_2, shape=ft.RoundedRectangleBorder(radius=T.RADIUS),
+                modal=True, on_dismiss=pick(closed),
+                actions=[C.ghost(tr("Cancel"), on_click=pick(cancel)),
+                         C.primary(tr("Continue"), on_click=pick(ok))]))
+
+        def ask_obb():
+            # the game expects a data file (.obb) that wasn't found next to its APK: it would hang at start (#85)
+            missing = [g for g in games if pipeline.missing_obb(g)]
+            if not missing:
+                return ask_license()
+            boxes = {g["package"]: ft.Checkbox(label=self._title(g["package"]), value=False, active_color=T.ACCENT)
+                     for g in missing}
+            pick = C.one_choice()
+
+            def ok(e):
+                nonlocal games
+                self.page.pop_dialog()
+                keep = {p for p, b in boxes.items() if b.value}
+                games = [g for g in games if g not in missing or g["package"] in keep]
+                if not games:
+                    self.toast(tr("Nothing to install: add the games' .obb files first"))
+                    finished()
+                    return
+                ask_license()
+            self.page.show_dialog(ft.AlertDialog(
+                title=ft.Text(tr("Game data (.obb) not found"), weight=ft.FontWeight.W_600),
+                content=ft.Container(ft.Column([
+                    C.body(tr("These games keep their content in a data file (.obb), and none was found next to "
+                              "their APK. Without it they hang at start. Put the .obb files in a folder named like "
+                              "the game's package (or obb/) next to the APK and add the folder again. Tick any you "
+                              "still want to install.")),
+                    *boxes.values()], spacing=T.S2, tight=True, scroll=ft.ScrollMode.AUTO), width=T.px(520),
+                    height=T.px(min(150 + 36 * len(boxes), 480))),  # fits the list; scrolls when long
                 bgcolor=T.SURFACE_2, shape=ft.RoundedRectangleBorder(radius=T.RADIUS),
                 modal=True, on_dismiss=pick(closed),
                 actions=[C.ghost(tr("Cancel"), on_click=pick(cancel)),

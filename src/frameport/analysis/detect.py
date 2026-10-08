@@ -37,6 +37,12 @@ def too_new_android(min_sdk: int | None) -> bool:
 
 TWA_URL_KEY = "android.support.customtabs.trusted.DEFAULT_URL"
 TWA_ACTIVITY = "com.google.androidbrowserhelper.trusted.LauncherActivity"
+UE_OBB_KEY = ".GameActivity.bHasOBBFiles"  # com.epicgames.ue4.… (UE4) / com.epicgames.unreal.… (UE5)
+
+
+def expects_obb(meta: dict) -> bool:
+    """Unreal packaged the game's content as an OBB (expansion file) and opens it at start."""
+    return any(k.endswith(UE_OBB_KEY) and v in (True, "true", "True") for k, v in meta.items())
 
 
 def _read_manifest_info(path: Path):
@@ -208,6 +214,7 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
     manifest_strings = axml.Axml(manifest).strings()
     features = _features(manifest)
     used_perms, _ = axml.used_and_declared_permissions(manifest)
+    meta = axml.meta_data(manifest)
     return Analysis(
         package=package,
         version=version,
@@ -268,7 +275,10 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             # the minimum Android version the APK declares (read from the original: OVRPort lowers it to 29)
             "min_sdk": axml.min_sdk(manifest),
             # a website in an Android wrapper (TWA): nothing to port
-            "web_wrapper": web_wrapper(axml.meta_data(manifest), manifest_strings, apk_info),
+            "web_wrapper": web_wrapper(meta, manifest_strings, apk_info),
+            # Unreal packaged its content as an OBB (expansion file): without it the game hangs at start (GitHub #85).
+            # (Unity's split-binary builds show no reliable sign in the APK.)
+            "expects_obb": expects_obb(meta),
         },
     )
 

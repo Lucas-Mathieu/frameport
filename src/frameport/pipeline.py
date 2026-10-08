@@ -290,7 +290,24 @@ def analysis_warnings(entry: dict) -> list[str]:
     """Blockers read from a Quest/Android game's APK, for the CLI (the game page shows them as callouts)."""
     if is_rift(entry) or is_linux(entry) or not entry.get("analysis"):
         return []
-    return engine.blocker_notes(library.analysis_from_dict(entry["analysis"]))
+    out = engine.blocker_notes(library.analysis_from_dict(entry["analysis"]))
+    if missing_obb(entry):
+        out.append(MISSING_OBB_NOTE.format(package=entry.get("package", "<package>")))
+    return out
+
+
+MISSING_OBB_NOTE = ("This game's data file (.obb) wasn't found next to the APK. Put the .obb files in a folder named "
+                    "{package} (or obb/) next to the APK and add the folder again; without it the game hangs at start.")
+
+
+def missing_obb(entry: dict) -> bool:
+    """A Quest game whose APK expects an OBB (analysis expects_obb: Unreal's bHasOBBFiles) but no data folder was
+    found next to it (GitHub #85: TRIANGLE STRATEGY hung silently after OVRPlugin's JNI_OnLoad). Library fields
+    only: no disk access (used by the game page)."""
+    if is_rift(entry) or is_linux(entry):
+        return False
+    extra = (entry.get("analysis") or {}).get("extra") or {}
+    return bool(extra.get("expects_obb")) and not (entry.get("data_dir") and entry.get("data_bytes") != 0)
 
 
 def add_linux_app(path: Path | str, reporter: Reporter | None = None, exe: str | None = None) -> dict:
@@ -812,6 +829,10 @@ def install_rift(package: str, target: Target, reporter: Reporter, add_to_librar
 
 def test_game(package: str, target: Target, reporter: Reporter, seconds: int = 45) -> dict:
     result, log = target.launch_test(package, reporter, seconds)
+    if missing_obb(library.game(package) or {}):
+        from .validate.triage import add_missing_obb
+
+        add_missing_obb(result)
     from .core.paths import user_data_dir
 
     logs = user_data_dir() / "logs"

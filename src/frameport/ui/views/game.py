@@ -278,6 +278,11 @@ class GameView:
                                     "crashes at start. It can't run until Valve updates the Frame's Android "
                                     "container.").format(version=android_version(min_sdk), api=min_sdk), "error",
                                  ft.Icons.PHONELINK_ERASE_ROUNDED))
+        if pipeline.missing_obb(g):
+            out.append(C.callout(tr("This game's data file (.obb) wasn't found next to the APK. Put the .obb files "
+                                    "in a folder named {package} (or obb/) next to the APK and add the folder again; "
+                                    "without it the game hangs at start.").format(package=pkg), "error",
+                                 ft.Icons.FOLDER_OFF_ROUNDED))
         web = (extra.get("web_wrapper") or None) if not self.rift and not self.linux else None
         if web:
             out.append(C.callout(ft.Column([
