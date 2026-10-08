@@ -278,7 +278,17 @@ class GameView:
                                     "crashes at start. It can't run until Valve updates the Frame's Android "
                                     "container.").format(version=android_version(min_sdk), api=min_sdk), "error",
                                  ft.Icons.PHONELINK_ERASE_ROUNDED))
-        if too_new and recipe.notes.startswith("Needs Android "):
+        web = (extra.get("web_wrapper") or None) if not self.rift and not self.linux else None
+        if web:
+            out.append(C.callout(ft.Column([
+                C.body(tr("This app is a website in an Android wrapper: it opens the site in Meta's browser, which "
+                          "the Frame doesn't have, so there's no game in it to port. Open the website in a browser "
+                          "instead."), T.TEXT)]
+                + ([C.meta(web["url"], T.TEXT_2, selectable=True)] if web.get("url") else []), spacing=T.px(4)),
+                "error", ft.Icons.LANGUAGE_ROUNDED))
+        static = " ".join(engine.blocker_notes(library.analysis_from_dict(g["analysis"]))) \
+            if (too_new or web) else ""
+        if static and recipe.notes.strip() == static:
             pass  # the recipe's note says the same (shown above)
         elif recipe.status == "unsupported":
             out.append(C.callout(recipe.notes or tr("This game can't run on the Steam Frame."), "error"))

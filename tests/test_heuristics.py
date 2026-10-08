@@ -84,3 +84,11 @@ def test_newer_android_than_the_frames_is_unsupported():
     for ok in (None, 23, 29, 32):
         _, r = suggest(extra={"size": 1, "min_sdk": ok})
         assert r.status != "unsupported" and "Needs Android" not in r.notes
+
+
+def test_web_wrapper_is_unsupported():
+    """GitHub #86: a Trusted Web Activity opens a website in Meta's browser; there's nothing to port."""
+    _, r = suggest(extra={"size": 1, "web_wrapper": {"url": "https://mahjong-vr.pages.dev/"}})
+    assert r.status == "unsupported" and "open https://mahjong-vr.pages.dev/ in a browser" in r.notes
+    _, r = suggest(extra={"size": 1, "web_wrapper": {"url": None}})
+    assert r.status == "unsupported" and "website" in r.notes

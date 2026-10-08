@@ -176,3 +176,14 @@ def test_android_too_new_signatures():
         r = triage(line + "\n", "EXITED")
         assert [f.id for f in r.findings] == ["android-too-new"] and r.verdict == "fail"
     assert not triage("E AndroidRuntime: java.lang.NoClassDefFoundError: Lcom/example/Foo;\n", "EXITED").findings
+
+
+def test_web_wrapper_signature():
+    """GitHub #86 (Mahjong Table VR): a TWA looking for Meta's browser."""
+    log = ("10-06 18:02:11.100  3301  3301 D TWALauncherActivity: Using URL from Manifest "
+           "(https://mahjong-vr.pages.dev/).\n"
+           "10-06 18:02:11.120  3301  3301 D TwaLauncher: Creating TwaLauncher for com.oculus.browser\n"
+           "10-06 18:02:11.130  3301  3301 W PackageIdentity: android.content.pm.PackageManager$"
+           "NameNotFoundException: com.oculus.browser\n")
+    r = triage(log, "EXITED")
+    assert {f.id for f in r.findings} == {"web-wrapper"} and r.verdict == "fail"

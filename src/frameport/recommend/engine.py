@@ -80,7 +80,7 @@ def suggest(analysis: Analysis, use_catalog: bool = True) -> Recipe:
             recipe.status = "unsupported"
             recipe.notes = f"No 64-bit ARM code ({', '.join(analysis.abis)}): the Steam Frame can't run it."
         if not rift:
-            _android_version(analysis, recipe)
+            _static_blockers(analysis, recipe)
             _non_quest(analysis, recipe)
     if not rift and not entry and (analysis.extra or {}).get("frame_patched"):
         # already has FramePort's adapter (e.g. a PATCHED/ build): installing it unchanged is the safe default
@@ -190,9 +190,23 @@ def android_version_note(analysis: Analysis) -> str | None:
             "It can't run until Valve updates the Frame's Android container.")
 
 
-def _android_version(analysis: Analysis, recipe: Recipe) -> None:
-    note = android_version_note(analysis)
-    if note:
+def web_wrapper_note(analysis: Analysis) -> str | None:
+    """A Trusted Web Activity: the APK only opens a website in Meta's browser (analysis.detect.web_wrapper)."""
+    ww = (analysis.extra or {}).get("web_wrapper")
+    if not ww:
+        return None
+    where = f"open {ww['url']} in a browser instead" if ww.get("url") else "open the website in a browser instead"
+    return (f"This app is a website in an Android wrapper (Trusted Web Activity): it opens the site in Meta's "
+            f"browser, which the Frame doesn't have, so there's no game in the APK to port; {where}.")
+
+
+def blocker_notes(analysis: Analysis) -> list[str]:
+    """Reasons read from the APK why it can't run on the Frame (whatever the recipe says)."""
+    return [n for n in (android_version_note(analysis), web_wrapper_note(analysis)) if n]
+
+
+def _static_blockers(analysis: Analysis, recipe: Recipe) -> None:
+    for note in blocker_notes(analysis):
         recipe.status = "unsupported"
         recipe.notes = _add(recipe.notes, note)
 
