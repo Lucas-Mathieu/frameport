@@ -80,9 +80,10 @@ class UnityOculusCheck(Patch):
                    "libunity.so at \"android\", which always exists. Games on Unity's built-in VR (2017–2018, and 2019 "
                    "without the Oculus XR Plugin) also get the frame wait their legacy frame loop never makes "
                    "(libfp_ovrp.so calls ovrp_WaitToBeginFrame before ovrp_Update2; without it no frame starts, the "
-                   "dashboard freezes or the GPU hangs), and its physics-step pose update is held back (on the Frame it "
-                   "located the controllers in the past: the hands lagged, e.g. Sniper Elite VR). The shim also counts a newly pressed trigger or A/B/X/Y as a "
-                   "mouse click (Input.GetMouseButtonDown), which Go-era screens wait for (e.g. Accounting+'s motion "
+                   "dashboard freezes or the GPU hangs), and its physics-step pose update is held back (on the Frame "
+                   "it located the controllers in the past: the hands lagged, e.g. Sniper Elite VR). The shim also "
+                   "counts a newly pressed trigger or A/B/X/Y as a mouse click (Input.GetMouseButtonDown), which "
+                   "Go-era screens wait for (e.g. Accounting+'s motion "
                    "warning) and which Lepton never delivers.")
     order = 45
     # 2: frame wait also for Unity 2019 without the Oculus XR Plugin; 3: controller presses as mouse clicks
