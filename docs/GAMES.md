@@ -49,6 +49,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | NOPE CHALLENGE | Quest | ✅ Works |  |
 | palazzo_santacruz | Quest | ✅ Works |  |
 | Path of the Warrior | Quest | ✅ Works |  |
+| Pistol Whip | Quest | ✅ Works |  |
 | PowerWash Simulator VR | Quest | ✅ Works |  |
 | QuestCraft | Quest | ✅ Works |  |
 | Retronika | Quest | ✅ Works |  |
