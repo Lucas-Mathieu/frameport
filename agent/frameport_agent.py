@@ -22,6 +22,7 @@ PC VR (Oculus Rift) games packed for the Frame (id "rift.<slug>"), run by Proton
     <dest>/<id>/revive/                          Revive (ReviveInjector.exe + DLLs)
     <dest>/<id>/compatdata/                      Proton prefix = saves (kept across reinstalls), launch.log
 """
+import base64
 import fcntl
 import glob
 import hashlib
@@ -37,7 +38,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 63
+AGENT_VERSION = 64
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -1034,7 +1035,7 @@ def shortcut_args(pkg):
     """(exe, title, start dir, icon, tag, tags, openvr) of an installed game's shortcut."""
     anchor = os.path.join(ANCHORS, pkg)
     dep = json.load(open(os.path.join(anchor, "deployment.json")))
-    icon = next(iter(glob.glob(os.path.join(anchor, "artwork/icon.*"))), "")
+    icon = app_icon_for(dep, anchor, steam=True)[0]  # a Linux app's own icon unless the user chose one
     flat = dep.get("vr") is False
     kind = dep.get("kind")
     tag = ("Windows game on Frame" if flat else "PC VR on Frame") if kind == "pcvr" else \
@@ -1107,6 +1108,10 @@ def _shortcuts_worker(payload):
     args = json.loads(payload)
     result = {"state": "done", "added": [], "errors": [], "finished": None}
     os.makedirs(os.path.dirname(STATUS_FILE), exist_ok=True)
+    try:  # new art (e.g. the user's own icon) also reaches Linux apps' Desktop Mode entries
+        refresh_desktop_entries()
+    except Exception:  # noqa: BLE001
+        pass
     try:
         users = library_users()
         # games Steam only knows through their devkit entry (this Frame's Steam drops FramePort's shortcuts.vdf
@@ -3107,6 +3112,10 @@ def cmd_finalize_linux(args):
            "files": {"app": want or {}}, "agent_version": AGENT_VERSION, "time": time.time()}
     with open(os.path.join(anchor, "deployment.json"), "w") as f:
         json.dump(dep, f, indent=2)
+    try:  # the app's own icon (GitHub #99), found again for every install: a new version may bring another
+        own_icon = ensure_app_icon(dep, anchor, refresh=True)["icon"]
+    except OSError:
+        own_icon = None
     desktop = None
     try:
         if dep["desktop_entry"]:
@@ -3116,7 +3125,7 @@ def cmd_finalize_linux(args):
     except OSError:
         pass
     return {"ok": True, "base": base, "appid": appid, "moved_files": moved, "missing_libraries": missing,
-            "desktop_entry": desktop}
+            "desktop_entry": desktop, "app_icon": app_icon_result(own_icon)}
 
 
 def write_linux_launcher(anchor, base, pkg, title, exe_rel, appimage, prefix, env):
@@ -3137,6 +3146,196 @@ def write_linux_launcher(anchor, base, pkg, title, exe_rel, appimage, prefix, en
         f.write(text)
     os.chmod(path + ".tmp", 0o755)
     os.replace(path + ".tmp", path)
+
+
+# ------------------------------------------------------------------------------------------ Linux apps' own icons
+# The icon an AppImage or app folder brings (GitHub #99): its .DirIcon, else the Icon= of its .desktop file, looked up
+# next to it, in usr/share/icons/hicolor/<size>/apps and usr/share/pixmaps. Copied to <anchor>/artwork/app-icon.<ext>
+# and used for the Desktop Mode entry and the Steam shortcut unless the user chose an icon on the PC: the PC writes
+# what the art set's icon is into artwork/.icon-source ("custom" = the user's pick or store art, "app" = the app's own,
+# "generated" = FramePort's placeholder). Never reads outside the app's folder (symlinks are resolved and checked).
+APP_ICON = "app-icon"
+ICON_SOURCE = ".icon-source"
+APP_ICON_MAX = 4 << 20
+APP_ICON_SEND = 1 << 20  # the PNG goes back to the PC (library artwork) up to this size
+ICON_EXTS = (".png", ".svg")
+
+
+def _real_file_in(root, path):
+    """The real path of `path` when it is a file inside `root` (symlinks resolved), else None."""
+    real_root = os.path.realpath(root)
+    real = os.path.realpath(path)
+    if real.startswith(real_root + os.sep) and os.path.isfile(real):
+        return real
+    return None
+
+
+def icon_format(path):
+    """("png", width) or ("svg", 0) by content, None for anything else (xpm, ico, unreadable)."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(1024)
+    except OSError:
+        return None
+    if head[:8] == b"\x89PNG\r\n\x1a\n" and len(head) >= 24:
+        return "png", struct.unpack(">I", head[16:20])[0]
+    if b"<svg" in head:
+        return "svg", 0
+    return None
+
+
+def desktop_fields(path):
+    """The [Desktop Entry] group of a .desktop file as {key: value} (localised keys left out)."""
+    out, group = {}, None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("["):
+                    group = line
+                elif group == "[Desktop Entry]" and "=" in line and not line.startswith("#"):
+                    k, v = line.split("=", 1)
+                    if "[" not in k:
+                        out.setdefault(k.strip(), v.strip())
+    except OSError:
+        pass
+    return out
+
+
+def app_desktop_file(root, appimage):
+    """The app's own .desktop file: an AppImage's top-level one, else the first within three folder levels."""
+    if appimage:
+        found = sorted(glob.glob(os.path.join(glob.escape(root), "*.desktop")))
+    else:
+        found = []
+        for dirpath, dirs, files in os.walk(root):
+            depth = 0 if dirpath == root else os.path.relpath(dirpath, root).count(os.sep) + 1
+            dirs[:] = sorted(dirs) if depth < 3 else []
+            found += [os.path.join(dirpath, n) for n in sorted(files) if n.endswith(".desktop")]
+    for path in found:
+        if _real_file_in(root, path):
+            return path
+    return None
+
+
+def _icon_candidates(base, name):
+    """Files that may be the icon called `name` (an Icon= value) under the folder `base`."""
+    if not name or os.path.isabs(name) or ".." in name.split("/"):
+        return []
+    stem = name[:-4] if name.lower().endswith(ICON_EXTS + (".xpm",)) else name
+    out = [os.path.join(base, name)] if "/" in name or name != stem else []
+    if "/" in name:
+        return out
+    esc = glob.escape
+    for share in (os.path.join(base, "usr", "share"), os.path.join(base, "share")):
+        for ext in ICON_EXTS:
+            out += glob.glob(os.path.join(esc(share), "icons", "hicolor", "*", "apps", esc(stem) + ext))
+            out.append(os.path.join(share, "pixmaps", stem + ext))
+    out += [os.path.join(base, stem + ext) for ext in ICON_EXTS]
+    return out
+
+
+def find_app_icon(root, appimage):
+    """{"icon": real path or None, "wmclass": the .desktop file's StartupWMClass or None} of an app's folder (an
+    AppImage's squashfs-root). The icon: the biggest PNG when it is at least 128 px, else an SVG, else the biggest
+    PNG; .DirIcon (an AppImage's own icon, often a symlink) counts like the .desktop file's Icon=."""
+    if not os.path.isdir(root):
+        return {"icon": None, "wmclass": None}
+    desktop = app_desktop_file(root, appimage)
+    fields = desktop_fields(desktop) if desktop else {}
+    paths = [os.path.join(root, ".DirIcon")] if appimage else []
+    bases = [root]
+    if desktop:  # a folder app's .desktop file may sit in a subfolder with the icon next to it
+        d = os.path.dirname(desktop)
+        while d.startswith(root + os.sep):
+            bases.append(d)
+            d = os.path.dirname(d)
+    for base in bases:
+        paths += _icon_candidates(base, fields.get("Icon", ""))
+    pngs, svgs, seen = [], [], set()
+    for p in paths:
+        real = _real_file_in(root, p)
+        if not real or real in seen:
+            continue
+        seen.add(real)
+        try:
+            if os.path.getsize(real) > APP_ICON_MAX:
+                continue
+        except OSError:
+            continue
+        fmt = icon_format(real)
+        if fmt and fmt[0] == "png":
+            pngs.append((fmt[1], real))
+        elif fmt:
+            svgs.append(real)
+    best = max(pngs, default=None, key=lambda t: t[0])
+    icon = best[1] if best and best[0] >= 128 else svgs[0] if svgs else best[1] if best else None
+    return {"icon": icon, "wmclass": fields.get("StartupWMClass") or None}
+
+
+def linux_app_root(dep):
+    app = os.path.join(dep["base"], "app")
+    return os.path.join(app, "squashfs-root") if dep.get("appimage") else app
+
+
+def ensure_app_icon(dep, anchor, refresh=False):
+    """The Linux app's own icon in <anchor>/artwork/app-icon.<ext> (copied from its files when missing, or always with
+    `refresh`, e.g. after an install), plus its StartupWMClass: {"icon": path or None, "wmclass": ...}."""
+    found = find_app_icon(linux_app_root(dep), dep.get("appimage"))
+    art = os.path.join(anchor, "artwork")
+    have = sorted(glob.glob(os.path.join(glob.escape(art), APP_ICON + ".*")))
+    icon = have[0] if have else None
+    if found["icon"] and (refresh or not icon):
+        dst = os.path.join(art, f"{APP_ICON}.{icon_format(found['icon'])[0]}")
+        os.makedirs(art, exist_ok=True)
+        for p in have:
+            if p != dst:
+                os.remove(p)
+        shutil.copyfile(found["icon"], dst + ".tmp")
+        os.replace(dst + ".tmp", dst)
+        icon = dst
+    elif refresh and not found["icon"]:
+        for p in have:
+            os.remove(p)
+        icon = None
+    return {"icon": icon, "wmclass": found["wmclass"]}
+
+
+def icon_source(anchor):
+    """What the art set's icon is, as the PC wrote it ("custom", "app", "generated"), or None (older PC app)."""
+    try:
+        with open(os.path.join(anchor, "artwork", ICON_SOURCE), encoding="utf-8") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def app_icon_for(dep, anchor, steam=False):
+    """(icon file, StartupWMClass) for a game's Desktop Mode entry / Steam shortcut: the user's chosen icon (PC:
+    "custom") > a Linux app's own icon > the art set's icon (FramePort's placeholder). Steam gets PNGs only."""
+    art_icon = next(iter(sorted(glob.glob(os.path.join(glob.escape(anchor), "artwork", "icon.*")))), "")
+    if dep.get("kind") != "linux" or not dep.get("base"):
+        return art_icon, None
+    try:
+        own = ensure_app_icon(dep, anchor)
+    except OSError:
+        return art_icon, None
+    if icon_source(anchor) == "custom" and art_icon:
+        return art_icon, own["wmclass"]
+    if own["icon"] and (not steam or own["icon"].endswith(".png")):
+        return own["icon"], own["wmclass"]
+    return art_icon, own["wmclass"]
+
+
+def app_icon_result(icon):
+    """finalize_linux's report of the app's own icon; a PNG comes back (base64) for the PC's library artwork."""
+    if not icon:
+        return None
+    out = {"file": os.path.basename(icon), "size": os.path.getsize(icon)}
+    if icon.endswith(".png") and out["size"] <= APP_ICON_SEND:
+        with open(icon, "rb") as f:
+            out["png"] = base64.b64encode(f.read()).decode("ascii")
+    return out
 
 
 # ------------------------------------------------------------------------------------------ Desktop Mode entries
@@ -3167,7 +3366,7 @@ def desktop_file_name(pkg):
 
 
 def desktop_entry_text(dep, anchor):
-    icon = next(iter(sorted(glob.glob(os.path.join(anchor, "artwork", "icon.*")))), "")
+    icon, wmclass = app_icon_for(dep, anchor)
     tags = {str(t).lower() for t in dep.get("tags") or []}
     category = "Game;" if tags & GAME_TAGS else "Utility;"
     lines = ["[Desktop Entry]", "Type=Application", f"Name={desktop_value(dep.get('title') or dep['package'])}",
@@ -3176,6 +3375,8 @@ def desktop_entry_text(dep, anchor):
              f"Path={desktop_value(anchor)}", "Terminal=false", f"Categories={category}"]
     if icon:
         lines.append(f"Icon={desktop_value(icon)}")
+    if wmclass:  # KDE's task bar groups the app's window under this entry (and shows its icon)
+        lines.append(f"StartupWMClass={desktop_value(wmclass)}")
     lines.append(f"{DESKTOP_KEY}={dep['package']}")
     return "\n".join(lines) + "\n"
 

@@ -264,6 +264,7 @@ def install_linux(frame: Frame, plan: LinuxPlan, reporter: Reporter) -> dict:
                          executables=executables, tags=_tags(plan.package), dest=plan.dest,
                          desktop_entry=plan.desktop_entry, timeout=900)
     reporter.log(f"installed at {result['base']} (Steam shortcut id {result['appid']})")
+    apply_app_icon(frame, plan.package, prep.get("anchor"), result, reporter)
     if result.get("desktop_entry"):
         reporter.check("Desktop Mode entry", True, "in the application menu"
                        + (" and on the desktop" if result["desktop_entry"].get("desktop") else ""))
@@ -432,7 +433,44 @@ def upload_steam_art(frame: Frame, package: str, base: str, reporter: Reporter) 
     frame.run(f"rm -rf {sh_quote(remote_art)} && mkdir -p {sh_quote(remote_art)}")
     for kind, f in art.items():
         frame.put(f, posixpath.join(remote_art, f"{kind}{f.suffix}"), resume=False)
+    send_icon_source(frame, package, remote_art)
     reporter.check("Steam artwork", bool(art) or None, ", ".join(sorted(art)) or "none found")
+
+
+def send_icon_source(frame: Frame, package: str, remote_art: str) -> None:
+    """Tell the agent what the art set's icon is (artwork/.icon-source, agent v64): a Linux app's own icon is used
+    for its Desktop Mode entry and Steam shortcut unless the user chose one ("custom")."""
+    from ..artwork.sources import icon_source
+
+    frame.run(f"printf %s {sh_quote(icon_source(package))} > {sh_quote(posixpath.join(remote_art, '.icon-source'))}")
+
+
+def apply_app_icon(frame: Frame, package: str, anchor: str | None, result: dict, reporter: Reporter) -> None:
+    """A Linux app's own icon the agent found in its files (GitHub #99) becomes the library's icon when the game has
+    none (no user pick, no store icon); the Frame's art set is then sent again so Steam's art shows it too."""
+    import base64
+
+    from ..artwork import sources, steam
+
+    icon = result.get("app_icon") or {}
+    if icon:
+        reporter.log(f"the app's own icon: {icon.get('file')}")
+    if not icon.get("png") or not anchor:
+        return
+    try:
+        stored = sources.apply_app_icon(package, base64.b64decode(icon["png"]))
+        if not stored:
+            return
+        steam.ensure_cover(package)
+        art = steam.steam_set_for(package)
+    except Exception as exc:  # noqa: BLE001 - artwork is optional
+        reporter.log(f"the app's own icon wasn't used for the library: {exc}")
+        return
+    remote = posixpath.join(anchor, "artwork")
+    for kind, f in art.items():
+        frame.put(f, posixpath.join(remote, f"{kind}{f.suffix}"), resume=False)
+    send_icon_source(frame, package, remote)
+    reporter.check("App icon", True, "the app's own icon is used for the library")
 
 
 def update_steam_art(frame: Frame, package: str, reporter: Reporter) -> dict:
@@ -453,6 +491,7 @@ def update_steam_art(frame: Frame, package: str, reporter: Reporter) -> dict:
     frame.run(f"rm -rf {sh_quote(remote)} && mkdir -p {sh_quote(remote)}")
     for kind, f in art.items():
         frame.put(f, posixpath.join(remote, f"{kind}{f.suffix}"), resume=False)
+    send_icon_source(frame, package, remote)
     reporter.check("Steam artwork", True, ", ".join(sorted(art)))
     return add_to_steam(frame, [package], reporter)
 

@@ -353,8 +353,11 @@ def add_linux_app(path: Path | str, reporter: Reporter | None = None, exe: str |
         from .artwork import fetch
 
         fetch.artwork_dir(package)
-        from .artwork import steam
+        from .artwork import sources, steam
 
+        icon = None if info["files"] else linux.find_icon(root)  # a lone AppImage's icon comes from the Frame
+        if icon:
+            sources.apply_app_icon(package, icon.read_bytes())
         steam.ensure_cover(package)  # placeholder art (name on a colour) until the user picks some
     except Exception:  # noqa: BLE001 - artwork is optional
         pass

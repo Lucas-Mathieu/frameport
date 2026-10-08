@@ -143,6 +143,18 @@
   Plasma's launcher exits right after starting the program, so with `FRAMEPORT_DESKTOP=1` the Linux launcher skips
   its "Steam parent gone → end the app" watchdog and keeps the desktop's DISPLAY/WAYLAND_DISPLAY instead of taking
   gamescope's from Steam. Not yet tried from the Frame's Desktop Mode.
+- Linux apps' own icons (GitHub #99, agent v64): finalize_linux (and every refresh of the menu entries) copies the
+  app's icon to `<anchor>/artwork/app-icon.{png,svg}`: an AppImage's `squashfs-root/.DirIcon` (usually a symlink),
+  else the `Icon=` of its top-level `.desktop` file (a folder app: the first `.desktop` within 3 levels) looked up
+  next to it, in `(usr/)share/icons/hicolor/*/apps/` and `(usr/)share/pixmaps/`; the biggest PNG ≥128 px, else an
+  SVG, else the biggest PNG. Symlinks are resolved and must stay inside the app folder; absolute and `../` names
+  are ignored. Precedence for the menu entry's `Icon=` and the Steam shortcut's icon: the user's chosen/store icon
+  (`artwork/.icon-source` = `custom`, written by the PC with every art upload) > the app's own (Steam: PNG only) >
+  FramePort's placeholder (`artwork/icon.*`). `StartupWMClass=` is copied from the app's `.desktop` file (Plasma's
+  task bar matches the window to the entry). A PNG ≤1 MiB goes back to the PC (finalize result `app_icon.png`,
+  base64) and becomes the library's icon when the game has none and nothing was picked (`.app-icon` marker = its
+  sha256, no `.picked`); folder apps get it on the PC at add time (`analysis/linux.find_icon`). Not yet seen in
+  Desktop Mode on the device.
 
 ## Video of the headset view (surveyed 2026-10-05; used by the Live view tab)
 - `steamvr-v4l2cam.service` (user unit, part of gamescope-session.target, `Restart=always`) runs SteamVR's
