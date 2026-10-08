@@ -137,6 +137,12 @@
 - Processes started from Steam (Konsole, SSH sessions?) share steam.service's cgroup: use `systemd-run --user`.
 - SSH: `sshd` must be enabled (`sudo systemctl enable --now sshd`), which needs a user password (`passwd`).
 - mDNS: avahi-daemon runs by default; hostname `frame` → `frame.local`.
+- Desktop Mode menu entries (GitHub #84, agent v63): Linux apps get `~/.local/share/applications/frameport-<slug>.desktop`
+  (+ an executable copy in `~/Desktop` when that folder exists; Plasma starts executable `.desktop` files there
+  without a trust prompt), `Exec=env FRAMEPORT_DESKTOP=1 "<anchor>/launch.sh"`, marked `X-FramePort-Package=<pkg>`.
+  Plasma's launcher exits right after starting the program, so with `FRAMEPORT_DESKTOP=1` the Linux launcher skips
+  its "Steam parent gone → end the app" watchdog and keeps the desktop's DISPLAY/WAYLAND_DISPLAY instead of taking
+  gamescope's from Steam. Not yet tried from the Frame's Desktop Mode.
 
 ## Video of the headset view (surveyed 2026-10-05; used by the Live view tab)
 - `steamvr-v4l2cam.service` (user unit, part of gamescope-session.target, `Restart=always`) runs SteamVR's

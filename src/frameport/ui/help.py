@@ -137,6 +137,9 @@ HELP: dict[str, str] = _Translated({
     "move_game": "Copies the game's files, data and saves to the other drive, checks the copy and then removes the "
                  "old one. The Steam entry, settings and saves stay valid. The game must be closed. A game on a "
                  "microSD card only starts while the card is inserted.",
+    "desktop_entry": "Adds the app to Desktop Mode's application menu and puts an icon on its desktop. Some apps work "
+                     "better there, with a mouse and keyboard, than in Gaming Mode, where Steam Input turns the "
+                     "controllers into a gamepad.",
     "adapter_settings": "Sharpness, refresh rate, controllers, menus and more for this game. Changes are used the "
                         "next time it starts.",
     "frame_summary": "Quest ✓: Lepton is installed, so Quest games can run. PC VR ✓: Proton is installed, so PC VR "

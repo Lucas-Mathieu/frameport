@@ -111,6 +111,14 @@ def test_drive_helpers():
     assert drives.is_on({"package": "old agent"}, d_int)
 
 
+def test_target_switches_a_desktop_entry(monkeypatch):
+    t = FrameLeptonTarget(FrameTarget("frame.local", "steamos", 22))
+    t.frame = FakeFrame({"desktop_entry": lambda a: {"enabled": a["enabled"]}})
+    monkeypatch.setattr(t, "connect", lambda: t)
+    assert t.set_desktop_entry("linux.tool", False) == {"enabled": False}
+    assert t.frame.calls == [("desktop_entry", {"package": "linux.tool", "enabled": False})]
+
+
 def test_pipeline_passes_the_desktop_entry_choice(monkeypatch):
     from frameport import pipeline
 

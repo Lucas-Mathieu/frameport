@@ -139,6 +139,11 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
     OpenXR, source) instead of recipe/patches, `C.missing_libraries` callout (Frame deployment, else last install);
     no Analyze/Rebuild/recipe/share/Game settings actions, Frame only; platform "Linux" badge + library filter; Steam
     tags "Linux app on Frame"/"Linux"; `_follow_catalog` skips them; local files of a lone AppImage = the file only.
+    Desktop Mode entries (GitHub #84, agent v63): finalize_linux writes `frameport-<slug>.desktop` to
+    ~/.local/share/applications (+ ~/Desktop if it exists; `X-FramePort-Package` marks ours), launch.sh with
+    `FRAMEPORT_DESKTOP=1` skips the Steam-parent watchdog and Steam's display; ensure_host_fixes refreshes entries
+    (older installs, stale ones removed), uninstall/purge remove them. Per app: library entry field `desktop_entry`
+    (default on; patches don't apply to Linux apps) → game page switch → agent `desktop_entry`. Untested on device.
   - Quest/Rift twins stay separate entries, shown and named in Steam "Title (Quest)"/"(Rift)" (`core/titles.py`).
   - `Recipe.as_is` = install unchanged (pre-patched libraries): `pipeline.prepare_as_is`; auto for APKs that already
     contain FrameBridge (`frame_patched`). For Rift it changes nothing (the dump is never modified; the Frame copy

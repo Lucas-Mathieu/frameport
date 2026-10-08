@@ -466,11 +466,27 @@ class GameView:
             C.kv(tr("VR (OpenXR)"), tr("Yes: uses the Frame's OpenXR runtime") if vr else
                  tr("No: a 2D app")),
             C.kv(tr("Source"), extra.get("source") or g.get("game_dir") or ""),
+            C.kv(tr("Desktop Mode"), C.switch(tr("In the menu and on the desktop"),
+                                              value=g.get("desktop_entry", True) is not False,
+                                              on_change=self.set_desktop_entry), "desktop_entry"),
         ]
         return C.section(tr("What FramePort will do"), C.card(ft.Column([
             ft.Row([ft.Icon(ft.Icons.TERMINAL_ROUNDED, color=T.PC, size=T.px(18)),
                     C.body(lead, T.TEXT, weight=ft.FontWeight.W_500, expand=True)], spacing=T.S2),
             *rows], spacing=T.S3)), help="linux_app")
+
+    def set_desktop_entry(self, e) -> None:
+        """A Linux app's Desktop Mode entry (GitHub #84): kept with the game, applied on the Frame at once when it's
+        installed there (else at the next install)."""
+        app, pkg, on = self.app, self.package, bool(e.control.value)
+
+        def work():
+            library.upsert_game(pkg, desktop_entry=on)
+            if app.frame_state == "connected" and app.target and \
+                    C.install_state(self.g, app.frame_info) in ("installed", "outdated"):
+                app.target.set_desktop_entry(pkg, on)
+            app.toast(tr("Added to Desktop Mode") if on else tr("Removed from Desktop Mode"))
+        app.run_bg(work)
 
     def recipe_summary(self) -> ft.Control:
         if self.linux:

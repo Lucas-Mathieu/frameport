@@ -222,6 +222,9 @@ work like for other games.
 - The app must bring the libraries SteamOS doesn't have (checked for arm64 builds; x86_64 builds use FEX's x86
   system, which has glibc and Mesa, and aren't checked ahead). If some are missing, the install reports them and the game
   page lists them: look for a build that includes them.
+- **Desktop Mode:** Linux apps also appear in Desktop Mode's application menu and as an icon on its desktop. Some
+  apps work better there, with a mouse and keyboard, than in Gaming Mode (where Steam Input turns the controllers into
+  a gamepad). Switch it off per app on the game page (**Desktop Mode**).
 - From the command line: `frameport add-linux <AppImage, folder or archive> [--exe <program>]`.
 
 ## Files on the Frame (videos, documents, mods, saves)
