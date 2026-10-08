@@ -39,8 +39,10 @@ class FrameLeptonTarget(Target):
     def installed(self) -> list[dict]:
         return self.connect().frame.agent("list_installed")["games"]
 
-    def install(self, package, title, apk: Path, data_dir, recipe: Recipe, reporter: Reporter, apk_only=False):
-        plan = installer.InstallPlan(package, title, apk, data_dir, recipe, apk_only, dest=self.install_dest())
+    def install(self, package, title, apk: Path, data_dir, recipe: Recipe, reporter: Reporter, apk_only=False,
+                data_files=None):
+        plan = installer.InstallPlan(package, title, apk, data_dir, recipe, apk_only, dest=self.install_dest(),
+                                     data_files=data_files)
         return installer.install(self.connect().frame, plan, reporter)
 
     def add_to_library(self, packages, reporter):

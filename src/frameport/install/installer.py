@@ -10,7 +10,7 @@ from pathlib import Path
 from ..artwork import fetch as artwork
 from ..build import sha256
 from ..core.events import Reporter
-from ..core.models import Recipe
+from ..core.models import Recipe, data_manifest
 from ..frame.connection import Frame, sh_quote
 from ..patches import base
 from ..patches.settings import adapter_settings
@@ -25,6 +25,7 @@ class InstallPlan:
     recipe: Recipe
     apk_only: bool = False  # reuse the data already on the Frame
     dest: str | None = None
+    data_files: list[str] | None = None  # only these files of data_dir (SourceGame.data_files); None = all of it
 
 
 def install_context(recipe: Recipe) -> base.InstallContext:
@@ -38,10 +39,8 @@ def install_context(recipe: Recipe) -> base.InstallContext:
     return ctx
 
 
-def local_data_manifest(data_dir: Path | None) -> dict[str, int]:
-    if not data_dir or not data_dir.is_dir():
-        return {}
-    return {p.relative_to(data_dir).as_posix(): p.stat().st_size for p in sorted(data_dir.rglob("*")) if p.is_file()}
+def local_data_manifest(data_dir: Path | None, files: list[str] | None = None) -> dict[str, int]:
+    return data_manifest(data_dir, files)
 
 
 class Speed:
@@ -74,7 +73,7 @@ def install(frame: Frame, plan: InstallPlan, reporter: Reporter) -> dict:
     if not prep.get("lepton"):
         raise RuntimeError("Lepton is not installed on the Frame (Setup → Install Lepton)")
     incoming = prep["incoming"]
-    manifest = {} if plan.apk_only else local_data_manifest(plan.data_dir)
+    manifest = {} if plan.apk_only else local_data_manifest(plan.data_dir, plan.data_files)
     existing = prep["existing_obb"]
     to_send = [rel for rel, size in manifest.items() if existing.get(rel) != size]
     need = sum(manifest[r] for r in to_send) + (0 if prep["same_apk"] else plan.apk.stat().st_size)

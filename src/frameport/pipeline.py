@@ -475,12 +475,13 @@ def add_game(src: SourceGame, reporter: Reporter | None = None) -> dict:
     if reporter:
         reporter.log(f"analyzing {src.apk.name}")
     a = analyze(src.apk, data_bytes=src.data_bytes())
-    a.extra["lang_packs"] = langpacks.find_tags(src.data_dir)
-    a.extra["asset_files"] = langpacks.find_content_files(src.data_dir)
+    a.extra["lang_packs"] = langpacks.find_tags(_data_folder(src))
+    a.extra["asset_files"] = langpacks.find_content_files(_data_folder(src))
     recipe = engine.suggest(a)
     return library.upsert_game(
         a.package, title=recipe.title or a.label, name=src.name, apk=str(src.apk),
-        data_dir=str(src.data_dir) if src.data_dir else None, data_bytes=src.data_bytes(), origin=str(src.origin),
+        data_dir=str(src.data_dir) if src.data_dir else None, data_files=src.data_files, data_bytes=src.data_bytes(),
+        origin=str(src.origin),
         analysis=a.to_dict(), recipe=library.recipe_to_dict(recipe), suggested=library.recipe_to_dict(recipe),
         status=recipe.status,
     )
@@ -500,8 +501,8 @@ def _analyze_entry(entry: dict, reporter: Reporter | None = None):
     if reporter:
         reporter.log(f"analyzing {src.apk.name}")
     a = analyze(src.apk, data_bytes=src.data_bytes())
-    a.extra["lang_packs"] = langpacks.find_tags(src.data_dir)
-    a.extra["asset_files"] = langpacks.find_content_files(src.data_dir)
+    a.extra["lang_packs"] = langpacks.find_tags(_data_folder(src))
+    a.extra["asset_files"] = langpacks.find_content_files(_data_folder(src))
     return a
 
 
@@ -576,10 +577,24 @@ def refresh_analyses(packages: list[str] | None = None, reporter: Reporter | Non
     return done
 
 
+def _data_folder(src: SourceGame) -> Path | None:
+    """The data folder when all of it is the game's data (language packs and content files are looked for there);
+    None when only expansion files found by name are (that folder also holds other things, e.g. the APK)."""
+    return None if src.data_files is not None else src.data_dir
+
+
+def data_paths(entry: dict) -> list[Path]:
+    """A Quest game's data on this PC: its data folder, or only its expansion files when those were found by name."""
+    if not entry.get("data_dir"):
+        return []
+    d = Path(entry["data_dir"])
+    return [d / n for n in entry["data_files"]] if entry.get("data_files") is not None else [d]
+
+
 def source_of(entry: dict) -> SourceGame:
     return SourceGame(entry.get("name") or entry["package"], Path(entry["apk"]),
                       Path(entry["data_dir"]) if entry.get("data_dir") else None,
-                      Path(entry["origin"]) if entry.get("origin") else None)
+                      Path(entry["origin"]) if entry.get("origin") else None, data_files=entry.get("data_files"))
 
 
 def set_recipe(package: str, recipe: Recipe) -> None:
@@ -747,7 +762,8 @@ def install_game(package: str, target: Target, reporter: Reporter, apk_only: boo
         recipe = dataclasses.replace(recipe, patches=upstream.without_superseded(recipe.patches, b["superseded"]))
     data_dir = Path(entry["data_dir"]) if entry.get("data_dir") else None
     title = steam_title(entry)
-    result = target.install(package, title, apk, data_dir, recipe, reporter, apk_only)
+    result = target.install(package, title, apk, data_dir, recipe, reporter, apk_only,
+                            data_files=entry.get("data_files"))
     if add_to_library:
         target.add_to_library([package], reporter)
     _record_install(package, target.label, {"apk": str(apk), "result": result, "time": time.time()})
@@ -781,13 +797,14 @@ def local_game_files(package: str) -> list[Path]:
     elif is_linux(g):
         paths += linux_local_files(g)
     else:
-        paths += [Path(p) for p in (g.get("apk"), g.get("data_dir")) if p]
+        paths += [Path(g["apk"])] if g.get("apk") else []
+        paths += data_paths(g)
     b = g.get("build") or {}
     out = output_dir().resolve()
     paths += [Path(b[k]) for k in ("apk", "alt_apk") if b.get(k) and out in Path(b[k]).resolve().parents]
     others = [o for o in library.games() if o.get("package") != package]
     used = [Path(p).resolve() for o in others if not is_linux(o)
-            for p in (o.get("apk"), o.get("data_dir"), o.get("game_dir")) if p]
+            for p in (o.get("apk"), o.get("game_dir"), *data_paths(o)) if p]
     used += [p.resolve() for o in others if is_linux(o) for p in linux_local_files(o)]  # (lone AppImages: the file)
 
     def shared(p: Path) -> bool:  # the same path, a path inside it, or a folder around it belongs to another game

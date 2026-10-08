@@ -6,10 +6,20 @@ import pytest
 
 from frameport.sources import quest_dump
 
+IDS: dict[str, tuple[str, int]] = {}  # APK file name -> (package, versionCode) for names that don't say it
+
 
 @pytest.fixture(autouse=True)
 def package_from_file_name(monkeypatch):
-    monkeypatch.setattr(quest_dump, "_package_of", lambda apk: Path(apk).stem.split("_")[0])
+    """com.x.game.apk -> (com.x.game, None); com.x.game_5.apk -> (com.x.game, 5); else IDS."""
+    def ids(apk):
+        name = Path(apk).name
+        if name in IDS:
+            return IDS[name]
+        pkg, _, vc = Path(apk).stem.partition("_")
+        return pkg, int(vc) if vc.isdigit() else None
+    IDS.clear()
+    monkeypatch.setattr(quest_dump, "_apk_ids", ids)
 
 
 def apk(path: Path) -> Path:
@@ -81,6 +91,102 @@ def test_package_folder_without_obb_files_is_ignored_when_searched(tmp_path):
     (game / "saves" / "com.x.game").mkdir(parents=True)
     (game / "saves" / "com.x.game" / "save.dat").write_bytes(b"s")
     assert quest_dump.from_path(game / "apk").data_dir is None
+
+
+# ------------------------------------------------------------------ expansion files found by name (GitHub #85/#91)
+def test_obbs_next_to_the_apk_are_sent_alone(tmp_path):
+    """APK and OBBs in one folder: one game; only its own .obb files are its data (the APK, notes and other packages'
+    OBBs stay on the PC)."""
+    from frameport.install.installer import local_data_manifest
+
+    game = tmp_path / "Games" / "TRIANGLE"
+    apk(game / "com.x.game_7.apk")
+    obb(game, "main.7.com.x.game.obb")
+    obb(game, "patch.7.COM.X.GAME.obb")  # Windows copies change the case
+    obb(game, "main.3.com.y.other.obb")
+    (game / "readme.txt").write_text("hi")
+    found = quest_dump.scan(tmp_path / "Games")
+    assert len(found) == 1
+    g = found[0]
+    assert (g.name, g.data_dir, g.data_files) == ("TRIANGLE", game, ["main.7.com.x.game.obb", "patch.7.COM.X.GAME.obb"])
+    assert g.data_bytes() == 2
+    assert local_data_manifest(g.data_dir, g.data_files) == {"main.7.com.x.game.obb": 1, "patch.7.COM.X.GAME.obb": 1}
+    assert quest_dump.from_path(g.apk).data_files == g.data_files  # the APK file alone too
+
+
+def test_obb_folder_next_to_an_apk_folder_inside_a_package_folder(tmp_path):
+    """<package>/apk/x.apk + <package>/obb/main.N.<package>.obb: the obb folder isn't named after the package."""
+    root = tmp_path / "Quest"
+    apk(root / "com.x.game" / "apk" / "game.apk")
+    IDS["game.apk"] = ("com.x.game", 12)
+    obb(root / "com.x.game" / "obb", "main.12.com.x.game.obb")
+    found = quest_dump.scan(root)
+    assert len(found) == 1
+    g = found[0]
+    assert (g.origin, g.data_dir, g.data_files) == (root / "com.x.game", root / "com.x.game" / "obb", None)
+
+
+@pytest.mark.parametrize("obb_at", ["obbs", "obb/2026-10-07T21-11-04.426Z", "Android/obb/com.x.game", "."])
+def test_sidequest_backup_with_timestamped_apks(tmp_path, obb_at):
+    """SideQuest backups name APKs <timestamp>_<versionCode>.apk; where the OBB sits varies."""
+    root = tmp_path / "backups" / "com.x.game"
+    a = apk(root / "apks" / "2026-10-07T21-11-04.426Z_3244131.apk")
+    IDS[a.name] = ("com.x.game", 3244131)
+    obb(root / obb_at, "main.3244131.com.x.game.obb")
+    [g] = quest_dump.scan(tmp_path / "backups")
+    assert (g.apk, g.data_dir) == (a, root / obb_at)
+    # next to the apks folder: only the file
+    assert g.data_files == (["main.3244131.com.x.game.obb"] if obb_at == "." else None)
+
+
+def test_two_versions_side_by_side(tmp_path):
+    folder = tmp_path / "apks"
+    apk(folder / "com.x.game_5.apk")
+    apk(folder / "com.x.game_6.apk")
+    for name in ("main.5.com.x.game.obb", "main.6.com.x.game.obb", "patch.6.com.x.game.obb"):
+        obb(folder, name)
+    assert quest_dump.from_path(folder / "com.x.game_6.apk").data_files == ["main.6.com.x.game.obb",
+                                                                             "patch.6.com.x.game.obb"]
+    assert quest_dump.from_path(folder / "com.x.game_5.apk").data_files == ["main.5.com.x.game.obb"]
+    # a version without its own files: the newest older ones (expansion files keep their first versionCode)
+    assert quest_dump.find_data(folder, "com.x.game", 9)[1] == ["main.6.com.x.game.obb", "patch.6.com.x.game.obb"]
+    assert quest_dump.find_data(folder, "com.x.game", 1)[1] == ["main.6.com.x.game.obb", "patch.6.com.x.game.obb"]
+    assert quest_dump.find_data(folder, "com.x.game", None)[1] == ["main.6.com.x.game.obb", "patch.6.com.x.game.obb"]
+
+
+def test_the_folder_with_the_apks_own_version_wins(tmp_path):
+    game = tmp_path / "Game"
+    apk(game / "apk" / "com.x.game_2.apk")
+    obb(game / "old", "main.1.com.x.game.obb")
+    obb(game / "new", "main.2.com.x.game.obb")
+    g = quest_dump.from_path(game / "apk")
+    assert (g.data_dir, g.data_files) == (game / "new", None)
+
+
+def test_obbs_by_name_never_come_from_another_games_folder(tmp_path):
+    v1, v2 = tmp_path / "Game v1", tmp_path / "Game v2"
+    apk(v1 / "com.x.game_1.apk")
+    apk(v2 / "com.x.game_2.apk")
+    obb(v2, "main.2.com.x.game.obb")
+    found = {g.origin.name: g for g in quest_dump.scan(tmp_path)}
+    assert found["Game v1"].data_dir is None
+    assert (found["Game v2"].data_dir, found["Game v2"].data_files) == (v2, ["main.2.com.x.game.obb"])
+
+
+def test_deleting_local_files_takes_only_the_games_own_obbs(tmp_path):
+    """Uninstall → "also delete the files on this PC": a folder holding several games' APKs and OBBs stays."""
+    from frameport import pipeline
+    from frameport.core import library
+
+    shared = tmp_path / "Downloads"
+    for pkg in ("com.x.game", "com.y.other"):
+        apk(shared / f"{pkg}.apk")
+        obb(shared, f"main.1.{pkg}.obb")
+    for pkg in ("com.x.game", "com.y.other"):
+        g = quest_dump.from_path(shared / f"{pkg}.apk")
+        library.upsert_game(pkg, apk=str(g.apk), data_dir=str(g.data_dir), data_files=g.data_files)
+    assert set(pipeline.local_game_files("com.x.game")) == {shared / "com.x.game.apk", shared / "main.1.com.x.game.obb"}
+    assert pipeline.source_of(library.game("com.x.game")).data_files == ["main.1.com.x.game.obb"]
 
 
 # ------------------------------------------------------------------ a game that expects an OBB (GitHub #85)
