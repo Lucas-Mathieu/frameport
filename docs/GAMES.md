@@ -27,6 +27,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Dinosaur Island | Quest | ✅ Works |  |
 | Espire 2 | Quest | ✅ Works |  |
 | Genotype | Quest | ✅ Works |  |
+| GORN2 | Quest | ✅ Works |  |
 | H.U.N.T | Quest | ✅ Works |  |
 | I Am Cat | Quest | ✅ Works |  |
 | I Am Monkey | Quest | ✅ Works |  |
@@ -50,9 +51,11 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Path of the Warrior | Quest | ✅ Works |  |
 | PowerWash Simulator VR | Quest | ✅ Works |  |
 | QuestCraft | Quest | ✅ Works |  |
+| Richie's Plank Experience | Quest | ✅ Works |  |
 | Rick and Morty: Virtual Rick-ality | PC VR | ✅ Works |  |
 | Riven | Quest | ✅ Works |  |
 | Robo Recall | Quest | ✅ Works |  |
+| RUINSMAGUS | Quest | ✅ Works |  |
 | Sniper Elite VR: Winter Warrior | Quest | ✅ Works |  |
 | Space Pirate Trainer Quest | Quest | ✅ Works |  |
 | Stremio | Quest | ✅ Works |  |
@@ -62,6 +65,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | The Boys VR | Quest | ✅ Works |  |
 | The Climb 2 | Quest | ✅ Works |  |
 | The Room VR | Quest | ✅ Works |  |
+| Time Crisis VR (Experimental) | Quest | ✅ Works |  |
 | Toy Master | Quest | ✅ Works |  |
 | Under Cover | Quest | ✅ Works |  |
 | VR4 | Quest | ✅ Works |  |
@@ -71,6 +75,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Arcsmith | Quest | ⚠️ Works with issues | Right eye distorts during movement (unresolved; swap, tracking, Valve layers, depth and pacing ruled out). |
 | Assassin's Creed Nexus | Quest | ⚠️ Works with issues | Some launch warning text is still upside down; the rest of the UI is fixed by flip emulation. |
 | BONELAB | Quest | ⚠️ Works with issues | Build 1.2068 plays (head tracking and controls work with frame.unity_user_presence); the newer build 1.2974 crashes at start (Vulkan), no fix yet. |
+| Doom3Quest | Quest | ⚠️ Works with issues | PDA shows black screen. |
 | Myst | Quest | ⚠️ Works with issues | Minor graphical glitches on some objects. |
 | Phantom: Covert Ops | Quest | ⚠️ Works with issues | DLC/store button crashes (no Meta store). |
 | Pinball FX VR | Quest | ⚠️ Works with issues | Plays; mixed reality mode not working yet. |

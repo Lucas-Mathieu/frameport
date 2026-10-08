@@ -228,6 +228,8 @@ class LinuxPlan:
     appimage: bool = False
     openxr: bool = False
     x86_64: bool = False  # runs through FEX (installed on the Frame first, like Proton)
+    dest: str | None = None  # a drive's install dir for a new install (GitHub #90); None = internal storage
+    desktop_entry: bool = True  # an entry in Desktop Mode's menu and on its desktop (GitHub #84)
 
 
 def install_linux(frame: Frame, plan: LinuxPlan, reporter: Reporter) -> dict:
@@ -236,7 +238,7 @@ def install_linux(frame: Frame, plan: LinuxPlan, reporter: Reporter) -> dict:
     if plan.x86_64:
         ensure_proton(frame, reporter, kind="linux_x86")
     reporter.stage("Prepare Frame")
-    prep = frame.agent("prepare_linux", package=plan.package, title=plan.title)
+    prep = frame.agent("prepare_linux", package=plan.package, title=plan.title, dest=plan.dest)
     if plan.files:
         manifest = {name: (plan.root / name).stat().st_size for name in plan.files}
     else:
@@ -259,8 +261,12 @@ def install_linux(frame: Frame, plan: LinuxPlan, reporter: Reporter) -> dict:
     executables = [rel for rel in manifest if rel != plan.exe and _is_elf(plan.root / rel)][:200]
     result = frame.agent("finalize_linux", package=plan.package, title=plan.title, exe=plan.exe,
                          appimage=plan.appimage, openxr=plan.openxr, x86_64=plan.x86_64, manifests={"app": manifest},
-                         executables=executables, tags=_tags(plan.package), timeout=900)
+                         executables=executables, tags=_tags(plan.package), dest=plan.dest,
+                         desktop_entry=plan.desktop_entry, timeout=900)
     reporter.log(f"installed at {result['base']} (Steam shortcut id {result['appid']})")
+    if result.get("desktop_entry"):
+        reporter.check("Desktop Mode entry", True, "in the application menu"
+                       + (" and on the desktop" if result["desktop_entry"].get("desktop") else ""))
     return result
 
 

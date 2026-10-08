@@ -9,6 +9,7 @@ PC (Revive + local Steam) or on the Frame (Proton + Revive).
 """
 from __future__ import annotations
 
+import dataclasses
 import threading
 import time
 from pathlib import Path
@@ -21,6 +22,7 @@ from .core import library
 from .core.events import Reporter
 from .core.models import Recipe, SourceGame
 from .core.paths import output_dir
+from .patches import upstream
 from .recommend import engine
 from .sources import quest_dump, rift_dump
 from .targets.base import Target
@@ -284,6 +286,30 @@ def is_linux(entry: dict) -> bool:
     return entry.get("kind") == "linux"
 
 
+def analysis_warnings(entry: dict) -> list[str]:
+    """Blockers read from a Quest/Android game's APK, for the CLI (the game page shows them as callouts)."""
+    if is_rift(entry) or is_linux(entry) or not entry.get("analysis"):
+        return []
+    out = engine.blocker_notes(library.analysis_from_dict(entry["analysis"]))
+    if missing_obb(entry):
+        out.append(MISSING_OBB_NOTE.format(package=entry.get("package", "<package>")))
+    return out
+
+
+MISSING_OBB_NOTE = ("This game's data file (.obb) wasn't found next to the APK. Put the .obb files in a folder named "
+                    "{package} (or obb/) next to the APK and add the folder again; without it the game hangs at start.")
+
+
+def missing_obb(entry: dict) -> bool:
+    """A Quest game whose APK expects an OBB (analysis expects_obb: Unreal's bHasOBBFiles) but no data folder was
+    found next to it (GitHub #85: TRIANGLE STRATEGY hung silently after OVRPlugin's JNI_OnLoad). Library fields
+    only: no disk access (used by the game page)."""
+    if is_rift(entry) or is_linux(entry):
+        return False
+    extra = (entry.get("analysis") or {}).get("extra") or {}
+    return bool(extra.get("expects_obb")) and not (entry.get("data_dir") and entry.get("data_bytes") != 0)
+
+
 def add_linux_app(path: Path | str, reporter: Reporter | None = None, exe: str | None = None) -> dict:
     """Add a Linux app to the library (no conversion: it's installed as it is): arm64, or x86_64 (run through FEX on
     the Frame). `exe` overrides the program FramePort picked (relative to the app's folder)."""
@@ -426,7 +452,8 @@ def install_linux(package: str, target: Target, reporter: Reporter, add_to_libra
     extra = (entry.get("analysis") or {}).get("extra") or {}
     result = target.install_linux(package, steam_title(entry), Path(entry["game_dir"]), entry["exe"],
                                   extra.get("files"), bool(extra.get("appimage")), bool(extra.get("openxr")),
-                                  reporter, x86_64=bool(extra.get("x86_64")))
+                                  reporter, x86_64=bool(extra.get("x86_64")),
+                                  desktop_entry=entry.get("desktop_entry", True) is not False)
     if extra.get("x86_64"):
         reporter.check("x86 translation", True, "runs through FEX on SteamOS's x86 system (its libraries come from "
                                                  "there; not checked ahead)")
@@ -616,7 +643,8 @@ def build_game(package: str, reporter: Reporter, outdir: Path | None = None) -> 
     art, store_title = artwork.fetch(package, res.apk)
     build_info = {"apk": str(res.apk), "alt_apk": str(res.alt_apk) if res.alt_apk else None, "sha256": res.sha256,
                   "alt_sha256": res.alt_sha256, "applied": res.applied, "checks": res.checks, "ok": res.ok,
-                  "overport": res.meta.get("overport"), "recipe_fp": recipe_fingerprint(entry["recipe"], package)}
+                  "overport": res.meta.get("overport"), "recipe_fp": recipe_fingerprint(entry["recipe"], package),
+                  "superseded": res.meta.get("superseded") or {}}
     library.upsert_game(package, build=build_info, title=entry.get("title") or store_title)
     return build_info
 
@@ -639,6 +667,8 @@ def install_game(package: str, target: Target, reporter: Reporter, apk_only: boo
     if not test_build and not apk.exists():  # the converted copy was removed after an earlier install: make it again
         build_game(package, reporter)
         return install_game(package, target, reporter, apk_only, add_to_library)
+    if not test_build and b.get("superseded"):  # workarounds this build left out (upstream fixed): not in settings.conf
+        recipe = dataclasses.replace(recipe, patches=upstream.without_superseded(recipe.patches, b["superseded"]))
     data_dir = Path(entry["data_dir"]) if entry.get("data_dir") else None
     title = steam_title(entry)
     result = target.install(package, title, apk, data_dir, recipe, reporter, apk_only)
@@ -800,6 +830,10 @@ def install_rift(package: str, target: Target, reporter: Reporter, add_to_librar
 
 def test_game(package: str, target: Target, reporter: Reporter, seconds: int = 45) -> dict:
     result, log = target.launch_test(package, reporter, seconds)
+    if missing_obb(library.game(package) or {}):
+        from .validate.triage import add_missing_obb
+
+        add_missing_obb(result)
     from .core.paths import user_data_dir
 
     logs = user_data_dir() / "logs"
