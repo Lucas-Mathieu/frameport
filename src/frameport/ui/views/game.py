@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from ... import pipeline
+from ...analysis.detect import android_version, too_new_android
 from ...artwork import thumbs
 from ...core import library
 from ...i18n import tr, tr_n
@@ -269,7 +270,17 @@ class GameView:
                 C.body(tr("The Frame's Steam library still shows the old artwork."), T.TEXT, expand=True),
                 C.secondary(tr("Update Steam art on Frame"), ft.Icons.IMAGE_OUTLINED,
                             lambda e: self.app.update_steam_art(pkg))]), "info", ft.Icons.IMAGE_OUTLINED))
-        if recipe.status == "unsupported":
+        min_sdk = extra.get("min_sdk")
+        too_new = not self.rift and not self.linux and too_new_android(min_sdk)
+        if too_new:
+            # whatever the recipe says (a catalog or the user's own): the APK itself needs a newer Android
+            out.append(C.callout(tr("Needs Android {version} (API {api}); the Frame's Android is 11 (API 30), so it "
+                                    "crashes at start. It can't run until Valve updates the Frame's Android "
+                                    "container.").format(version=android_version(min_sdk), api=min_sdk), "error",
+                                 ft.Icons.PHONELINK_ERASE_ROUNDED))
+        if too_new and recipe.notes.startswith("Needs Android "):
+            pass  # the recipe's note says the same (shown above)
+        elif recipe.status == "unsupported":
             out.append(C.callout(recipe.notes or tr("This game can't run on the Steam Frame."), "error"))
         elif recipe.notes and not (self.rift and extra.get("platform_sdk")):
             out.append(C.callout(recipe.notes, "info"))

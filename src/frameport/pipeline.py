@@ -286,6 +286,15 @@ def is_linux(entry: dict) -> bool:
     return entry.get("kind") == "linux"
 
 
+def analysis_warnings(entry: dict) -> list[str]:
+    """Blockers read from a Quest/Android game's APK, for the CLI (the game page shows them as callouts)."""
+    if is_rift(entry) or is_linux(entry) or not entry.get("analysis"):
+        return []
+    a = library.analysis_from_dict(entry["analysis"])
+    note = engine.android_version_note(a)
+    return [note] if note else []
+
+
 def add_linux_app(path: Path | str, reporter: Reporter | None = None, exe: str | None = None) -> dict:
     """Add a Linux app to the library (no conversion: it's installed as it is): arm64, or x86_64 (run through FEX on
     the Frame). `exe` overrides the program FramePort picked (relative to the app's folder)."""

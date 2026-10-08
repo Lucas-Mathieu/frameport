@@ -693,6 +693,7 @@
  "Mutable swapchain fix": "",
  "Name": "",
  "Needed by another patch": "",
+ "Needs Android {version} (API {api}); the Frame's Android is 11 (API 30), so it crashes at start. It can't run until Valve updates the Frame's Android container.": "",
  "Needs the Oculus Platform (Meta Horizon app) for its license check, which the Frame doesn't have — it crashes at startup there. Play it on this PC.": "",
  "Needs Windows (or WSL on Windows)": "",
  "Network": "",

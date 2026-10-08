@@ -80,6 +80,7 @@ def suggest(analysis: Analysis, use_catalog: bool = True) -> Recipe:
             recipe.status = "unsupported"
             recipe.notes = f"No 64-bit ARM code ({', '.join(analysis.abis)}): the Steam Frame can't run it."
         if not rift:
+            _android_version(analysis, recipe)
             _non_quest(analysis, recipe)
     if not rift and not entry and (analysis.extra or {}).get("frame_patched"):
         # already has FramePort's adapter (e.g. a PATCHED/ build): installing it unchanged is the safe default
@@ -175,6 +176,25 @@ def warnings(recipe: Recipe) -> list[str]:
     if "frame.adapter" not in recipe.patches:
         out.append("Without the FrameBridge adapter most games fail on the Frame runtime.")
     return out
+
+
+def android_version_note(analysis: Analysis) -> str | None:
+    """'Needs Android 14 (API 34)…' when the APK's minimum Android is newer than what runs on the Frame."""
+    from ..analysis.detect import FRAME_API, android_version, too_new_android
+
+    min_sdk = (analysis.extra or {}).get("min_sdk")
+    if not too_new_android(min_sdk):
+        return None
+    return (f"Needs Android {android_version(min_sdk)} (API {min_sdk}); the Frame's Android is "
+            f"{android_version(FRAME_API)} (API {FRAME_API}), so it crashes at start on newer Android parts. "
+            "It can't run until Valve updates the Frame's Android container.")
+
+
+def _android_version(analysis: Analysis, recipe: Recipe) -> None:
+    note = android_version_note(analysis)
+    if note:
+        recipe.status = "unsupported"
+        recipe.notes = _add(recipe.notes, note)
 
 
 def _non_quest(analysis: Analysis, recipe: Recipe) -> None:

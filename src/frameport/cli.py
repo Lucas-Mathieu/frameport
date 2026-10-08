@@ -229,6 +229,8 @@ def scan(path: Path = typer.Argument(..., help="a folder with game backups (APKs
     for g in pipeline.add_path(path, rep):
         r = g["recipe"]
         typer.echo(f"{g['package']:40} {g.get('title', '')[:34]:34} {r['status']:11} {r['source']}")
+        for warning in pipeline.analysis_warnings(g):
+            typer.echo(f"  ! {warning}")
 
 
 @app.command("catalog-update")
@@ -329,6 +331,9 @@ def show(package: str, as_json: bool = typer.Option(False, "--json", help=JSON_H
     typer.echo(f"{g.get('title')}  ({pkg} {a['version']})\n  engine {a['engine']}, XR {a['xr']}, {a['graphics']}, "
                f"ABIs {', '.join(a['abis'])}, direct VrApi: {a['direct_vrapi']}")
     typer.echo(f"  status: {r['status']}  recipe source: {r['source']}  {r['notes']}")
+    for warning in pipeline.analysis_warnings(g):
+        if warning not in r["notes"]:
+            typer.echo(f"  ! {warning}")
     from .recommend.engine import visible_patches
 
     shown, hidden = visible_patches(library.analysis_from_dict(a), library.recipe_from_dict(r))

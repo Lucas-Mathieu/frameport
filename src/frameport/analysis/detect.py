@@ -16,6 +16,25 @@ UNITY_GGM = "assets/bin/Data/globalgamemanagers"
 IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 
 
+# Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
+ANDROID_VERSIONS = {29: "10", 30: "11", 31: "12", 32: "12L", 33: "13", 34: "14", 35: "15", 36: "16", 37: "17"}
+FRAME_API = 30
+# Quest games declare up to API 32 (Quest's Android 12L) and run on the Frame (OVRPort lowers minSdk to 29; they
+# don't call newer Android classes). From API 33 on, apps call Android 13+ classes at start (GitHub #71/#72: minSdk
+# 34, NoClassDefFoundError android/window/OnBackInvokedCallback, NoSuchMethodError VarHandle.storeStoreFence).
+MAX_RUNNABLE_MIN_SDK = 32
+
+
+def android_version(api: int) -> str:
+    """'14' for API 34."""
+    return ANDROID_VERSIONS.get(api, f"API {api}")
+
+
+def too_new_android(min_sdk: int | None) -> bool:
+    """The APK needs a newer Android than the Frame's Lepton (11): it crashes at start on missing Android classes."""
+    return bool(min_sdk) and min_sdk > MAX_RUNNABLE_MIN_SDK
+
+
 def _read_manifest_info(path: Path) -> tuple[str, str, str, str | None]:
     from pyaxmlparser import APK
 
@@ -216,6 +235,8 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             # a 2D launcher activity that starts a separate VR activity (frame.start_activity)
             "vr_activity": axml.vr_activity(manifest),
             "unity_version": unity_version(ggm, lib_bytes.get("libunity.so")) if engine == "Unity" else None,
+            # the minimum Android version the APK declares (read from the original: OVRPort lowers it to 29)
+            "min_sdk": axml.min_sdk(manifest),
         },
     )
 

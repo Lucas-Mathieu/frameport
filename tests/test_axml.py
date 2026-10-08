@@ -76,3 +76,20 @@ def test_start_activity_moves_launcher_to_the_vr_activity():
     # only those two attribute values changed: the rest parses as before
     assert axml.Axml(fixed).attr_str(next(e for e in axml.Axml(fixed).elements() if e.name == "manifest"),
                                      "package") == "org.x.game"
+
+
+def _sdk_manifest(min_sdk):
+    from conftest import build_axml
+
+    return build_axml([
+        ("start", "manifest", [("package", "str", "org.x.app")]),
+        ("start", "uses-sdk", [("minSdkVersion", "int", min_sdk), ("targetSdkVersion", "int", 34)]),
+        ("end", "uses-sdk"),
+        ("end", "manifest"),
+    ])
+
+
+def test_min_sdk(quest_manifest):
+    assert axml.min_sdk(_sdk_manifest(34)) == 34
+    assert axml.min_sdk(_sdk_manifest(29)) == 29
+    assert axml.min_sdk(quest_manifest) is None  # no uses-sdk element
