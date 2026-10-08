@@ -219,6 +219,82 @@ def test_analysis_reads_the_obb_flag(tmp_path):
     assert analyze(p).extra["expects_obb"] is True
 
 
+# ------------------------------------------------------------------ Unity split-binary builds (GitHub #92)
+def _unity_apk(path: Path, files: dict[str, bytes]) -> Path:
+    from conftest import build_axml
+
+    manifest = build_axml([("start", "manifest", [("package", "str", "com.x.game")]), ("end", "manifest")])
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("AndroidManifest.xml", manifest)
+        z.writestr("lib/arm64-v8a/libunity.so", b"\x7fELF")
+        for name, data in files.items():
+            z.writestr(name, data)
+    return path
+
+
+D = "assets/bin/Data/"
+
+
+@pytest.mark.parametrize("files, split", [
+    ({"lib/arm64-v8a/libOculusXRPlugin.so": b"", D + "level0": b""}, True),  # XR plugin, UnitySubsystems in the OBB
+    ({"lib/arm64-v8a/libUnityOpenXR.so": b"", D + "level0": b""}, True),
+    ({"lib/arm64-v8a/libOculusXRPlugin.so": b"", D + "UnitySubsystems/OculusXRPlugin/UnitySubsystemsManifest.json":
+      b"{}", D + "level0": b""}, False),  # a full XR-plugin build
+    ({D + "level0": b""}, False),  # built-in VR, one scene (The Room VR): no sign
+])
+def test_unity_split_build_from_xr_plugin_without_subsystems(tmp_path, files, split):
+    from frameport.analysis.detect import analyze
+
+    extra = analyze(_unity_apk(tmp_path / "g.apk", files), deep=False).extra
+    assert (extra["unity_split"], extra["expects_obb"]) == (split, split)
+
+
+def test_unity_split_build_from_more_scenes_than_levels(tmp_path, monkeypatch):
+    from frameport.analysis import unity_split
+
+    monkeypatch.setattr(unity_split, "build_scene_count", lambda ggm: 3 if ggm == b"GGM" else None)
+    for levels, split in ((1, True), (3, False)):
+        files = {D + "globalgamemanagers": b"GGM", **{f"{D}level{i}": b"" for i in range(levels)},
+                 D + "level0.resS": b"", D + "level0.split1": b""}  # parts of one level count once
+        p = _unity_apk(tmp_path / f"loose{levels}.apk", files)
+        with zipfile.ZipFile(p) as z:
+            assert unity_split.split_build(z, z.namelist()) is split
+            assert unity_split.split_build(z, z.namelist(), deep=False) is False
+    # packed into data.unity3d: only the bundle's head and the blocks up to globalgamemanagers are read
+    for levels, split in ((["level0"], True), (["level0", "level1", "level2"], False)):
+        p = _unity_apk(tmp_path / f"packed{len(levels)}.apk", {D + "data.unity3d": _unityfs(
+            {"globalgamemanagers": b"GGM", **{n: b"x" * 10 for n in levels}})})
+        with zipfile.ZipFile(p) as z:
+            assert unity_split.split_build(z, z.namelist()) is split
+
+
+def _unityfs(nodes: dict[str, bytes]) -> bytes:
+    """An uncompressed UnityFS bundle (format 7) with one data block."""
+    import struct
+
+    data = b"".join(nodes.values())
+    info = b"\0" * 16 + struct.pack(">i", 1) + struct.pack(">IIH", len(data), len(data), 0)
+    info += struct.pack(">i", len(nodes))
+    off = 0
+    for name, body in nodes.items():
+        info += struct.pack(">qqI", off, len(body), 4) + name.encode() + b"\0"
+        off += len(body)
+    head = b"UnityFS\0" + struct.pack(">I", 7) + b"5.x.x\0" + b"2021.3.1f1\0"
+    head += struct.pack(">qIII", 0, len(info), len(info), 0)
+    head += b"\0" * (-len(head) % 16)
+    return head + info + data
+
+
+def test_unityfs_reader_stops_after_the_node(tmp_path):
+    import io
+
+    from frameport.analysis.unity_split import bundle_node
+
+    names, ggm = bundle_node(io.BytesIO(_unityfs({"globalgamemanagers": b"GGM", "level0": b"L"})))
+    assert (names, ggm) == (["globalgamemanagers", "level0"], b"GGM")
+    assert bundle_node(io.BytesIO(b"UnityWeb\0..."))[1] is None
+
+
 def _entry(**kw):
     e = {"package": "com.x.game", "analysis": {"extra": {"expects_obb": True}}, "data_dir": None, "data_bytes": 0}
     e.update(kw)

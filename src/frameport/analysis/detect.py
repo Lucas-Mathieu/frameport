@@ -9,6 +9,7 @@ from pathlib import Path
 from ..apk import axml
 from ..core.models import Analysis
 from . import elf
+from .unity_split import split_build as unity_split_build
 
 logging.getLogger("pyaxmlparser").setLevel(logging.ERROR)
 
@@ -20,7 +21,8 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 # then analysed again in the background at the next start (pipeline.refresh_analyses), so their new patches are
 # offered (GitHub #104: entries from before `sdl_java` never got frame.sdl_clipboard). Entries without it are 0.
 # 1: sdl_java, min_sdk, web_wrapper, expects_obb, vr_activity, unity_version (2026-10)
-ANALYSIS_VERSION = 1
+# 2: unity_split (a Unity split-binary build expects an OBB too: expects_obb) (2026-10)
+ANALYSIS_VERSION = 2
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -173,6 +175,8 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
                 if "assets/bin/Data/boot.config" in names else "")
         ggm = z.read(UNITY_GGM) if deep and UNITY_GGM in names else None
         il2cpp_meta = z.read(IL2CPP_METADATA) if deep and IL2CPP_METADATA in names and "libil2cpp.so" in libs else None
+        # a Unity split build: the rest of the game is in a zip OBB (analysis/unity_split.py)
+        unity_split = "libunity.so" in libs and unity_split_build(z, names, ggm, deep)
 
     package, version, label, activity, apk_info = _read_manifest_info(path)
     libset = set(libs)
@@ -284,9 +288,10 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             "min_sdk": axml.min_sdk(manifest),
             # a website in an Android wrapper (TWA): nothing to port
             "web_wrapper": web_wrapper(meta, manifest_strings, apk_info),
-            # Unreal packaged its content as an OBB (expansion file): without it the game hangs at start (GitHub #85).
-            # (Unity's split-binary builds show no reliable sign in the APK.)
-            "expects_obb": expects_obb(meta),
+            # Unreal packaged its content as an OBB (expansion file), or a Unity split build keeps all but its first
+            # scene in one: without it the game hangs at start (GitHub #85, #92)
+            "expects_obb": expects_obb(meta) or unity_split,
+            "unity_split": unity_split,
         },
     )
 
