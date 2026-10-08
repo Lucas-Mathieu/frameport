@@ -9,6 +9,7 @@ PC (Revive + local Steam) or on the Frame (Proton + Revive).
 """
 from __future__ import annotations
 
+import dataclasses
 import threading
 import time
 from pathlib import Path
@@ -21,6 +22,7 @@ from .core import library
 from .core.events import Reporter
 from .core.models import Recipe, SourceGame
 from .core.paths import output_dir
+from .patches import upstream
 from .recommend import engine
 from .sources import quest_dump, rift_dump
 from .targets.base import Target
@@ -616,7 +618,8 @@ def build_game(package: str, reporter: Reporter, outdir: Path | None = None) -> 
     art, store_title = artwork.fetch(package, res.apk)
     build_info = {"apk": str(res.apk), "alt_apk": str(res.alt_apk) if res.alt_apk else None, "sha256": res.sha256,
                   "alt_sha256": res.alt_sha256, "applied": res.applied, "checks": res.checks, "ok": res.ok,
-                  "overport": res.meta.get("overport"), "recipe_fp": recipe_fingerprint(entry["recipe"])}
+                  "overport": res.meta.get("overport"), "recipe_fp": recipe_fingerprint(entry["recipe"]),
+                  "superseded": res.meta.get("superseded") or {}}
     library.upsert_game(package, build=build_info, title=entry.get("title") or store_title)
     return build_info
 
@@ -639,6 +642,8 @@ def install_game(package: str, target: Target, reporter: Reporter, apk_only: boo
     if not test_build and not apk.exists():  # the converted copy was removed after an earlier install: make it again
         build_game(package, reporter)
         return install_game(package, target, reporter, apk_only, add_to_library)
+    if not test_build and b.get("superseded"):  # workarounds this build left out (upstream fixed): not in settings.conf
+        recipe = dataclasses.replace(recipe, patches=upstream.without_superseded(recipe.patches, b["superseded"]))
     data_dir = Path(entry["data_dir"]) if entry.get("data_dir") else None
     title = steam_title(entry)
     result = target.install(package, title, apk, data_dir, recipe, reporter, apk_only)

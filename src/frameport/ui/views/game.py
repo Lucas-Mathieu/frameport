@@ -515,6 +515,9 @@ class GameView:
         state = {"recipe": recipe}
         warn = C.body("", T.WARN)
         technical = bool(library.setting("ui.patch_details", False))  # remembered for every game
+        # workarounds the last build left out because OVRPort's output already had the fix (patches/upstream.py)
+        superseded = (g.get("build") or {}).get("superseded") or {}
+        upstream_note = tr("Not needed in the last build: OVRPort fixed this itself.")
 
         def save(r):
             r.source = "user"
@@ -574,12 +577,16 @@ class GameView:
 
                     vals = recipe_values(g)
                     changed = sum(1 for k, v in vals.items() if v != default(k))
+                    fixed = [base.get(pid).title for pid in superseded if pid.startswith("adapter.")]
+                    fixed_note = [C.meta(tr("Not needed in the last build, OVRPort fixed it itself: {names}").format(
+                        names=", ".join(tr(t) for t in fixed)), T.TEXT_3)] if fixed else []
                     sections.append(C.card(ft.Row([
                         ft.Column([ft.Row([C.body(CATEGORY_TITLES[cat], T.TEXT, weight=ft.FontWeight.W_600),
                                            C.help_icon("cat_adapter")], spacing=T.S2),
                                    C.meta(tr_n("{n} setting changed from the default",
                                                "{n} settings changed from the default", changed) if changed
-                                          else tr("All at their defaults"))], spacing=T.px(2), expand=True),
+                                          else tr("All at their defaults")), *fixed_note], spacing=T.px(2),
+                                  expand=True),
                         C.secondary(tr("Change settings…"), ft.Icons.TUNE_ROUNDED,
                                     lambda e: app.settings_dialog(package)),
                     ], spacing=T.S3), padding=ft.Padding(T.S4, T.S3, T.S4, T.S3)))
@@ -596,6 +603,8 @@ class GameView:
                     shown = tr(reason).replace("overport", "OVRPort") if technical else \
                         plain_reason(reason, p.default_on)
                     sub.insert(0, C.meta(shown, T.ACCENT))
+                if on and p.id in superseded:
+                    sub.append(C.meta(upstream_note, T.TEXT_3))
                 extra = None
                 choices = getattr(p, "CHOICES", None)
                 if choices:  # a plain choice instead of a switch + text field (e.g. Proton: Experimental / Stable)

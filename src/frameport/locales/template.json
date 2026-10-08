@@ -734,6 +734,8 @@
  "Not enough space on the Frame ({detail}). Remove games you don't play or use Free up space on the Steam Frame page.": "",
  "Not from a FramePort game": "",
  "Not installed": "",
+ "Not needed in the last build, OVRPort fixed it itself: {names}": "",
+ "Not needed in the last build: OVRPort fixed this itself.": "",
  "Not now": "",
  "Not offered by Steam on this Frame yet": "",
  "Not recommended: breaks games that load VrApi through OVRPlugin.": "",

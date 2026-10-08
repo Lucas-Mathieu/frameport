@@ -146,6 +146,10 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
   - `patches/` — **the unit of modularity**. `base.py` (Patch interface, registry), `overport.py` (overport CLI patch ids,
     discovered dynamically via `overport patches`), `frame/*.py` (one module per Frame fix), `settings.py` (FrameBridge
     adapter keys + device files as patches). Add a patch = add a module that calls `register(...)`.
+    `upstream.py`: upstream fixes that replace a workaround per build (a probe finds the fix in OVRPort's output →
+    the build leaves the workaround out, `build.superseded`; recipes unchanged). Registered: `ovrport.haptic_envelope`
+    (→ `adapter.haptic_fix`, `frame/haptic_envelope.py`) and `ovrport.microphone_stream` (→ `frame.ovr_microphone`),
+    both fixed in OVRPort runtime 3.4.3-aa54c3f (ovrport/app#73; haptics owner-verified with Lucky's Tale 2026-10-07).
   - `analysis/` — APK/ELF inspection (`detect.py`), `elf.py` (pyelftools reads; own DT_NEEDED writer), `stubgen.py`
     (generates the ovr_* stub .so without a compiler).
   - `apk/` — `axml.py` (binary manifest editor), `workspace.py` (staged zip edits), `sign.py` (apksigner; it aligns too).

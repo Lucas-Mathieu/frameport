@@ -337,6 +337,8 @@ def show(package: str, as_json: bool = typer.Option(False, "--json", help=JSON_H
         params = r["patches"].get(p.id) or {}
         typer.echo(f"  [{'x' if on else ' '}] {p.id:36} {p.title}{'  ' + json.dumps(params) if params else ''}"
                    f"{'  — ' + r['reasons'][p.id] if on and p.id in r.get('reasons', {}) else ''}")
+    for pid, fix in ((g.get("build") or {}).get("superseded") or {}).items():
+        typer.echo(f"  last build left out {pid}: fixed upstream ({fix})")
     if hidden and not all_:
         typer.echo(f"  ({len(hidden)} patches hidden as not relevant for this game; --all to list them)")
     if r.get("alt_patches"):
