@@ -277,11 +277,11 @@ class GameView:
         min_sdk = extra.get("min_sdk")
         too_new = not self.rift and not self.linux and too_new_android(min_sdk)
         if too_new:
-            # whatever the recipe says (a catalog or the user's own): the APK itself needs a newer Android
-            out.append(C.callout(tr("Needs Android {version} (API {api}); the Frame's Android is 11 (API 30), so it "
-                                    "crashes at start. It can't run until Valve updates the Frame's Android "
-                                    "container.").format(version=android_version(min_sdk), api=min_sdk), "error",
-                                 ft.Icons.PHONELINK_ERASE_ROUNDED))
+            # whatever the recipe says: the manifest asks for a newer Android (a warning only, a launch test decides)
+            out.append(C.callout(tr("Its manifest asks for Android {version} (API {api}); the Frame's Android is 11 "
+                                    "(API 30). Apps like this often crash at start, but not always: try it, a "
+                                    "launch test tells.").format(version=android_version(min_sdk), api=min_sdk),
+                                 "warn", ft.Icons.PHONELINK_ERASE_ROUNDED))
         if pipeline.missing_obb(g):
             out.append(C.callout(tr("This game's data file (.obb) wasn't found next to the APK. Put the .obb files "
                                     "in a folder named {package} (or obb/) next to the APK and add the folder again; "
@@ -290,11 +290,11 @@ class GameView:
         web = (extra.get("web_wrapper") or None) if not self.rift and not self.linux else None
         if web:
             out.append(C.callout(ft.Column([
-                C.body(tr("This app is a website in an Android wrapper: it opens the site in Meta's browser, which "
-                          "the Frame doesn't have, so there's no game in it to port. Open the website in a browser "
+                C.body(tr("This app looks like a website in an Android wrapper: it opens the site in Meta's "
+                          "browser, which the Frame doesn't have. If nothing opens, use the website in a browser "
                           "instead."), T.TEXT)]
                 + ([C.meta(web["url"], T.TEXT_2, selectable=True)] if web.get("url") else []), spacing=T.px(4)),
-                "error", ft.Icons.LANGUAGE_ROUNDED))
+                "warn", ft.Icons.LANGUAGE_ROUNDED))
         static = " ".join(engine.blocker_notes(library.analysis_from_dict(g["analysis"]))) \
             if (too_new or web) else ""
         if static and recipe.notes.strip() == static:

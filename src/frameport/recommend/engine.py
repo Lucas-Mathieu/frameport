@@ -179,15 +179,15 @@ def warnings(recipe: Recipe) -> list[str]:
 
 
 def android_version_note(analysis: Analysis) -> str | None:
-    """'Needs Android 14 (API 34)…' when the APK's minimum Android is newer than what runs on the Frame."""
+    """'Its manifest asks for Android 14 (API 34)…' when the APK's minimum Android is newer than the Frame's."""
     from ..analysis.detect import FRAME_API, android_version, too_new_android
 
     min_sdk = (analysis.extra or {}).get("min_sdk")
     if not too_new_android(min_sdk):
         return None
-    return (f"Needs Android {android_version(min_sdk)} (API {min_sdk}); the Frame's Android is "
-            f"{android_version(FRAME_API)} (API {FRAME_API}), so it crashes at start on newer Android parts. "
-            "It can't run until Valve updates the Frame's Android container.")
+    return (f"Its manifest asks for Android {android_version(min_sdk)} (API {min_sdk}); the Frame's Android is "
+            f"{android_version(FRAME_API)} (API {FRAME_API}). Apps like this often crash at start on newer Android "
+            "parts, but not always: a launch test tells.")
 
 
 def web_wrapper_note(analysis: Analysis) -> str | None:
@@ -196,18 +196,18 @@ def web_wrapper_note(analysis: Analysis) -> str | None:
     if not ww:
         return None
     where = f"open {ww['url']} in a browser instead" if ww.get("url") else "open the website in a browser instead"
-    return (f"This app is a website in an Android wrapper (Trusted Web Activity): it opens the site in Meta's "
-            f"browser, which the Frame doesn't have, so there's no game in the APK to port; {where}.")
+    return (f"This app looks like a website in an Android wrapper (Trusted Web Activity): it opens the site in "
+            f"Meta's browser, which the Frame doesn't have. If nothing opens, {where}.")
 
 
 def blocker_notes(analysis: Analysis) -> list[str]:
-    """Reasons read from the APK why it can't run on the Frame (whatever the recipe says)."""
+    """Warnings read from the APK's manifest that it may not run on the Frame (whatever the recipe says). Only
+    warnings: the manifest alone never marks a game unsupported (owner's rule); a launch test's triage decides."""
     return [n for n in (android_version_note(analysis), web_wrapper_note(analysis)) if n]
 
 
 def _static_blockers(analysis: Analysis, recipe: Recipe) -> None:
     for note in blocker_notes(analysis):
-        recipe.status = "unsupported"
         recipe.notes = _add(recipe.notes, note)
 
 
