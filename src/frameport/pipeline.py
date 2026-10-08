@@ -452,7 +452,8 @@ def install_linux(package: str, target: Target, reporter: Reporter, add_to_libra
     extra = (entry.get("analysis") or {}).get("extra") or {}
     result = target.install_linux(package, steam_title(entry), Path(entry["game_dir"]), entry["exe"],
                                   extra.get("files"), bool(extra.get("appimage")), bool(extra.get("openxr")),
-                                  reporter, x86_64=bool(extra.get("x86_64")))
+                                  reporter, x86_64=bool(extra.get("x86_64")),
+                                  desktop_entry=entry.get("desktop_entry", True) is not False)
     if extra.get("x86_64"):
         reporter.check("x86 translation", True, "runs through FEX on SteamOS's x86 system (its libraries come from "
                                                  "there; not checked ahead)")

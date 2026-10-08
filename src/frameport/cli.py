@@ -421,9 +421,14 @@ def install(package: Optional[str] = typer.Argument(None), all_: bool = typer.Op
             no_library: bool = typer.Option(False, help="don't add to the Steam library now"),
             to: str = typer.Option("frame", help="frame, or pc (PC VR games only: install on this PC)"),
             apk: Optional[Path] = typer.Option(None, help="install this APK instead of the last build (one game; e.g. "
-                                                          "a test build signed with the game's key)")):
+                                                          "a test build signed with the game's key)"),
+            dest: Optional[str] = typer.Option(None, help="drive for new installs: 'internal' or a drive's path from "
+                                                          "'frameport frame drives' (default: the app's setting); "
+                                                          "installed games stay where they are")):
     """Install games on the Frame (or PC VR games on this PC) and add them to the Steam library."""
     target = _target(frame, password, to)
+    if dest is not None and hasattr(target, "dest"):
+        target.dest = "" if dest == "internal" else dest
     pkgs = _pkgs(package, all_)
     if apk and len(pkgs) != 1:
         raise typer.BadParameter("--apk needs exactly one game")
@@ -560,6 +565,38 @@ def frame_storage(game: Optional[str] = typer.Option(None, help="also show this 
 
     for t in files.storage_targets(_target(frame).frame, game):
         typer.echo(f"{t['id']:10} {t['android']:45} {t['path']}" + ("  (every app)" if t["shared"] else ""))
+
+
+@frame_app.command("drives")
+def frame_drives(frame: Optional[str] = typer.Option(None, help=FRAME_HELP),
+                 as_json: bool = typer.Option(False, "--json", help=JSON_HELP)):
+    """The Frame's drives (internal storage, a microSD card) games can be installed on or moved to."""
+    from .install import drives
+
+    found = _target(frame).drives()
+    if as_json:
+        typer.echo(json.dumps(found, indent=1))
+        return
+    current = drives.install_dest()
+    for d in found:
+        free = f"{d['free_bytes'] / 1e9:.1f} GB free" if d.get("free_bytes") is not None else "?"
+        mark = "*" if (d["internal"] and not current) or current in (d["install_dir"], d["path"]) else " "
+        state = f"{d.get('games', 0)} game(s)" if d.get("usable") else f"can't be used: {d.get('reason')}"
+        typer.echo(f"{mark} {d['label']:20} {d.get('fstype') or '':6} {free:>16}  {state}")
+        if not d["internal"]:
+            typer.echo(f"  {'':20} {d['path']}")
+    typer.echo("* = where new games go (frameport install --dest, or the app's Settings: Frame)")
+
+
+@frame_app.command("move")
+def frame_move(package: str = typer.Argument(..., help="an installed game"),
+               to_: str = typer.Option(..., "--to", help="'internal' or a drive's path from 'frameport frame drives'"),
+               frame: Optional[str] = typer.Option(None, help=FRAME_HELP)):
+    """Move an installed game's files to another drive of the Frame (e.g. the microSD card) or back. Saves, the
+    Steam library entry and settings stay as they are."""
+    pkg = _pkgs(package, False)[0]
+    st = _target(frame).move(pkg, to_, printing_reporter())
+    typer.echo(f"moved to {st.get('base') or st.get('to')}")
 
 
 @frame_app.command("info")
