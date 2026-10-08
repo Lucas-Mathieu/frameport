@@ -27,6 +27,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Dinosaur Island | Quest | ✅ Works |  |
 | Espire 2 | Quest | ✅ Works |  |
 | Genotype | Quest | ✅ Works |  |
+| GORN2 | Quest | ✅ Works |  |
 | H.U.N.T | Quest | ✅ Works |  |
 | I Am Cat | Quest | ✅ Works |  |
 | I Am Monkey | Quest | ✅ Works |  |
