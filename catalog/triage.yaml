@@ -104,6 +104,12 @@ signatures:
     diagnosis: Unity didn't start its Oculus VR device (older Unity checks for Meta's system apps first), so the game
       runs as a hidden 2D app.
     suggest: [frame.unity_oculus_check]
+  - id: unity-frame-not-begun
+    pattern: 'frame loop shim: frame \d+: the last waited frame wasn.t begun'
+    severity: info
+    diagnosis: Unity skipped beginning a frame (typically while it activates a scene); FramePort's frame wait didn't
+      wait for that frame instead of blocking the game. A few at each scene load are normal.
+    suggest: []
   - id: sdl-no-clipboard
     pattern: 'ClipboardManager\.addPrimaryClipChangedListener|SDLClipboardHandler\.<init>'
     severity: fatal

@@ -59,6 +59,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Riven | Quest | ✅ Works |  |
 | Robo Recall | Quest | ✅ Works |  |
 | RUINSMAGUS | Quest | ✅ Works |  |
+| Sniper Elite VR | Quest | ✅ Works |  |
 | Sniper Elite VR: Winter Warrior | Quest | ✅ Works |  |
 | Space Pirate Trainer Quest | Quest | ✅ Works |  |
 | Star Wars Pinball VR | Quest | ✅ Works |  |
@@ -94,5 +95,4 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Journey of the Gods | Quest | ❌ Doesn't run | 32-bit only; the Frame has no AArch32. |
 | Roblox | Quest | ❌ Doesn't run | Crashes on its first VR frame on the Frame. |
 | Shadow Point | Quest | ❌ Doesn't run | 32-bit only; the Frame has no AArch32. |
-| Sniper Elite VR | Quest | ❌ Doesn't run | GPU hang (zink: DEVICE LOST) even with MSAA off. |
 | Sports Scramble (Santa Cruz) | Quest | ❌ Doesn't run | 32-bit only; the Frame has no AArch32. |
