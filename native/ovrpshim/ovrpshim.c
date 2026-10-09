@@ -13,6 +13,9 @@
 #include <android/log.h>
 #include <dlfcn.h>
 #include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #define TAG "FrameBridge"
@@ -26,15 +29,60 @@ static PFN_Update2 real_update2;
 static PFN_WaitToBeginFrame real_wait;
 static pthread_once_t once = PTHREAD_ONCE_INIT;
 
+// Per-game settings (the same sources as FrameBridge and the GL shim, later ones winning): the frame-begin gate and
+// the held-back physics update below were needed by Sniper Elite VR; in Unity 2019 games (BattleSisters) holding the
+// physics update back made the hands lag and the gate made loading screens stutter, so both are off unless the recipe
+// turns them on (ovrp_begin_gate=1, ovrp_hold_physics=1).
+static int begin_gate, hold_physics;
+
+static void read_conf_file(const char *path) {
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        if (!strncmp(line, "ovrp_begin_gate=", 16)) begin_gate = atoi(line + 16);
+        if (!strncmp(line, "ovrp_hold_physics=", 18)) hold_physics = atoi(line + 18);
+    }
+    fclose(f);
+}
+
+static void read_conf(void) {
+    Dl_info info;
+    char path[600];
+    if (dladdr((void *)read_conf, &info) && info.dli_fname) {
+        const char *slash = strrchr(info.dli_fname, '/');
+        if (slash && slash - info.dli_fname < 500) {
+            snprintf(path, sizeof(path), "%.*s/libframe_settings.so", (int)(slash - info.dli_fname), info.dli_fname);
+            read_conf_file(path);
+        }
+    }
+    char pkg[256] = {0};
+    FILE *f = fopen("/proc/self/cmdline", "r");
+    if (f) {
+        size_t n = fread(pkg, 1, sizeof(pkg) - 1, f);
+        fclose(f);
+        pkg[n] = 0;
+    }
+    char *colon = strchr(pkg, ':');
+    if (colon) *colon = 0;
+    if (*pkg && !strchr(pkg, '/')) {
+        snprintf(path, sizeof(path), "/sdcard/Android/data/%s/files/framebridge.conf", pkg);
+        read_conf_file(path);
+    }
+    const char *env = getenv("FRAMEBRIDGE_CONFIG");
+    if (env && *env) read_conf_file(env);
+}
+
 static void init(void) {
+    read_conf();
     void *ovrp = dlopen("libOVRPlugin.so", RTLD_NOW | RTLD_NOLOAD);
     if (!ovrp) ovrp = dlopen("libOVRPlugin.so", RTLD_NOW);
     if (ovrp) {
         real_update2 = (PFN_Update2)dlsym(ovrp, "ovrp_Update2");
         real_wait = (PFN_WaitToBeginFrame)dlsym(ovrp, "ovrp_WaitToBeginFrame");
     }
-    LOG("ovrp frame loop shim: ovrp_Update2 %s, ovrp_WaitToBeginFrame %s", real_update2 ? "OK" : "MISSING",
-        real_wait ? "OK" : "MISSING");
+    LOG("ovrp frame loop shim: ovrp_Update2 %s, ovrp_WaitToBeginFrame %s, begin gate %d, hold physics %d",
+        real_update2 ? "OK" : "MISSING", real_wait ? "OK" : "MISSING", begin_gate, hold_physics);
 }
 
 #define STEP_RENDER (-1)  // ovrpStep_Render
@@ -58,6 +106,7 @@ static int outstanding = -1; // frame index waited for and not begun yet, else -
 static int remap_from = -1, remap_to = -1;  // the last begin that was given the waited index (for its end)
 
 static int last_wait_begun(int frame_index) {
+    if (!begin_gate) return 1;
     pthread_mutex_lock(&begin_lock);
     struct timespec until;
     clock_gettime(CLOCK_REALTIME, &until);
@@ -93,7 +142,7 @@ EXPORT int fpov_Update2(int step, int frame_index, double prediction_seconds) {
         }
         mouse_click_frame();
     }
-    if (step == STEP_PHYSICS && rendered) return last_result;  // see above: keeps the display-time poses
+    if (hold_physics && step == STEP_PHYSICS && rendered) return last_result;  // see above: keeps the display-time poses
     int r = real_update2 ? real_update2(step, frame_index, prediction_seconds) : -1000;  // ovrpFailure
     if (step == STEP_RENDER) rendered = 1, last_result = r;
     return r;
@@ -113,10 +162,11 @@ static PFN_FrameCall ovrp_fn(const char *name) {
 EXPORT int fpov_BeginFrame(long frame, long b, long c, long d) {
     static PFN_FrameCall real;
     static int logged;
+    pthread_once(&once, init);  // the settings (begin_gate) before the first begin
     if (!real) real = ovrp_fn("ovrp_BeginFrame");
     pthread_mutex_lock(&begin_lock);
     long index = frame;
-    if (outstanding >= 0 && outstanding != (int)frame) {
+    if (begin_gate && outstanding >= 0 && outstanding != (int)frame) {
         index = outstanding;
         remap_from = (int)frame, remap_to = outstanding;
     } else {

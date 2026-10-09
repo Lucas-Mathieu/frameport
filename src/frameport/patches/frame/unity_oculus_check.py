@@ -80,8 +80,9 @@ class UnityOculusCheck(Patch):
                    "libunity.so at \"android\", which always exists. Games on Unity's built-in VR (2017–2018, and 2019 "
                    "without the Oculus XR Plugin) also get the frame wait their legacy frame loop never makes "
                    "(libfp_ovrp.so calls ovrp_WaitToBeginFrame before ovrp_Update2; without it no frame starts, the "
-                   "dashboard freezes or the GPU hangs), and its physics-step pose update is held back (on the Frame "
-                   "it located the controllers in the past: the hands lagged, e.g. Sniper Elite VR). The shim also "
+                   "dashboard freezes or the GPU hangs). Per game, the settings ovrp_begin_gate (a freeze at the first "
+                   "scene switch) and ovrp_hold_physics (hands trailing the controllers) switch on two more frame-loop "
+                   "fixes (e.g. Sniper Elite VR). The shim also "
                    "counts a newly pressed trigger or A/B/X/Y as a mouse click (Input.GetMouseButtonDown), which "
                    "Go-era screens wait for (e.g. Accounting+'s motion "
                    "warning) and which Lepton never delivers.")
@@ -89,7 +90,8 @@ class UnityOculusCheck(Patch):
     # 2: frame wait also for Unity 2019 without the Oculus XR Plugin; 3: controller presses as mouse clicks
     # (ovrpshim); 4: Unity 2019's Oculus device-model checks (Touch controllers on Lepton)
     # 5: frame begins gate the frame wait (no deadlock when Unity skips a frame); physics-step pose
-    # updates kept from OVRPlugin (they located poses in the past: hands lagged)
+    # updates kept from OVRPlugin (they located poses in the past: hands lagged); both only with the per-game settings
+    # ovrp_begin_gate / ovrp_hold_physics (BattleSisters' hands lagged with them)
     revision = 5
 
     @staticmethod

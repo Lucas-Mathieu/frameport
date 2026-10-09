@@ -9,7 +9,7 @@ notes: Plays with controllers that follow the hands (owner's headset test, Quest
 details: 'Unity 2019.4 on its built-in Oculus VR (no Oculus XR Plugin). Its legacy frame loop never waited for frames
   (GPU hang, zink: DEVICE LOST) and Unity reported only Go controllers: frame.unity_oculus_check. Its frame wait then
   deadlocked at the Init scene (Unity skipped beginning a frame) and the physics-step pose update located the
-  controllers in the past (hands lagged): both fixed in that patch (revision 5). Grabbing an object in the tutorial
+  controllers in the past (hands lagged): both fixed in that patch (revision 5), switched on for this game by ovrp_begin_gate and ovrp_hold_physics. Grabbing an object in the tutorial
   vibrates the controller; OVRPort''s envelope conversion then allocated ~1 GB/s until the memory cap ended the game:
   haptic_fix. The Quest 1 build has no arraysources_assets.hd, which the game loads on the Frame (it detects a Quest
   2) and then skips the .sd bundle: textures are missing unless the .sd file is also present under the .hd name in the
@@ -19,6 +19,8 @@ frame:
 - frame.unity_oculus_check
 adapter:
   haptic_fix: 1
+  ovrp_begin_gate: 1
+  ovrp_hold_physics: 1
 pcvr_alternative: Sniper Elite VR (Steam PC VR). Winter Warrior (Quest) works on the Frame.
 verified:
   date: '2026-10-07'
