@@ -349,7 +349,7 @@ class AdapterSetting(Patch):
         self.revision = REVISIONS.get(key, 1)
 
     def detect(self, a):
-        from .applicability import needs_scene, uses_equirect_layers, uses_render_models
+        from .applicability import needs_scene, uses_equirect_layers, uses_render_models, uses_room_model
 
         if self.key == "controller_fix" and a.extra.get("hand_tracking_only"):
             return Suggestion(True, "Hand tracking is required by the game: pass hands through instead of reporting "
@@ -377,6 +377,11 @@ class AdapterSetting(Patch):
         if self.key == "scene_emul" and needs_scene(a):
             return Suggestion(True, "Mixed-reality game that builds its level from the room model: emulate a "
                                     "guardian-sized room (e.g. Demeter).", {"value": 1})
+        if self.key == "scene_emul" and uses_room_model(a):
+            # also VR games that only ask for the room (VR HOT's room setup retried forever without it)
+            return Suggestion(True, "The game asks Meta's system for your room layout (scene), which the Frame "
+                                    "doesn't have: emulate a room from the play area (e.g. VR HOT's room setup).",
+                              {"value": 1})
         return None
 
     def applies(self, a):
