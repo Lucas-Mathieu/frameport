@@ -1,8 +1,7 @@
 package: com.StressLevelZero.BONELAB
 title: BONELAB
-status: issues
-notes: Build 1.2068 plays; 1.2974 starts with frame.slz_vulkan_hooks but isn't checked in the headset yet. One
-  recipe serves both builds - 1.2068 needs frame.unity_user_presence (head tracking and controls); 1.2974 also needs
+status: works
+notes: Builds 1.2068 and 1.2974 play (owner's headset tests). One recipe serves both builds - 1.2068 needs frame.unity_user_presence (head tracking and controls); 1.2974 also needs
   frame.slz_vulkan_hooks (72 fps after about 35 s of shader prewarming), which changes nothing on 1.2068.
 details: Both builds - the game runs (72 fps), but its player body stayed frozen - no head tracking, the controllers stuck to the
   model, no buttons - although OpenXR input and OVRPlugin's poses were fine. A few seconds after start (when Unity
@@ -20,6 +19,7 @@ frame:
 - frame.unity_user_presence
 - frame.slz_vulkan_hooks
 verified:
-  date: '2026-10-06'
-updated: '2026-10-07'
+  date: '2026-10-08'
+updated: '2026-10-08'
 source_hint: BONELAB
+min_app: 0.12.1
