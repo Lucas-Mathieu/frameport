@@ -366,6 +366,10 @@ class AdapterSetting(Patch):
             return Suggestion(True, "Unity's built-in Oculus support reads controller poses through OVRPlugin at its "
                                     "monotonic \"now\", seconds in the past on the Frame: they are located at the "
                                     "right time (e.g. BattleSisters, Sniper Elite VR).", {"value": 1})
+        if self.key == "pose_time_fix" and a.engine == "Unreal" and (a.extra or {}).get("unreal_thumb_touch"):
+            return Suggestion(True, "Unreal 4's Oculus input of this OVRPlugin generation asks for controller poses "
+                                    "at OVRPlugin's own clock, which is behind the Frame's: they are located at the "
+                                    "right time (e.g. Vader Immortal).", {"value": 1})
         if self.key == "equirect_emul" and uses_equirect_layers(a):
             return Suggestion(True, "The game draws 360° layers (e.g. a video player's theatre or 360° videos), which "
                                     "the Frame's runtime can't show: show them as panels around you.", {"value": 1})
