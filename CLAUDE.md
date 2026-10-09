@@ -665,7 +665,7 @@ Doom3Quest compiles every VS with `layout(num_views=2) in;` and draws its HUD/PD
 table comes from dlsym on that handle; also first DT_NEEDED for its direct gl*/egl* imports). Such draws use a lazily
 built single-view twin (view 0, uniforms copied per draw); eglMakeCurrent resets the per-thread cache. Host-tested only
 (rewriter on all 19 Doom3Quest shaders + glmv.c against a stand-in GL, `tests/test_gl_multiview_fbo.py`); the host's
-Mesa 23.2 llvmpipe has no OVR_multiview, so no real-driver test yet. Not in the catalog until a headset test.
+Mesa 23.2 llvmpipe has no OVR_multiview. Headset-verified by Xandrix1987 (2026-10-09: HUD/PDA shown, no fps drop) -> in the Doom3Quest catalog recipe.
 **Session triage (agent v70, 2026-10-09):** launch tests never reach FOCUSED, so real play sessions are triaged
 too. list_installed gives each game `last_play` {start, end, test} from `<anchor>/plays.log` (launch tests write a
 `test <unix>` line first → test sessions are only marked); `session_log` returns the newest session's launch.log
