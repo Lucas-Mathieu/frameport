@@ -304,6 +304,7 @@ static void emul_on_destroy_swapchain(XrSwapchain handle) {
 static XRAPI_ATTR XrResult XRAPI_CALL hook_xrReleaseSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageReleaseInfo *info) {
     PFN_xrReleaseSwapchainImage fn = (PFN_xrReleaseSwapchainImage)lookup(active_instance, "xrReleaseSwapchainImage");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if (is_standin(swapchain)) return XR_SUCCESS;
     pthread_mutex_lock(&emul_lock);
     emul_source *s = emul_active() ? emul_find_source(swapchain, 0) : NULL;
     int index = s && s->acquired_count ? (int)s->acquired[0] : -1;
@@ -335,6 +336,7 @@ static XRAPI_ATTR XrResult XRAPI_CALL hook_xrReleaseSwapchainImage(XrSwapchain s
 static XRAPI_ATTR XrResult XRAPI_CALL hook_xrWaitSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageWaitInfo *info) {
     PFN_xrWaitSwapchainImage fn = (PFN_xrWaitSwapchainImage)lookup(active_instance, "xrWaitSwapchainImage");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if (is_standin(swapchain)) return XR_SUCCESS;
     XrResult result = emul_is_virtual(swapchain) ? XR_SUCCESS : fn(swapchain, info);
     pthread_mutex_lock(&emul_lock);
     emul_source *s = emul_active() ? emul_find_source(swapchain, 0) : NULL;

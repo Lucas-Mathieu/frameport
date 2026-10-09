@@ -224,3 +224,27 @@ def test_lepton3_transient_not_running_context_is_not_a_failure():
     assert "container-not-started" not in [f.id for f in booted.findings]
     failed = triage.triage("Waiting for boot...\n" + err, "EXITED")
     assert "container-not-started" in [f.id for f in failed.findings]
+
+
+def test_refused_cube_swapchain_explains_the_render_crash():
+    """GitHub #107 (Budget Cuts Ultimate): the runtime refuses a cube swapchain, OVRPlugin crashes in EndFrame."""
+    from frameport.validate.triage import triage as run
+
+    log = ("10-09 02:34:43.131  1149  1219 I FrameBridge: xrCreateSwapchain 2048x2048 format=35907 samples=1 array=1 "
+           "faces=6 usage=0x21 flags=0x0 result=-2\n"
+           "10-09 02:34:43.131  1149  1219 D OVRPlugin: CompositorOpenXR_GLES::Layer::Initialize(): CreateSwapchain "
+           "for eye 0: 0x0, 0 stages\n"
+           "10-09 02:34:43.900  1149  1219 F libc    : Fatal signal 11 (SIGSEGV), code 2 (SEGV_ACCERR)\n"
+           "10-09 02:34:44.134  1149  1223 E CRASH   :       #00 pc 0000000000a85a80  /vendor/lib64/dri/"
+           "libgallium_dri.so (BuildId: 95)\n")
+    r = run(log, "EXITED", "com.NeatCorporation.BudgetCutsUltimate")
+    assert [f.id for f in r.findings] == ["cube-swapchain-refused"]
+    assert r.findings[0].suggest == ["frame.adapter"]
+    served = log + "I FrameBridge: cube_standin: runtime refused a 2048x2048 cube swapchain (result=-2): served\n"
+    assert "cube-swapchain-refused" not in [f.id for f in run(served, "RUNNING", "x").findings]
+
+
+def test_cube_standin_is_a_default_on_adapter_setting():
+    from frameport.patches.settings import SETTINGS
+
+    assert [s[2] for s in SETTINGS if s[0] == "cube_standin"] == [1]

@@ -43,6 +43,13 @@ signatures:
     severity: fatal
     diagnosis: The game crashed on a return-address check (autiasp) its code never signed. The Quest's CPU ignores these checks, the Steam Frame's enforces them; some OpenSSL assembly in game engines has such unpaired checks (e.g. Star Wars Pinball VR on its first network connection, thread HttpManager).
     suggest: [frame.pac_hints]
+  - id: cube-swapchain-refused
+    pattern: 'xrCreateSwapchain \d+x\d+ .*faces=6 .*result=-\d+'
+    unless: 'cube_standin: runtime refused'
+    severity: fatal
+    diagnosis: The game asked for a cube-map swapchain (e.g. an OVROverlay skybox or loading cube), which the Frame's runtime doesn't have. OVRPlugin goes on without images and crashes in ovrp_EndFrame4 (Unity's render thread SIGSEGV in memset, e.g. Budget Cuts Ultimate). FrameBridge from FramePort 0.12 serves such swapchains itself and drops their cube layers (cube_standin, GLES games) - rebuild and reinstall the game.
+    suggest: [frame.adapter]
+    supersedes: [unity-render-crash, native-crash]
   - id: swapchain-rect-invalid
     pattern: 'xrEndFrame failed -25\b'
     severity: fatal

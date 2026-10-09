@@ -33,6 +33,10 @@ SETTINGS = [
      "tracking (e.g. Silhouette)."),
     ("swapchain_fix", "int", 1, "Swapchain format fallback",
      "Retry rejected GLES formats/MSAA with sRGB, samples=1."),
+    ("cube_standin", "int", 1, "Stand-in cube swapchains",
+     "The Frame's runtime has no cube-map layers and refuses their swapchains; OVRPlugin then crashes when it submits "
+     "the next frame (e.g. Budget Cuts Ultimate). FrameBridge serves such a swapchain itself (a GL cube map, GLES "
+     "games) and drops its layers, so the game runs on without that layer."),
     ("layer_fix", "int", 1, "Drop invalid layers",
      "Drop layers whose swapchain failed or whose extension isn't enabled."),
     ("passthrough_emul", "int", 1, "Emulate passthrough",
@@ -300,10 +304,10 @@ UI: dict[str, dict] = {
                             help="Shows 3D 360° pictures flat if they look doubled.",
                             control=("choice", [(0, "As the game sends it"), (2, "Flat")])),
     **{key: dict(group="troubleshooting", level="advanced", control=("switch",)) for key in (
-        "foveation_fix", "hide_space_warp", "swapchain_fix", "layer_fix", "gl_hide_multiview", "mutable_fix",
-        "flip_quads", "swap_eyes", "vk_validation", "rect_clamp", "gl_hide_msrtt", "strip_color_bias", "snapshot",
-        "strip_depth", "respace_kick", "layer_debug", "eye_debug", "input_diag", "release_wait", "vk_hide_fdm",
-        "ovrp_begin_gate", "ovrp_hold_physics", "pose_debug")},
+        "foveation_fix", "hide_space_warp", "swapchain_fix", "cube_standin", "layer_fix", "gl_hide_multiview",
+        "mutable_fix", "flip_quads", "swap_eyes", "vk_validation", "rect_clamp", "gl_hide_msrtt", "strip_color_bias",
+        "snapshot", "strip_depth", "respace_kick", "layer_debug", "eye_debug", "input_diag", "release_wait",
+        "vk_hide_fdm", "ovrp_begin_gate", "ovrp_hold_physics", "pose_debug")},
 }
 
 
