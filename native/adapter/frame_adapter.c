@@ -1123,6 +1123,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrWaitFrame(XrSession session, const XrFrameWaitI
         xr_time_calibrated = 1;
         last_display_period = state->predictedDisplayPeriod;
         pose_time_sample(xr_time_offset);
+        pose_time_display(state->predictedDisplayTime);
         pose_time_note_offset((long long)(state->predictedDisplayTime - mono));
         if (layer_debug) debug_aim_vs_grip(state->predictedDisplayTime);
     }

@@ -28,7 +28,9 @@ static void frame(long long offset) {
     xr_time_offset = offset;
     pt_ring_n = pt_ring_i = 0;  // a new clock: fill the offset window with steady samples
     for (int i = 0; i < 10; i++) pose_time_sample(offset);
+    last_display_period = 13888889ll;  // 72 Hz
     last_predicted_time = mono_now() + offset + 21 * MS;
+    pose_time_display(last_predicted_time);
 }
 
 static void near(XrTime got, long long want) {
@@ -40,7 +42,8 @@ static void near(XrTime got, long long want) {
 }
 
 int main(void) {
-    const long long offsets[] = {2564 * MS, 50 * MS, 900 * MS};  // SteamOS 0.4.5; the range seen on older builds
+    // SteamOS 0.4.5; a reporter's Frame (GitHub #49); the range seen on older builds
+    const long long offsets[] = {2564 * MS, 68 * MS, 900 * MS};
     for (unsigned i = 0; i < sizeof(offsets) / sizeof(*offsets); ++i) {
         long long offset = offsets[i];
         frame(offset);
@@ -57,6 +60,23 @@ int main(void) {
     frame(2564 * MS);
     assert(pose_time_fixed(last_predicted_time - 100 * MS) == last_predicted_time - 100 * MS);  // recent past: kept
     assert(pt_fixed_mono == 9 && pt_fixed_past == 3);
+    // GitHub #49: XrTime 68 ms ahead and the game asks for its frame's display time 60 ms after xrWaitFrame (a hitch):
+    // nearer the monotonic "now" than XrTime's, but it is the display time and stays (was moved +67.7 ms)
+    frame(68 * MS);
+    last_predicted_time -= 60 * MS;
+    pose_time_display(last_predicted_time);
+    assert(pose_time_fixed(last_predicted_time) == last_predicted_time);
+    assert(pose_time_fixed(last_predicted_time + 2 * MS) == last_predicted_time + 2 * MS);  // not clearly monotonic
+    XrTime previous = last_predicted_time;
+    last_predicted_time += 14 * MS;  // the next frame: the previous display time is still the game's
+    pose_time_display(last_predicted_time);
+    assert(pose_time_fixed(previous) == previous);
+    frame(50 * MS);  // clocks less than 4 display periods apart: monotonic times aren't told apart
+    long long m50 = mono_now();
+    assert(pose_time_fixed(m50) == m50 && pose_time_fixed(last_predicted_time) == last_predicted_time);
+    assert(pose_time_fixed(100 * MS) == last_predicted_time);  // far past still handled
+    assert(pt_fixed_mono == 9 && pt_fixed_past == 4);
+    frame(2564 * MS);
     pt_ring_n = 3;  // too few samples yet: nothing is moved
     assert(pose_time_fixed(100 * MS) == 100 * MS);
     pt_ring_n = PT_RING < 10 ? PT_RING : 10;
