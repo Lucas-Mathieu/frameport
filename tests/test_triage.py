@@ -259,3 +259,16 @@ def test_cube_standin_is_a_default_on_adapter_setting():
     from frameport.patches.settings import SETTINGS
 
     assert [s[2] for s in SETTINGS if s[0] == "cube_standin"] == [1]
+
+
+def test_unity_pcvr_signatures():
+    """Unity's Player.log in a PC VR launch log (agent v67): VR start-up failures and Unity's crash handler."""
+    log = ("===== unity log compatdata/pfx/drive_c/users/steamuser/AppData/LocalLow/SUPERHOT Team/SUPERHOT VR/"
+           "Player.log\n"
+           "XR: OpenVR Error! OpenVR failed initialization with error code VRInitError_Init_HmdNotFound\n")
+    r = triage(log, "EXITED", "rift.superhot_vr")
+    assert [f.id for f in r.findings] == ["unity-vr-init"] and "pcvr.launch_args" in r.suggestions()
+    assert not triage("VRInitError_None\n", "RUNNING", "rift.x").findings
+    crash = triage("Crash!!!\nwine: Unhandled page fault\nBacktrace:\n", "EXITED", "rift.x")
+    assert [f.id for f in crash.findings] == ["unity-crash"]
+    assert not triage(log, "EXITED", "com.example.game").findings  # PC VR signatures only for rift games

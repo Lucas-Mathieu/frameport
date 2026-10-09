@@ -1493,3 +1493,42 @@ def test_linux_x86_apps_run_through_fex(monkeypatch, tmp_path):
     data = os.path.join(prep["base"], "compatdata")
     assert f"export STEAM_COMPAT_DATA_PATH={data}" in text and f"mkdir -p {data}" in text  # FEX exits without it
     assert text.index("STEAM_COMPAT_DATA_PATH") < text.index("fex-compat-tool")
+
+
+def test_game_logs_collect_unity_player_log(monkeypatch, tmp_path):
+    """PC VR launch tests and diagnostics include Unity's Player.log (+ prev, crash error.log) from the Proton prefix
+    (GitHub #105: SUPERHOT VR quit without a trace in the Proton logs)."""
+    a = load_agent(monkeypatch, tmp_path)
+    base = tmp_path / "rift.superhot_vr"
+    data = base / "game/SUPERHOTVR_Data"
+    data.mkdir(parents=True)
+    (data / "app.info").write_text("SUPERHOT Team\nSUPERHOT VR")
+    low = base / a.LOCAL_LOW
+    mine = low / "SUPERHOT Team/SUPERHOT VR"
+    mine.mkdir(parents=True)
+    (mine / "Player.log").write_text("Mono path[0]\n" + "".join(f"line {i}\n" for i in range(3000))
+                                     + "XR: OpenVR Error! OpenVR failed initialization with error code "
+                                       "VRInitError_Init_HmdNotFound\n")
+    (mine / "Player-prev.log").write_text("previous run\n")
+    other = low / "Other/Game"
+    other.mkdir(parents=True)
+    (other / "Player.log").write_text("not this game\n")
+    crash = base / a.LOCAL_APPDATA / "Temp/SUPERHOT Team/SUPERHOT VR/Crashes/Crash_2026-10-09_1"
+    crash.mkdir(parents=True)
+    (crash / "error.log").write_text("SUPERHOTVR.exe caused an Access Violation (0xc0000005)\n")
+    parts = a.game_logs(str(base))
+    text = "\n".join(parts)
+    assert "===== unity log " in text and "Mono path[0]" in text and "VRInitError_Init_HmdNotFound" in text
+    assert "lines left out" in text and "previous run" in text and "not this game" not in text
+    assert "Access Violation" in text
+    # a launch test only takes logs written since it started
+    old = 1_000_000
+    os.utime(mine / "Player-prev.log", (old, old))
+    os.utime(crash / "error.log", (old, old))
+    recent = "\n".join(a.game_logs(str(base), since=old + 10))
+    assert "VRInitError" in recent and "previous run" not in recent and "Access Violation" not in recent
+    # no app.info: every Player log in LocalLow; old Unity: <Name>_Data/output_log.txt
+    (data / "app.info").unlink()
+    (data / "output_log.txt").write_text("old unity\n")
+    text = "\n".join(a.game_logs(str(base)))
+    assert "not this game" in text and "old unity" in text

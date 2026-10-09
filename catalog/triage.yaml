@@ -388,6 +388,19 @@ signatures:
     severity: fatal
     diagnosis: The game crashed (Unreal's crash reporter started). See the game log and crash summary in the log. Common causes are that no VR runtime reached the game (Revive off) or a GPU or driver problem under Proton.
     suggest: [pcvr.revive, pcvr.proton_log, pcvr.no_crash_reporter]
+  - id: unity-vr-init
+    kind: pcvr
+    pattern: '(?i)OpenVR failed initialization|VRInitError_(?!None\b)\w+|Initialization of device \w+ failed|Failed to (load|initialize|start) (VR|XR|OpenVR|Oculus)\b'
+    severity: error
+    diagnosis: The game's Unity log shows that a VR device failed to start. Unity games built for both the Oculus and the SteamVR (OpenVR) runtime choose one with an argument; without it they may try Oculus, which the Frame doesn't have, and run without VR or quit. Start the game with -vrmode OpenVR (Game arguments).
+    suggest: [pcvr.launch_args]
+  - id: unity-crash
+    kind: pcvr
+    pattern: 'Crash!!!|caused an Access Violation|caused an Unhandled Exception'
+    severity: fatal
+    diagnosis: The game crashed (Unity's crash handler wrote a report; the Unity log in the launch log shows the stack). Common causes are that no VR runtime reached the game or a GPU or driver problem under Proton.
+    suggest: [pcvr.proton_log]
+    supersedes: [wine-crash]
   - id: wine-crash
     kind: pcvr
     pattern: 'Unhandled exception: page fault|wine: Unhandled|Backtrace:'

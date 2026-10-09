@@ -91,7 +91,11 @@ Read `docs/PLAYBOOK.md` (symptom → fix) before debugging a game, and `docs/FRA
     doesn't do). `VD.bat` is Virtual Desktop's launcher: ignore it except as an exe-location hint. Library migration
     `rift_run_direct` resets existing recipes.
     Auto launch-test is skipped on PC installs (it would start the game on the user's desktop). Launch tests collect the Unreal
-    game log + crash summaries from the Proton prefix; triage `unreal-crash`. Lies Beneath via Proton without Revive
+    game log + crash summaries from the Proton prefix; triage `unreal-crash`. Agent v67 adds Unity's logs (LocalLow/<Company>/<Product>/Player(-prev).log via `<Name>_Data/app.info`,
+    `output_log.txt`, Temp/…/Crashes/*/error.log; `unity_logs`) to launch tests and diagnostics; triage `unity-vr-init` /
+    `unity-crash`. A catalog recipe verified with another build (catalog `xr` ≠ the build's) keeps the build's own
+    `pcvr.launch_args` (`engine._other_build`; GitHub #105: SUPERHOT VR's Oculus+OpenVR build needs `-vrmode OpenVR`,
+    the catalog's is the OpenXR build); Electron launchers next to a game rank −30 (`rift.is_electron`). Lies Beneath via Proton without Revive
     crashed (UE 4.23 "Unhandled exception").
   - Rift scanning: `sources/rift_dump.scan` = the scanned folder's subfolders are games (one per folder; a folder is a
     game if all candidate exes sit under one child), recursing into collections; `analysis/rift.py` walks once,

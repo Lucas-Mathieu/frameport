@@ -38,6 +38,8 @@ games/<pkg>/package/         stand-in for the game files (no content):
 games/<pkg>/target/          from the Frame (or the PC): launch.sh, settings.conf, deployment.json, launch.log,
                              launch-test.log (PC VR), lepton-steamlaunch-<appid>.log, logcat-{main,crash,system,...}.log,
                              ReviveInjector.txt / steam-<appid>.log / game-log-N.txt (PC VR), files.json (+ missing)
+                             (game-log-N.txt: Unreal Saved/Logs + crash summaries, Unity Player.log / Player-prev.log /
+                             output_log.txt + crash error.log from the Proton prefix, agent v67)
 ```
 Each log keeps at most its last 4 MB (2 MB per file from the Frame).
 

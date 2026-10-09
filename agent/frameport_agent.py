@@ -38,7 +38,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 64
+AGENT_VERSION = 67
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -3987,10 +3987,56 @@ PCVR_LOGS = ("compatdata/pfx/drive_c/users/steamuser/AppData/Local/Revive/Revive
 LOCAL_APPDATA = "compatdata/pfx/drive_c/users/steamuser/AppData/Local"
 
 
+LOCAL_LOW = "compatdata/pfx/drive_c/users/steamuser/AppData/LocalLow"
+
+
+def _head_tail(path, head=300, tail=1500):
+    lines = open(path, errors="replace").read().splitlines()
+    if len(lines) > head + tail:
+        lines = lines[:head] + [f"[... {len(lines) - head - tail} lines left out ...]"] + lines[-tail:]
+    return "\n".join(lines)
+
+
+def unity_logs(base, since=0.0):
+    """Unity's own logs of a PC VR game: LocalLow/<Company>/<Product>/Player.log + Player-prev.log (Unity 2018.3+;
+    company and product from <game>/<Name>_Data/app.info, else every Player log in LocalLow), the older
+    <Name>_Data/output_log.txt and the crash handler's Temp/<Company>/<Product>/Crashes/*/error.log. Unity logs VR
+    start-up (which SDK, init errors) at the top, so the head is kept as well as the tail."""
+    game = os.path.join(base, "game")
+    low = os.path.join(base, LOCAL_LOW)
+    temp = os.path.join(base, LOCAL_APPDATA, "Temp")
+    names = []
+    for info in glob.glob(os.path.join(glob.escape(game), "*_Data", "app.info")):
+        try:
+            lines = [ln.strip() for ln in open(info, errors="replace").read().splitlines()]
+        except OSError:
+            continue
+        if len(lines) >= 2 and lines[0] and lines[1] and "/" not in lines[0] + lines[1] and \
+                ".." not in (lines[0], lines[1]):
+            names.append((lines[0], lines[1]))
+    dirs = [os.path.join(low, c, p) for c, p in names if os.path.isdir(os.path.join(low, c, p))]
+    logs = []
+    for d in dirs or glob.glob(os.path.join(glob.escape(low), "*", "*")):
+        logs += [os.path.join(d, n) for n in ("Player.log", "Player-prev.log")]
+    logs += glob.glob(os.path.join(glob.escape(game), "*_Data", "output_log.txt"))
+    crash_dirs = [os.path.join(temp, c, p) for c, p in names] or glob.glob(os.path.join(glob.escape(temp), "*", "*"))
+    crashes = [x for d in crash_dirs for x in glob.glob(os.path.join(glob.escape(d), "Crashes", "*", "error.log"))]
+    out = []
+    for log in [x for x in logs if os.path.isfile(x)]:
+        if os.path.getmtime(log) < since:  # left over from an earlier run
+            continue
+        out.append(f"===== unity log {os.path.relpath(log, base)}\n" + _head_tail(log))
+    for err in sorted(crashes, key=os.path.getmtime, reverse=True)[:2]:
+        if os.path.getmtime(err) >= since:
+            out.append(f"===== unity crash {os.path.relpath(err, base)}\n" + _head_tail(err, 100, 400))
+    return out
+
+
 def game_logs(base, since=0.0):
     """The game's own logs from the Proton prefix, newest first: Unreal Saved/Logs/*.log (tail) and crash summaries
-    (Saved/Crashes/*/CrashContext.runtime-xml → error message + call stack), Revive's logs."""
-    out = []
+    (Saved/Crashes/*/CrashContext.runtime-xml → error message + call stack), Unity's Player.log / crash error.log
+    (agent v67), Revive's logs."""
+    out = unity_logs(base, since)
     local = os.path.join(base, LOCAL_APPDATA)
     for log in sorted(glob.glob(os.path.join(local, "*", "Saved", "Logs", "*.log")), key=os.path.getmtime,
                       reverse=True)[:1]:
