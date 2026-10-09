@@ -38,6 +38,11 @@ signatures:
     severity: fatal
     diagnosis: The game's render thread jumped to address 0x10000 inside the Frame's GL driver (Mesa/Zink) a few seconds after start. Zink looks up a render-pass cache slot past its end when a game renders through multisampled render-to-texture (Unreal's mobile MSAA, e.g. Star Wars Pinball VR). Load the GL shim, which hides that extension.
     suggest: [frame.unreal_gl_shim, frame.unity_gl_shim]
+  - id: pac-unpaired
+    pattern: 'ILL_ILLOPN\), fault addr 0x[0-9a-f]+ \(\*pc=0xd50323bf\)'
+    severity: fatal
+    diagnosis: The game crashed on a return-address check (autiasp) its code never signed. The Quest's CPU ignores these checks, the Steam Frame's enforces them; some OpenSSL assembly in game engines has such unpaired checks (e.g. Star Wars Pinball VR on its first network connection, thread HttpManager).
+    suggest: [frame.pac_hints]
   - id: swapchain-rect-invalid
     pattern: 'xrEndFrame failed -25\b'
     severity: fatal

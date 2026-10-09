@@ -48,6 +48,8 @@ SUMMARIES = {
                             "graphics driver can't handle (e.g. Star Wars Pinball VR).",
     "frame.unreal_ovrp_entrypoints": "Lets older Unreal games start VR although the converted VR plugin lacks a few "
                                      "functions they look for (e.g. Star Wars Pinball VR).",
+    "frame.pac_hints": "Stops a crash on the Frame's CPU in games whose code has unpaired security checks the Quest "
+                       "ignores (e.g. Star Wars Pinball VR's first network connection).",
     "frame.unity_no_overlay_copy": "Stops a grey screen crash in some Unity games by skipping their overlay "
                                    "layers (e.g. The Room VR's screen fades).",
     "frame.nodebug": "Stops strict debugging checks that make some games quit.",
