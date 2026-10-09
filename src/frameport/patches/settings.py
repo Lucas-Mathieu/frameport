@@ -2,7 +2,7 @@
 
 Adapter settings end up in lib/<abi>/libframe_settings.so (build time) and in <install>/settings.conf +
 Android/data/<pkg>/files/framebridge.conf on the Frame (can be changed later without re-patching).
-The GL shim reads framebridge.conf too (gl_hide_multiview).
+The GL shim reads framebridge.conf too (gl_hide_multiview), as does the multiview interposer (gl_mv_debug).
 """
 from __future__ import annotations
 
@@ -190,6 +190,9 @@ SETTINGS = [
     ("vk_validation", "int", 0, "Vulkan shim: validation layer",
      "Diagnostics: the Vulkan shim (frame.vk_sanitize) adds Khronos' validation layer to the game's instance; its "
      "findings go to launch.log. The layer library (libVkLayer_khronos_validation.so) must be in the APK."),
+    ("gl_mv_debug", "int", 0, "Multiview interposer: diagnostics",
+     "Diagnostics for frame.gl_multiview_fbo: checks for GL errors after every single-view draw of a multiview "
+     "shader and logs counters every 5 seconds (tag GLMV in launch.log)."),
     ("gl_hide_msrtt", "int", 1, "GL shim: hide multisampled render-to-texture",
      "GL shim only: hide GL_EXT_multisampled_render_to_texture(2) (Zink crashes rendering Unity's runtime MSAA eye "
      "buffer through it, e.g. The Room VR)."),
@@ -328,7 +331,7 @@ UI: dict[str, dict] = {
         "mutable_fix", "flip_quads", "swap_eyes", "vk_validation", "rect_clamp", "gl_hide_msrtt", "strip_color_bias",
         "snapshot", "strip_depth", "respace_kick", "layer_debug", "eye_debug", "input_diag", "release_wait",
         "vk_hide_fdm", "ovrp_begin_gate", "ovrp_hold_physics", "pose_debug",
-        "zink_shader_dump")},
+        "zink_shader_dump", "gl_mv_debug")},
 }
 
 
@@ -392,6 +395,7 @@ class AdapterSetting(Patch):
             "swapchain_fix": ap.is_gles,
             "gl_hide_multiview": lambda a: a.direct_vrapi and ap.is_gles(a),
             "gl_hide_msrtt": ap.is_gles,
+            "gl_mv_debug": lambda a: bool((a.extra or {}).get("gl_multiview_libs")) and ap.is_gles(a),
             "ovrp_begin_gate": lambda a: a.engine == "Unity" and "libOVRPlugin.so" in a.libs,
             "ovrp_hold_physics": lambda a: a.engine == "Unity" and "libOVRPlugin.so" in a.libs,
             "vk_shader_fix": lambda a: a.engine == "Unreal",  # read by the Vulkan shim, which only Unreal games get

@@ -156,6 +156,13 @@ signatures:
     severity: error
     diagnosis: Shaders written for Quest drivers fail on Mesa (GLSL strictness).
     suggest: [frame.gl_shim]
+  - id: gl-multiview-twin-failed
+    pattern: 'GLMV\s*: twin of program \d+(: stage| failed)'
+    severity: warning
+    diagnosis: The multiview interposer (frame.gl_multiview_fbo) couldn't build a single-view copy of one of the
+      game's shader programs (the line has the compiler's message); draws of that program into flat panels (HUD,
+      menus) still stay black. Please report it with the log; turning the patch off changes nothing else.
+    suggest: []
   - id: vrapi-unsupported-layer
     pattern: 'OVRPortVrApi.*Unsupported VrApi layer type (\d+)'
     severity: error

@@ -40,7 +40,9 @@ SUMMARIES = {
     "frame.launcher": "Makes the game start from the Frame's Steam library.",
     "frame.start_activity": "Opens the app straight in VR, skipping its flat launcher screen (turn off to use the "
                             "launcher, e.g. to import new content).",
-    "frame.ltw_depth": "Fixes the black picture in Minecraft launchers (e.g. QuestCraft): uses depth formats the "
+    "frame.gl_multiview_fbo": "Experimental: shows HUD, menu and other flat panels that stay black because the "
+                              "Frame's graphics driver skips them (e.g. Doom3Quest's HUD and PDA).",
+    "frame.ltw_depth":"Fixes the black picture in Minecraft launchers (e.g. QuestCraft): uses depth formats the "
                        "Frame's graphics driver accepts.",
     "frame.unity_gl_shim": "Stops a grey or frozen screen in Unity games that turn on anti-aliasing while running "
                            "(e.g. The Room VR).",
