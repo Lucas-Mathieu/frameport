@@ -64,7 +64,11 @@ def real_podman(directory):
     """Find Podman independently of deployment.json, without recursing into this wrapper."""
     own_bin = (directory / "bin").resolve()
     own_script = Path(__file__).resolve()
-    for entry in os.environ.get("PATH", os.defpath).split(os.pathsep):
+    # Lepton runs its `podman exec` calls (boot wait, app pid, logcat mirror) with the Android guest's PATH
+    # (/product/bin:/system/bin:...), which has no host Podman: the system folders come after PATH. Failing there
+    # broke Lepton's logcat mirror and app-pid checks, and the container was stopped early.
+    entries = os.environ.get("PATH", os.defpath).split(os.pathsep) + ["/usr/local/bin", "/usr/bin", "/bin"]
+    for entry in entries:
         folder = Path(entry or os.curdir).resolve()
         if folder == own_bin:
             continue

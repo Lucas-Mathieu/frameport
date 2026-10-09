@@ -175,3 +175,14 @@ def test_failed_codec_mount_or_exec_preserves_original_arguments(tmp_path, monke
     with pytest.raises(ExecSucceeded):
         wrapper.main()
     assert executed == [["/usr/bin/podman", *args]] * 2
+
+
+def test_wrapper_finds_podman_under_the_android_path(tmp_path, monkeypatch):
+    """Lepton runs `podman exec` with the Android guest's PATH (/system/bin:...): the wrapper still finds the host's
+    Podman (it used to raise, which broke Lepton's logcat mirror and app-pid checks and stopped the container)."""
+    wrapper = load_module(ROOT / "native/hevc/podman.py", "android_path_wrapper")
+    monkeypatch.setattr(wrapper, "__file__", str(tmp_path / "codec/bin/podman"))
+    monkeypatch.setenv("PATH", "/product/bin:/system/bin:/vendor/bin")
+    monkeypatch.setattr(wrapper.shutil, "which", lambda _, path: path + "/podman" if path.endswith("usr/bin") else None)
+    monkeypatch.setattr(wrapper.Path, "resolve", lambda self: self)
+    assert Path(wrapper.real_podman(tmp_path / "codec")).as_posix().endswith("/usr/bin/podman")
