@@ -782,3 +782,13 @@ def test_unreal_gl_shim_offered_for_unreal_gles_only():
     assert not shim.applies(_analysis(engine="Unreal"))  # Vulkan
     assert not shim.applies(_analysis(engine="Unity", graphics="GLES (Unity boot.config)"))
     assert not shim.applies(gles.__class__(**{**gles.__dict__, "abis": ["armeabi-v7a"]}))
+
+
+def test_gl_shim_keeps_unreal_multiview_msrtt():
+    """Unreal 4.25 enables multiview only with GL_OVR_multiview_multisampled_render_to_texture listed: the shim keeps it
+    for Unreal and draws its function single-sampled (the prebuilt library must be rebuilt from the current source)."""
+    from frameport.patches.frame import artifact
+
+    shim = artifact("arm64-v8a", "libglshim.so")
+    assert b"multiview multisampled render-to-texture (%d samples) drawn single-sampled" in shim
+    assert b"glFramebufferTextureMultiviewOVR\0" in shim

@@ -112,11 +112,13 @@ class UnrealGlShim(GlShim):
     id = "frame.unreal_gl_shim"
     title = "GL shim for Unreal (no multisampled render-to-texture)"
     description = (
-        "Loads the GL shim into an Unreal GLES game and hides GL_EXT_multisampled_render_to_texture (and the multiview "
-        "variant). Unreal's mobile MSAA renders through multisampled render-to-texture, and the Frame's GL driver "
-        "(Mesa/Zink) can crash on it: SIGSEGV with fault address 0x10000 in libgallium_dri.so on the RHIThread a few "
-        "seconds after start (Zink looks up a render-pass cache slot past its end, e.g. Star Wars Pinball VR). Hidden, "
-        "Unreal renders without that path. Unreal's multiview stays on (the shim keeps it for Unreal and Unity).")
+        "Loads the GL shim into an Unreal GLES game and hides GL_EXT_multisampled_render_to_texture. Unreal's mobile "
+        "MSAA renders through multisampled render-to-texture, and the Frame's GL driver (Mesa/Zink) can crash on it: "
+        "SIGSEGV with fault address 0x10000 in libgallium_dri.so on the RHIThread a few seconds after start (Zink "
+        "looks up a render-pass cache slot past its end, e.g. Star Wars Pinball VR). Hidden, Unreal renders without "
+        "that path. Unreal's multiview stays on: Unreal only uses it when GL_OVR_multiview_multisampled_render_to_"
+        "texture is listed too, so for Unreal the shim keeps that one visible and draws its multiview MSAA "
+        "attachments single-sampled (glFramebufferTextureMultiviewOVR).")
     order = 62
     requires = ()
     experimental = False
