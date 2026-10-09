@@ -212,3 +212,15 @@ def test_slz_vulkan_hook_crash_is_recognised():
     assert f.suggest == ["frame.slz_vulkan_hooks"] and "java-crash" not in [x.id for x in r.findings]
     other = triage(log.replace("SLZ Graphics", "Other"), "EXITED", None)
     assert "slz-vulkan-hook-crash" not in [x.id for x in other.findings]
+
+
+def test_lepton3_transient_not_running_context_is_not_a_failure():
+    """Lepton 3.0.5 prints "is not a running context" while the container is still starting, then boots (VR4 ran
+    at 72 fps); only a container that never boots is a failure."""
+    from frameport.validate import triage
+
+    err = "ERROR: 'steamlaunch-2272591617' is not a running context, use 'lepton ps' to list them, like this:\n"
+    booted = triage.triage("Waiting for boot...\n" + err + "Boot complete!\n", "RUNNING")
+    assert "container-not-started" not in [f.id for f in booted.findings]
+    failed = triage.triage("Waiting for boot...\n" + err, "EXITED")
+    assert "container-not-started" in [f.id for f in failed.findings]

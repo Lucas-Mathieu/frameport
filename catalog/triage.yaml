@@ -275,6 +275,7 @@ signatures:
     suggest: []
   - id: container-not-started
     pattern: "is not a running context|OCI runtime error"
+    unless: 'Boot complete!'  # Lepton 3.x prints the error while its container is still starting, then boots fine
     severity: fatal
     diagnosis: The Lepton container failed to start (see the error above it in launch.log).
     suggest: []
