@@ -26,7 +26,8 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 # 4: vivox_api31 (Vivox's audio routing calls Android 12 AudioManager methods: frame.vivox_audio_route) (2026-10)
 # 5: unreal_quest_gates (Quest-only branches in ILMxLAB's Unreal: frame.unreal_quest_precompile/_keymap) (2026-10)
 # 6: gl_multiview_libs (own-engine libraries with OVR_multiview GLSL: frame.gl_multiview_fbo) (2026-10)
-ANALYSIS_VERSION = 6
+# 7: unreal_thumb_touch (UE4 OculusInput's ThumbUp from near-touch, matched exactly: frame.unreal_thumb_touch)
+ANALYSIS_VERSION = 7
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -306,6 +307,10 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             # Quest-only branches that leave ILMxLAB's Unreal games stuck on the Frame (frame.unreal_quest_*)
             "unreal_quest_gates": (unreal_quest_gates(lib_bytes.get(engine_lib.rsplit("/", 1)[1], b""))
                                    if engine_lib else []),
+            # UE4's Oculus input animates the thumb from near-touch, which the Frame never reports
+            # (frame.unreal_thumb_touch: True only where its exact code matches)
+            "unreal_thumb_touch": (unreal_thumb_touch(lib_bytes.get(engine_lib.rsplit("/", 1)[1], b""))
+                                   if engine_lib and engine_lib.startswith("lib/arm64-v8a/") else False),
             # own-engine libraries whose GLSL declares OVR_multiview views (frame.gl_multiview_fbo, e.g. Doom3Quest)
             "gl_multiview_libs": multiview_glsl_libs(lib_bytes) if engine == "Other" else [],
         },
@@ -329,6 +334,22 @@ def multiview_glsl_libs(lib_bytes: dict[str, bytes]) -> list[str]:
     also draw them into ordinary framebuffers, which Mesa refuses (frame.gl_multiview_fbo, GitHub #77)."""
     return sorted(n for n, d in lib_bytes.items() if not n.startswith(NOT_GL_ENGINE) and elf.is_elf(d)
                   and b"num_views" in d and b"gl_ViewID_OVR" in d)
+
+
+UNREAL_THUMB_TOUCH = "_ZN11OculusInput12FOculusInput20SendControllerEventsEv"
+
+
+def unreal_thumb_touch(data: bytes) -> bool:
+    """UE4's OculusInput sets ThumbUp from near-touch in exactly the code frame.unreal_thumb_touch rewrites (or
+    already rewrote)."""
+    if b"\0" + UNREAL_THUMB_TOUCH.encode() + b"\0" not in data:
+        return False
+    from ..patches.frame.unreal_thumb_touch import thumb_site
+
+    try:
+        return thumb_site(data) is not None
+    except Exception:  # noqa: BLE001 - a malformed library: no suggestion
+        return False
 
 
 def unreal_quest_gates(data: bytes) -> list[str]:

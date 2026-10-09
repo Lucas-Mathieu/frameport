@@ -93,7 +93,9 @@ SUMMARIES = {
                                      "never starts on the Frame (e.g. Vader Immortal).",
     "frame.unreal_quest_keymap": "Makes grip, trigger and touch controls reach the game's hands (it picked the "
                                  "empty Gear VR controls on the Frame, e.g. Vader Immortal).",
-    "frame.zink_shader_fix": "Repairs shaders that hang the graphics chip at certain effects, from the game's "
+    "frame.unreal_thumb_touch": "Makes the hands' thumbs follow what your thumb touches (they always pointed up: the "
+                                "Frame doesn't sense a thumb hovering, e.g. Vader Immortal).",
+    "frame.zink_shader_fix":"Repairs shaders that hang the graphics chip at certain effects, from the game's "
                              "recipe (e.g. Vader Immortal's lightspeed jump).",
     # Files and environment on the Frame
     "device.files": "Puts settings files next to the game on the Frame (e.g. to turn off an unsupported effect).",

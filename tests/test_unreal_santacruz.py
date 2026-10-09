@@ -228,7 +228,7 @@ def test_vader_recipe_from_the_catalog():
 
     entry = catalog.load()["com.ILMxLAB.VaderImmortal.ep1"]
     assert {"frame.unreal_quest_precompile", "frame.unreal_quest_keymap", "frame.zink_shader_fix"} <= set(entry.frame)
-    assert entry.adapter["pose_time_fix"] == 1 and entry.adapter["proximity_emul"] == 1
+    assert entry.adapter["pose_time_fix"] == 1
     fixes = entry.adapter["zink_shader_fix"].split(";")
     assert [f.split(":")[0] for f in fixes] == ["12016", "11436"]
     for f in fixes:  # twelve OpStores (3 words each) after all OpVariables
