@@ -55,6 +55,9 @@ def database() -> dict:
     return _db
 
 
+LOGCAT_LINE = re.compile(r"\d\d-\d\d \d\d:\d\d:\d\d\.\d+ ")
+
+
 def game_lines(log: str, package: str | None = None) -> list[str]:
     """Strip colour codes; when possible keep only lines of the game's process (plus Lepton's own lines)."""
     lines = [ANSI.sub("", ln) for ln in log.splitlines()]
@@ -70,10 +73,11 @@ def game_lines(log: str, package: str | None = None) -> list[str]:
     out = []
     for ln in lines:
         f = ln.split()
-        # logcat threadtime: date time pid tid level tag: msg
-        if len(f) > 3 and (f[2] in pids or not f[2].isdigit()):
+        # logcat threadtime: date time pid tid level tag: msg; everything else is Lepton's own output (e.g. its short
+        # "Boot complete!", which the container-not-started signature checks for: it used to be dropped here)
+        if not (len(f) > 3 and LOGCAT_LINE.match(ln) and f[2].isdigit()):
             out.append(ln)
-        elif "lepton" in ln.lower() or "APP_ACTIVITY" in ln:
+        elif f[2] in pids or "lepton" in ln.lower() or "APP_ACTIVITY" in ln:
             out.append(ln)
     return out
 

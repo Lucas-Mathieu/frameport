@@ -272,3 +272,21 @@ def test_unity_pcvr_signatures():
     crash = triage("Crash!!!\nwine: Unhandled page fault\nBacktrace:\n", "EXITED", "rift.x")
     assert [f.id for f in crash.findings] == ["unity-crash"]
     assert not triage(log, "EXITED", "com.example.game").findings  # PC VR signatures only for rift games
+
+
+def test_lepton_lines_survive_the_game_filter():
+    """With the package known, triage keeps only the game's logcat lines plus Lepton's own: the short "Boot complete!"
+    used to be dropped, so Lepton 3's transient "is not a running context" failed every launch test in the GUI."""
+    from frameport.validate import triage
+
+    log = ("Waiting for boot...\n"
+           "ERROR: 'steamlaunch-1' is not a running context, use 'lepton ps' to list them, like this:\n"
+           "Boot complete!\n"
+           "10-09 15:25:52.000   100   100 I ActivityManager: Start proc 1206:com.x.y/u0a12 for top-activity\n"
+           "10-09 15:25:52.416  1206  1230 I FrameBridge: settings read\n"
+           "10-09 15:25:52.500   999   999 I Other: unrelated\n")
+    lines = triage.game_lines(log, "com.x.y")
+    assert "Boot complete!" in lines and not any("Other: unrelated" in ln for ln in lines)
+    assert any("FrameBridge" in ln for ln in lines)
+    res = triage.triage(log, "RUNNING", package="com.x.y")
+    assert "container-not-started" not in [f.id for f in res.findings]
