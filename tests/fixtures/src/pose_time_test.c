@@ -12,7 +12,7 @@ typedef int64_t XrTime;
 typedef int64_t XrDuration;
 static XrTime last_predicted_time;
 static int64_t xr_time_offset;
-static int xr_time_calibrated = 1, pose_time_fix = 1, pose_debug = 1;
+static int pose_time_fix = 1, pose_debug = 1;
 #include "pose_time.c"
 
 #define MS 1000000ll
@@ -26,6 +26,8 @@ static long long mono_now(void) {
 // XrTime runs `offset` ahead of the monotonic clock; the frame being prepared shows two periods from now
 static void frame(long long offset) {
     xr_time_offset = offset;
+    pt_ring_n = pt_ring_i = 0;  // a new clock: fill the offset window with steady samples
+    for (int i = 0; i < 10; i++) pose_time_sample(offset);
     last_predicted_time = mono_now() + offset + 21 * MS;
 }
 
@@ -48,11 +50,17 @@ int main(void) {
         long long mono = mono_now();
         near(pose_time_fixed(mono), mono + offset);                     // OVRPlugin's monotonic "now"
         near(pose_time_fixed(mono - 8 * MS), mono - 8 * MS + offset);   // a monotonic time just before
-        near(pose_time_fixed(100 * MS), mono + offset);                 // nonsense far in the past (XrTime 0.1 s)
+        assert(pose_time_fixed(100 * MS) == display);                   // nonsense far in the past: the display time
+        pose_time_sample(offset - 1500 * MS);                            // a hitch: xrWaitFrame returned late
+        near(pose_time_fixed(mono), mono + offset);                     // the steady offset still wins
     }
     frame(2564 * MS);
     assert(pose_time_fixed(last_predicted_time - 100 * MS) == last_predicted_time - 100 * MS);  // recent past: kept
-    assert(pt_fixed_mono == 6 && pt_fixed_past == 3);
+    assert(pt_fixed_mono == 9 && pt_fixed_past == 3);
+    pt_ring_n = 3;  // too few samples yet: nothing is moved
+    assert(pose_time_fixed(100 * MS) == 100 * MS);
+    pt_ring_n = PT_RING < 10 ? PT_RING : 10;
+    pt_fixed_mono = 9;
     last_display_period = 10 * MS;  // the diagnostics count per space and start over after each report
     pose_time_note_offset(2564 * MS);
     pose_time_note("xrLocateSpace", 1, 2, last_predicted_time - 2564 * MS);

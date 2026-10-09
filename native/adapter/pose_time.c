@@ -40,6 +40,30 @@ static void pose_time_note(const char *kind, uint64_t space, uint64_t base, XrTi
     pthread_mutex_unlock(&pt_lock);
 }
 
+// The offset sampled at xrWaitFrame dips (by up to 2.5 s) whenever xrWaitFrame returns late after a hitch, which put
+// corrected times up to 2 s in the future (headless survey, 2026-10-09). The steady value is the largest recent sample:
+// pose_time_fix uses the maximum of the last PT_RING samples (~2 s at 72 Hz; the offset drifts only ~0.14 s per hour).
+#define PT_RING 144
+static int64_t pt_ring[PT_RING];
+static int pt_ring_n, pt_ring_i;
+
+static void pose_time_sample(int64_t offset) {  // XrTime "now" minus CLOCK_MONOTONIC, from xrWaitFrame
+    pthread_mutex_lock(&pt_lock);
+    pt_ring[pt_ring_i] = offset;
+    pt_ring_i = (pt_ring_i + 1) % PT_RING;
+    if (pt_ring_n < PT_RING) ++pt_ring_n;
+    pthread_mutex_unlock(&pt_lock);
+}
+
+static int64_t pose_time_offset(void) {
+    pthread_mutex_lock(&pt_lock);
+    int64_t best = pt_ring_n ? pt_ring[0] : 0;
+    for (int i = 1; i < pt_ring_n; i++)
+        if (pt_ring[i] > best) best = pt_ring[i];
+    pthread_mutex_unlock(&pt_lock);
+    return best;
+}
+
 static void pose_time_note_offset(long long offset) {
     if (!pose_debug) return;
     pthread_mutex_lock(&pt_lock);
@@ -56,15 +80,16 @@ static void pose_time_note_offset(long long offset) {
 // poses) was located that far in the past and the hands trailed the controllers (BattleSisters, Sniper Elite VR).
 // A located time nearer the monotonic clock than XrTime's "now" is taken as a monotonic timestamp and moved to the
 // same moment in XrTime (offset measured at xrWaitFrame); a time more than PT_PAST_LIMIT before the predicted display
-// time that isn't one (BattleSisters asks for its head at XrTime 0.1 s) is located at "now".
+// time that isn't one (BattleSisters asks for its head at XrTime 0.1 s; Robo Recall, Phantom, Vader, Time Stall and
+// The Room VR at ~0 every frame) is located at the predicted display time, the time the game renders with.
 #define PT_PAST_LIMIT 500000000ll  // 0.5 s: no runtime keeps a longer pose history; real past queries are far shorter
 #define PT_MIN_OFFSET 5000000ll    // XrTime and the monotonic clock this close: nothing to tell apart or to fix
 static int pt_fixed_mono, pt_fixed_past;
 static long long pt_fixed_min;
 
 static XrTime pose_time_fixed(XrTime time) {
-    if (!pose_time_fix || !last_predicted_time || !xr_time_calibrated) return time;
-    int64_t offset = xr_time_offset;  // XrTime "now" minus the monotonic clock
+    if (!pose_time_fix || !last_predicted_time || pt_ring_n < 8) return time;  // a few frames of offset samples first
+    int64_t offset = pose_time_offset();  // XrTime "now" minus the monotonic clock (robust, see above)
     if (offset < PT_MIN_OFFSET && offset > -PT_MIN_OFFSET) return time;
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -76,7 +101,7 @@ static XrTime pose_time_fixed(XrTime time) {
     if (abs_mono < PT_PAST_LIMIT && abs_mono < abs_xr) {
         fixed = (XrTime)(time + offset), kind = 0;  // a monotonic timestamp
     } else if ((long long)(time - last_predicted_time) < -PT_PAST_LIMIT) {
-        fixed = (XrTime)(mono + offset), kind = 1;  // far in the past: now
+        fixed = last_predicted_time, kind = 1;  // far in the past: the frame's display time
     } else {
         return time;
     }
