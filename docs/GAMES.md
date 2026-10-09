@@ -79,6 +79,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Under Cover | Quest | ✅ Works |  |
 | VR HOT Quest | Quest | ✅ Works |  |
 | VR4 | Quest | ✅ Works |  |
+| Walkabout Mini Golf | Quest | ✅ Works |  |
 | Wallace & Gromit in The Grand Getaway | Quest | ✅ Works |  |
 | Waltz of the Wizard: Extended Edition | Quest | ✅ Works |  |
 | Wander | Quest | ✅ Works |  |
