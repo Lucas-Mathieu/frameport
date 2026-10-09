@@ -441,7 +441,8 @@ signatures:
     severity: error
     diagnosis: The game can't write to a folder it created in its storage (e.g. SUPERHOT's cloud/data, mode 1700, which
       makes it quit at start). FramePort's launcher (agent 41 or newer) gives such folders owner and group write
-      permission before and during every launch; update the game on the Frame (reinstall) to get the new launcher.
+      permission before and during every launch (agent 41 or newer; else reinstall the game). A folder the game creates
+      and checks in the same moment on its very first start can't be repaired in time, so start the game again.
     suggest: []
   - id: surface-swapchain-emulated
     pattern: 'surface_emul: emulated Android surface swapchain'
