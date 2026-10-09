@@ -17,6 +17,16 @@ Only the matching game's container receives the read-only plugin/XML mounts
 and Iris decoder device. Shared Lepton files and original MP4/OBB assets are
 never replaced, transcoded, resized, or rewritten.
 
+The native projection, view recording and Vulkan-enable hooks are gated by
+`surface_native`. With it off, Vulkan function lookup and directly exported
+entry points pass through to the original loader; default `surface_emul`
+alone does not enable the new Vulkan projection path. The fixture
+`tests/fixtures/src/surface_hooks_test.c` checks function identity with the
+setting off/on and direct-export forwarding with it off. Compile it with
+`FRAMEPORT_FAKE_RUNTIME` as `libopenxr_loader_original.so`, then without that
+define as the client; run each setting in a separate process next to the
+production adapter and fake loader.
+
 The wrapper verifies the tested Android 11 SoftOMX ABI. An existing runtime
 hardware plugin takes precedence; incompatible runtimes keep their stock codecs.
 Hardware decoder capacity is probed before the private component is advertised.

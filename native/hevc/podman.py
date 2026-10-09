@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -59,18 +60,37 @@ def mounts(directory, config, args):
     return result
 
 
+def real_podman(directory):
+    """Find Podman independently of deployment.json, without recursing into this wrapper."""
+    own_bin = (directory / "bin").resolve()
+    own_script = Path(__file__).resolve()
+    for entry in os.environ.get("PATH", os.defpath).split(os.pathsep):
+        folder = Path(entry or os.curdir).resolve()
+        if folder == own_bin:
+            continue
+        found = shutil.which("podman", path=str(folder))
+        if found:
+            executable = Path(found).resolve()
+            if executable.parent != own_bin and executable != own_script:
+                return str(executable)
+    raise RuntimeError("no real Podman executable found outside the codec wrapper directory")
+
+
 def main():
     directory = Path(__file__).resolve().parent.parent
-    config = json.loads((directory / "deployment.json").read_text())
     args = sys.argv[1:]
+    fallback = real_podman(directory)
     try:
+        config = json.loads((directory / "deployment.json").read_text())
+        podman = Path(config["podman"]).resolve()
+        if podman.parent == (directory / "bin").resolve() or podman == Path(__file__).resolve():
+            raise ValueError("configured Podman points to the codec wrapper")
         extra = mounts(directory, config, args)
-    except (OSError, ValueError, ET.ParseError) as exc:
+        launch_args = [args[0], *extra, *args[1:]] if extra else args
+        os.execv(str(podman), [str(podman), *launch_args])
+    except Exception as exc:  # a codec/configuration failure must never prevent the stock container from starting
         print(f"FramePort HEVC: retaining stock codecs: {exc}", file=sys.stderr)
-        extra = []
-    if extra:
-        args = [args[0], *extra, *args[1:]]
-    os.execv(config["podman"], [config["podman"], *args])
+    os.execv(fallback, [fallback, *args])
 
 
 if __name__ == "__main__":

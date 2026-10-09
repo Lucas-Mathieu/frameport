@@ -18,6 +18,7 @@ HERE = Path(__file__).resolve().parent
 ARTIFACTS = HERE.parents[1] / "artifacts/hevc"
 FFMPEG_SHA = "733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1"
 RUNTIME_SHA = "456e912c75cd389abcf6a63bc80e2a53bdc334371d00b200c93680388ae955e2"
+NDK_REVISION = "27.2.12479018"
 
 
 def run(args, **kwargs):
@@ -29,7 +30,11 @@ def main():
     parser.add_argument("--ndk", type=Path, required=True)
     parser.add_argument("--lepton-root", type=Path, required=True)
     args = parser.parse_args()
-    ndk = args.ndk.resolve() / "toolchains/llvm/prebuilt/linux-x86_64"
+    ndk_root = args.ndk.resolve()
+    if not any(line.strip() == f"Pkg.Revision = {NDK_REVISION}"
+               for line in (ndk_root / "source.properties").read_text().splitlines()):
+        parser.error(f"use Android NDK r27c ({NDK_REVISION})")
+    ndk = ndk_root / "toolchains/llvm/prebuilt/linux-x86_64"
     if not (ndk / "bin/clang++").exists():
         parser.error("use the Linux NDK r27c (Windows: run this builder inside WSL)")
     runtime = args.lepton_root.resolve()
@@ -46,11 +51,21 @@ def main():
         tar.extractall(cache, filter="data")
     source = cache / "ffmpeg-7.1.1"
     install = cache / "ffmpeg-install"
+    # Discard previous objects/configuration so a host compiler or changed
+    # configure flags cannot silently survive a rebuild.
+    if (source / "config.mak").exists():
+        run(["make", "distclean"], cwd=source)
+    if install.exists():
+        shutil.rmtree(install)
     env = dict(os.environ, PATH=str(ndk / "bin") + os.pathsep + os.environ["PATH"])
+    prefix_maps = [f"-ffile-prefix-map={HERE.parents[1]}=.", f"-ffile-prefix-map={ndk_root}=android-ndk-r27c",
+                   f"-ffile-prefix-map={runtime}=lepton-rootfs"]
     run([
         source / "configure", f"--prefix={install}", "--target-os=android", "--arch=aarch64",
         "--enable-cross-compile", "--cc=aarch64-linux-android30-clang", "--cxx=aarch64-linux-android30-clang++",
         "--ld=aarch64-linux-android30-clang", "--ar=llvm-ar", "--nm=llvm-nm", "--ranlib=llvm-ranlib",
+        "--extra-cflags=" + " ".join(prefix_maps),
+        "--extra-cxxflags=" + " ".join(prefix_maps),
         "--disable-everything", "--disable-autodetect", "--enable-v4l2-m2m", "--disable-programs",
         "--disable-doc", "--enable-pic", "--enable-static", "--disable-shared",
         "--enable-decoder=hevc_v4l2m2m", "--enable-parser=hevc", "--enable-bsf=hevc_mp4toannexb",
@@ -58,6 +73,14 @@ def main():
         "--enable-avutil", "--disable-avdevice", "--disable-avfilter", "--disable-swscale",
         "--disable-swresample", "--disable-postproc",
     ], cwd=source, env=env)
+    # FFmpeg embeds its configure command as a runtime diagnostic string.
+    # Prefix-map flags cannot rewrite string literals, so normalize that
+    # generated string too, retaining the options without host paths.
+    config = source / "config.h"
+    text = config.read_text()
+    for path, replacement in ((ndk_root, "android-ndk-r27c"), (runtime, "lepton-rootfs"), (HERE.parents[1], ".")):
+        text = text.replace(str(path), replacement)
+    config.write_text(text)
     run(["make", "-j4"], cwd=source, env=env)
     run(["make", "install"], cwd=source, env=env)
     # Use the platform libc++ namespace. Do not change the NDK's own headers or
@@ -69,7 +92,8 @@ def main():
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     run([
         ndk / "bin/aarch64-linux-android30-clang++", "-std=gnu++17", "-O3", "-fPIC", "-shared",
-        "-fno-rtti", "-fno-exceptions", "-nostdlib++", "-Wall", "-Wextra", "-Werror",
+        *prefix_maps,
+        "-fno-rtti", "-fno-exceptions", "-nostdlib++", "-nostdinc++", "-Wall", "-Wextra", "-Werror",
         "-Wno-unused-private-field", "-isystem", cpp, "-I", HERE / "platform",
         "-I", HERE / "platform/media/openmax", "-I", install / "include", HERE / "frameport_hevc.cpp",
         "-L", install / "lib", "-lavcodec", "-lavutil", "-L", runtime / "vendor/lib64",
@@ -81,9 +105,13 @@ def main():
     for name in ("podman.py", "media_codecs_frameport.xml"):
         shutil.copyfile(HERE / name, ARTIFACTS / (name + ".txt" if name == "podman.py" else name))
     shutil.copyfile(source / "COPYING.LGPLv2.1", ARTIFACTS / "COPYING.FFmpeg")
-    files = {name: hashlib.sha256((ARTIFACTS / (name + ".txt" if name == "podman.py" else name)).read_bytes()).hexdigest()
-             for name in ("libstagefrighthw.so", "podman.py", "media_codecs_frameport.xml", "COPYING.FFmpeg")}
-    (ARTIFACTS / "manifest.json").write_text(json.dumps({"runtime_sha256": RUNTIME_SHA, "files": files}, indent=2) + "\n")
+    files = {}
+    for name in ("libstagefrighthw.so", "podman.py", "media_codecs_frameport.xml", "COPYING.FFmpeg"):
+        path = ARTIFACTS / (name + ".txt" if name == "podman.py" else name)
+        files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest = {"runtime_sha256": RUNTIME_SHA, "files": files,
+                "build": {"ndk_revision": NDK_REVISION, "ffmpeg_source_sha256": FFMPEG_SHA}}
+    (ARTIFACTS / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
 
 if __name__ == "__main__":

@@ -20,6 +20,12 @@ pass through. Shared Lepton, drivers and original MP4 assets are unchanged.
 Unknown runtime ABIs retain the stock codecs and log why. A future native
 Lepton hardware plugin takes precedence.
 
+The wrapper resolves a fallback Podman from PATH outside its own directory
+before reading deployment configuration. Missing/malformed configuration,
+recursive executable paths, mount-preparation errors and failed exec calls
+retain the original arguments and launch stock Podman. The agent publishes
+`deployment.json` and codec payloads before atomically exposing `bin/podman`.
+
 Packaging is limited to the validated arm64 Batman package (`com.camouflaj.manta`).
 Unrelated games and arm32 APKs do not receive these assets or the native video
 setting. Rebuilding an older unrelated test APK removes its previous codec
@@ -47,6 +53,22 @@ Build on Linux/WSL with Android NDK r27c and the tested Lepton rootfs:
 ```
 python native/hevc/build.py --ndk /path/to/android-ndk-r27c --lepton-root /path/to/Lepton/images/rootfs
 ```
+
+The build requires Linux x86-64, Python 3.12+, Make, Perl, and a working host C
+compiler with libc development headers (FFmpeg builds host tools). The NDK
+revision is checked against `27.2.12479018`. Previous FFmpeg objects and install
+output are discarded. Both FFmpeg and the plugin use that NDK's compiler and
+linker. A private copy of its libc++ headers uses Android's platform `__1`
+namespace; `-nostdinc++` prevents mixing these with the NDK's `__ndk1` headers.
+The build does not edit the NDK or ship a second libc++.
+
+Compiler file-prefix maps cover source, NDK and runtime paths. FFmpeg's
+generated configuration string is normalized separately because it embeds
+literal configure arguments. The manifest records the NDK revision and source
+checksum. Two clean builds in different directories produced the same codec
+binary SHA256; `.comment` identifies NDK Clang/LLD 18.0.3 throughout. The rebuilt
+plugin also passed 600 original 8K frames, a flush/seek, 120 replayed frames and
+clean shutdown in an isolated headset container.
 
 AOSP headers in `platform/` come from `android-11.0.0_r48` and retain their
 original license notices. `fetch_headers.py` records the upstream paths.

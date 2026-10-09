@@ -21,7 +21,7 @@ def settings_text(recipe_patches: dict) -> bytes:
 
 class FrameBridgeAdapter(Patch):
     id = "frame.adapter"
-    package_revisions = {"com.camouflaj.manta": 19}
+    package_revisions = {"com.camouflaj.manta": 20}
     title = "FrameBridge OpenXR adapter"
     description = (
         "Wraps OVRPort's generic OpenXR loader (renamed libopenxr_loader_original.so). Fixes the Frame runtime's "

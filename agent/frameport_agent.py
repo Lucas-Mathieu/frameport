@@ -39,7 +39,7 @@ import zipfile
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 69
+AGENT_VERSION = 70
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -2318,18 +2318,20 @@ def install_video_codec(base, lepton, appid):
     if not real_podman:
         raise AgentError("podman is unavailable")
     os.makedirs(os.path.join(directory, "bin"), exist_ok=True)
-    for name, content in data.items():
-        path = os.path.join(directory, "bin/podman" if name == "podman.py" else name)
-        with open(path + ".tmp", "wb") as f:
-            f.write(content)
-        os.chmod(path + ".tmp", 0o755 if name == "podman.py" else 0o644)
-        os.replace(path + ".tmp", path)
     config = {"lepton": lepton, "appid": str(appid), "podman": real_podman,
               "runtime_sha256": manifest["runtime_sha256"]}
     path = os.path.join(directory, "deployment.json")
     with open(path + ".tmp", "w") as f:
         json.dump(config, f)
     os.replace(path + ".tmp", path)
+    # Publish the executable last: a first install cannot expose a wrapper
+    # whose configuration or codec files have not been written yet.
+    for name in (*[n for n in data if n != "podman.py"], "podman.py"):
+        path = os.path.join(directory, "bin/podman" if name == "podman.py" else name)
+        with open(path + ".tmp", "wb") as f:
+            f.write(data[name])
+        os.chmod(path + ".tmp", 0o755 if name == "podman.py" else 0o644)
+        os.replace(path + ".tmp", path)
     return True
 
 

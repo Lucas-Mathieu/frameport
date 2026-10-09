@@ -883,6 +883,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateVulkanInstanceKHR(XrInstance instance,con
         VkInstance *created,VkResult *vulkanResult) {
     PFN_xrCreateVulkanInstanceKHR fn=(PFN_xrCreateVulkanInstanceKHR)lookup(instance,"xrCreateVulkanInstanceKHR");
     if(!fn)return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if(!surface_native)return fn(instance,info,created,vulkanResult);
     XrResult result=fn(instance,info,created,vulkanResult);
     if(XR_SUCCEEDED(result) && created && vulkanResult && *vulkanResult==VK_SUCCESS)vk.instance=*created;
     return result;
@@ -928,6 +929,7 @@ static int surf_device_supported(PFN_vkGetInstanceProcAddr gipa, VkInstance inst
 XRAPI_ATTR XrResult XRAPI_CALL xrGetVulkanGraphicsDeviceKHR(XrInstance instance,XrSystemId system,
         VkInstance vulkanInstance,VkPhysicalDevice *physical) {
     PFN_xrGetVulkanGraphicsDeviceKHR fn=(PFN_xrGetVulkanGraphicsDeviceKHR)lookup(instance,"xrGetVulkanGraphicsDeviceKHR");
+    if(!surface_native)return fn?fn(instance,system,vulkanInstance,physical):XR_ERROR_FUNCTION_UNSUPPORTED;
     XrResult result=fn?fn(instance,system,vulkanInstance,physical):XR_ERROR_FUNCTION_UNSUPPORTED;
     if(XR_SUCCEEDED(result) && physical){vk.instance=vulkanInstance;vk.physical=*physical;}
     return result;
@@ -936,6 +938,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetVulkanDeviceExtensionsKHR(XrInstance instanc
         uint32_t capacity,uint32_t *count,char *buffer) {
     PFN_xrGetVulkanDeviceExtensionsKHR fn=(PFN_xrGetVulkanDeviceExtensionsKHR)lookup(instance,"xrGetVulkanDeviceExtensionsKHR");
     if(!fn)return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if(!surface_native)return fn(instance,system,capacity,count,buffer);
     void *lib=dlopen("libvulkan.so",RTLD_NOW|RTLD_LOCAL);
     PFN_vkGetInstanceProcAddr gipa=lib?(PFN_vkGetInstanceProcAddr)dlsym(lib,"vkGetInstanceProcAddr"):NULL;
     if(!surf_device_supported(gipa,vk.instance,vk.physical))return fn(instance,system,capacity,count,buffer);
@@ -957,6 +960,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateVulkanDeviceKHR(XrInstance instance,const
         VkDevice *device,VkResult *vulkanResult) {
     PFN_xrCreateVulkanDeviceKHR fn=(PFN_xrCreateVulkanDeviceKHR)lookup(instance,"xrCreateVulkanDeviceKHR");
     if(!fn)return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if(!surface_native)return fn(instance,info,device,vulkanResult);
     if(!info || !info->vulkanCreateInfo || !surf_device_supported(info->pfnGetInstanceProcAddr,
         vk.instance,info->vulkanPhysicalDevice))return fn(instance,info,device,vulkanResult);
     VkDeviceCreateInfo ci=*info->vulkanCreateInfo;
@@ -1337,7 +1341,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateViews(XrSession session, const XrViewLoca
     if (cacheable && pose_cache_lookup(session, info, state, capacity, count, views)) return XR_SUCCESS;
     XrResult result = fn(session, info, state, capacity, count, views);
     if (cacheable && result == XR_SUCCESS) pose_cache_store(session, info, state, *count, views);
-    if(surface_emul && XR_SUCCEEDED(result) && count)
+    if(surface_native && surface_emul && XR_SUCCEEDED(result) && count)
         surf_views_record(session,info,state,*count<capacity?*count:capacity,views);
     if (equirect_emul && XR_SUCCEEDED(result) && info && count && views && state &&
         (state->viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT))
@@ -1500,7 +1504,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
         const XrCompositionLayerBaseHeader *layer = info->layers[i];
         if (!layer) { ++dropped; continue; }
         if (emul_is_equirect(layer)) {
-            const XrCompositionLayerBaseHeader *replacement = surf_projection_frame(session, info, layer);
+            const XrCompositionLayerBaseHeader *replacement = surface_native ? surf_projection_frame(session, info, layer) : NULL;
             if (replacement) {
                 int already = 0;
                 for (int k = 0; k < surface_projection_count; ++k) already |= surface_projections[k] == replacement;
@@ -1948,10 +1952,6 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const 
     HOOK(xrPollEvent)
     HOOK(xrWaitFrame)
     HOOK(xrCreateSession)
-    HOOK(xrGetVulkanGraphicsDeviceKHR)
-    HOOK(xrGetVulkanDeviceExtensionsKHR)
-    HOOK(xrCreateVulkanDeviceKHR)
-    HOOK(xrCreateVulkanInstanceKHR)
     HOOK(xrEnumerateSwapchainImages)
     HOOK(xrAcquireSwapchainImage)
     HOOK(xrLocateSpace)
@@ -1969,6 +1969,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const 
     // Per-game hooks: only installed when their setting is on, so other games run through exactly the same calls.
 #define HOOK_AS(fn, impl) if (!strcmp(name, #fn)) { *function = (PFN_xrVoidFunction)impl; return XR_SUCCESS; }
     if (surface_native) {
+        HOOK(xrGetVulkanGraphicsDeviceKHR)
+        HOOK(xrGetVulkanDeviceExtensionsKHR)
+        HOOK(xrCreateVulkanDeviceKHR)
+        HOOK(xrCreateVulkanInstanceKHR)
         HOOK_AS(xrReleaseSwapchainImage, surf_composite_release)
         HOOK_AS(xrWaitSwapchainImage, surf_composite_wait)
     }
