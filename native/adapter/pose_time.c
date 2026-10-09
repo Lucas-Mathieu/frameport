@@ -1,0 +1,115 @@
+// Included by frame_adapter.c: the times games locate poses at (pose_time_fix, pose_debug).
+//
+// pose_debug (diagnostics): every ~5 s, per located space (xrLocateSpace/xrLocateSpaces) and for xrLocateViews, the
+// number of calls and the min/max of (requested time - the last xrWaitFrame's predictedDisplayTime); for
+// xrConvertTimespecTimeToTimeKHR the same for its answers, plus the spread of the XrTime-vs-CLOCK_MONOTONIC offset
+// measured at xrWaitFrame.
+
+static XrDuration last_display_period;
+
+#define PT_SLOTS 12
+typedef struct {
+    const char *kind;
+    uint64_t space, base;
+    int count;
+    long long min, max;  // ns relative to the last predicted display time
+} pt_stat;
+static pt_stat pt_stats[PT_SLOTS];
+static int pt_overflow;
+static long long pt_offset_min, pt_offset_max;
+static int pt_offset_count;
+static pthread_mutex_t pt_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void pose_time_note(const char *kind, uint64_t space, uint64_t base, XrTime time) {
+    if (!pose_debug || !last_predicted_time) return;
+    long long d = (long long)(time - last_predicted_time);
+    pthread_mutex_lock(&pt_lock);
+    int i = 0;
+    while (i < PT_SLOTS && pt_stats[i].count &&
+           !(pt_stats[i].kind == kind && pt_stats[i].space == space && pt_stats[i].base == base))
+        ++i;
+    if (i == PT_SLOTS) {
+        ++pt_overflow;
+    } else {
+        pt_stat *s = &pt_stats[i];
+        if (!s->count) s->kind = kind, s->space = space, s->base = base, s->min = s->max = d;
+        if (d < s->min) s->min = d;
+        if (d > s->max) s->max = d;
+        ++s->count;
+    }
+    pthread_mutex_unlock(&pt_lock);
+}
+
+static void pose_time_note_offset(long long offset) {
+    if (!pose_debug) return;
+    pthread_mutex_lock(&pt_lock);
+    if (!pt_offset_count || offset < pt_offset_min) pt_offset_min = offset;
+    if (!pt_offset_count || offset > pt_offset_max) pt_offset_max = offset;
+    ++pt_offset_count;
+    pthread_mutex_unlock(&pt_lock);
+}
+
+// pose_time_fix: Meta's OVRPlugin takes "now" from CLOCK_MONOTONIC and passes it on as an XrTime unchanged (no
+// conversion reaches FrameBridge: OVRPort's dispatcher answers XR_KHR_convert_timespec_time itself, 1:1, since the
+// Frame's runtime lacks it). On a Quest XrTime is the monotonic clock; on the Frame it runs ahead (2.56 s measured on
+// SteamOS 0.4.5, 0.05-0.9 s seen on older builds), so every "now" pose (Unity's physics step, OVRInput's controller
+// poses) was located that far in the past and the hands trailed the controllers (BattleSisters, Sniper Elite VR).
+// A located time nearer the monotonic clock than XrTime's "now" is taken as a monotonic timestamp and moved to the
+// same moment in XrTime (offset measured at xrWaitFrame); a time more than PT_PAST_LIMIT before the predicted display
+// time that isn't one (BattleSisters asks for its head at XrTime 0.1 s) is located at "now".
+#define PT_PAST_LIMIT 500000000ll  // 0.5 s: no runtime keeps a longer pose history; real past queries are far shorter
+#define PT_MIN_OFFSET 5000000ll    // XrTime and the monotonic clock this close: nothing to tell apart or to fix
+static int pt_fixed_mono, pt_fixed_past;
+static long long pt_fixed_min;
+
+static XrTime pose_time_fixed(XrTime time) {
+    if (!pose_time_fix || !last_predicted_time || !xr_time_calibrated) return time;
+    int64_t offset = xr_time_offset;  // XrTime "now" minus the monotonic clock
+    if (offset < PT_MIN_OFFSET && offset > -PT_MIN_OFFSET) return time;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    long long mono = (long long)ts.tv_sec * 1000000000ll + ts.tv_nsec;
+    long long d_mono = (long long)time - mono, d_xr = (long long)time - (mono + offset);
+    long long abs_mono = d_mono < 0 ? -d_mono : d_mono, abs_xr = d_xr < 0 ? -d_xr : d_xr;
+    XrTime fixed;
+    int kind;
+    if (abs_mono < PT_PAST_LIMIT && abs_mono < abs_xr) {
+        fixed = (XrTime)(time + offset), kind = 0;  // a monotonic timestamp
+    } else if ((long long)(time - last_predicted_time) < -PT_PAST_LIMIT) {
+        fixed = (XrTime)(mono + offset), kind = 1;  // far in the past: now
+    } else {
+        return time;
+    }
+    if (pose_debug) {
+        long long d = (long long)(time - last_predicted_time);
+        pthread_mutex_lock(&pt_lock);
+        if (!(pt_fixed_mono + pt_fixed_past) || d < pt_fixed_min) pt_fixed_min = d;
+        ++*(kind ? &pt_fixed_past : &pt_fixed_mono);
+        pthread_mutex_unlock(&pt_lock);
+    }
+    static int logged[2];
+    if (logged[kind]++ < 3)
+        LOG("pose_time_fix: pose asked for at %.1f ms from the predicted display time (%s) located at %.1f ms",
+            (long long)(time - last_predicted_time) / 1e6, kind ? "far in the past" : "a monotonic-clock time",
+            (long long)(fixed - last_predicted_time) / 1e6);
+    return fixed;
+}
+
+// called from the pacing statistics in xrEndFrame
+static void pose_time_report(void) {
+    if (!pose_debug) return;
+    pthread_mutex_lock(&pt_lock);
+    LOG("pose_debug: period %.2f ms; XrTime - monotonic at xrWaitFrame (%d): %.2f..%.2f ms", last_display_period / 1e6,
+        pt_offset_count, pt_offset_min / 1e6, pt_offset_max / 1e6);
+    for (int i = 0; i < PT_SLOTS && pt_stats[i].count; ++i)
+        LOG("pose_debug: %s space=0x%llx base=0x%llx: %d calls, time - predicted display time %.2f..%.2f ms",
+            pt_stats[i].kind, (unsigned long long)pt_stats[i].space, (unsigned long long)pt_stats[i].base,
+            pt_stats[i].count, pt_stats[i].min / 1e6, pt_stats[i].max / 1e6);
+    if (pt_overflow) LOG("pose_debug: %d calls not counted (more than %d spaces)", pt_overflow, PT_SLOTS);
+    if (pt_fixed_mono + pt_fixed_past)
+        LOG("pose_debug: pose_time_fix moved %d monotonic-clock times and %d far-past times (earliest asked %.2f ms)",
+            pt_fixed_mono, pt_fixed_past, pt_fixed_min / 1e6);
+    memset(pt_stats, 0, sizeof(pt_stats));
+    pt_overflow = pt_offset_count = pt_fixed_mono = pt_fixed_past = 0;
+    pthread_mutex_unlock(&pt_lock);
+}

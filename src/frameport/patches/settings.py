@@ -129,6 +129,15 @@ SETTINGS = [
      "Repeat xrLocateViews queries for the same display time get the first, fully tracked answer again. Games that "
      "ask several times per frame got slightly different poses and rendered parts of the frame with different heads: "
      "judder (e.g. I Am Cat; proposed by Klownicle, GitHub #8)."),
+    ("pose_time_fix", "int", 0, "Locate poses at the right time",
+     "Poses a game asks for at a CLOCK_MONOTONIC time, or more than 0.5 s before the frame's display time, are located "
+     "at the same moment in the runtime's time (or now). Meta's OVRPlugin passes the monotonic clock on as the "
+     "OpenXR time, which on the Frame runs seconds behind the runtime's clock, so its \"now\" poses (Unity's physics "
+     "step, controller poses) came from the past: hands trailing the controllers (e.g. BattleSisters, Sniper Elite "
+     "VR)."),
+    ("pose_debug", "int", 0, "Pose time diagnostics (log)",
+     "Every 5 s, logs per located space how far the requested times are from the frame's predicted display time, and "
+     "the runtime clock's offset from the monotonic clock. No effect on the game."),
     ("haptic_fix", "int", 0, "Fix controller vibration freezes",
      "Routes OVRPlugin through FramePort's extension shim, which turns Meta's amplitude-envelope vibrations into "
      "plain ones: OVRPort's loader reads their nanosecond duration as seconds and allocates gigabytes, freezing the "
@@ -210,6 +219,9 @@ UI: dict[str, dict] = {
     "pose_consistency": dict(group="picture", level="advanced", label="Steadier head tracking",
                              help="For games that judder or shimmer while you hold your head still (e.g. I Am Cat).",
                              control=("switch",)),
+    "pose_time_fix": dict(group="controllers", level="advanced", label="Fix hands lagging behind controllers",
+                          help="For games whose hands trail the controllers when you move them (e.g. BattleSisters).",
+                          control=("switch",)),
     "haptic_fix": dict(group="controllers", level="advanced", label="Fix freezes when controllers vibrate",
                        help="For games that freeze the Frame when a controller vibrates (e.g. Lucky's Tale). Needs a "
                             "rebuild.",
@@ -291,7 +303,7 @@ UI: dict[str, dict] = {
         "foveation_fix", "hide_space_warp", "swapchain_fix", "layer_fix", "gl_hide_multiview", "mutable_fix",
         "flip_quads", "swap_eyes", "vk_validation", "rect_clamp", "gl_hide_msrtt", "strip_color_bias", "snapshot",
         "strip_depth", "respace_kick", "layer_debug", "eye_debug", "input_diag", "release_wait", "vk_hide_fdm",
-        "ovrp_begin_gate", "ovrp_hold_physics")},
+        "ovrp_begin_gate", "ovrp_hold_physics", "pose_debug")},
 }
 
 
@@ -321,6 +333,11 @@ class AdapterSetting(Patch):
             return Suggestion(True, "Meta's OVRPlugin vibrates controllers through OVRPort's loader, which turns some "
                                     "vibrations into gigabyte allocations that freeze the Frame (e.g. Lucky's Tale, "
                                     "BattleSisters): vibrations are converted before they reach it.", {"value": 1})
+        if (self.key == "pose_time_fix" and a.engine == "Unity" and "libOVRPlugin.so" in a.libs
+                and not a.extra.get("oculus_xr_plugin") and "libOculusXRPlugin.so" not in a.libs):
+            return Suggestion(True, "Unity's built-in Oculus support reads controller poses through OVRPlugin at its "
+                                    "monotonic \"now\", seconds in the past on the Frame: they are located at the "
+                                    "right time (e.g. BattleSisters, Sniper Elite VR).", {"value": 1})
         if self.key == "equirect_emul" and uses_equirect_layers(a):
             return Suggestion(True, "The game draws 360° layers (e.g. a video player's theatre or 360° videos), which "
                                     "the Frame's runtime can't show: show them as panels around you.", {"value": 1})
@@ -357,6 +374,7 @@ class AdapterSetting(Patch):
             "vk_query_slots": lambda a: a.engine == "Unreal" and ap.is_vulkan(a),
             "vk_validation": lambda a: a.engine == "Unreal",
             "haptic_fix": lambda a: "libOVRPlugin.so" in a.libs,
+            "pose_time_fix": lambda a: "libOVRPlugin.so" in a.libs,
             "vk_spec_fixes": lambda a: a.engine == "Unreal" and ap.is_vulkan(a),
             "controller_models": ap.may_use_render_models,
             **{k: ap.is_gles for k in ("equirect_emul", "equirect_face", "equirect_res", "equirect_flip",

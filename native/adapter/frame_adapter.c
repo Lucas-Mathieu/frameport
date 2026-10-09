@@ -105,6 +105,8 @@ static int controller_fix = 1;
 static int swapchain_fix = 1;
 static int rect_clamp = 1;
 static int pose_consistency = 0;  // repeat xrLocateViews queries for one display time get the same poses (GitHub #8)  // clamp submitted image rects to their swapchain (SteamVR rejects a 1 px overrun)
+static int pose_time_fix;   // poses asked for at CLOCK_MONOTONIC "now" or far in the past: at XrTime "now" (pose_time.c)
+static int pose_debug;      // diagnostics: requested pose times vs the predicted display time (pose_time.c)
 static int layer_fix = 1;
 static int mutable_fix = 0;
 static int swap_eyes = 0;
@@ -160,6 +162,8 @@ static void read_settings(const char *path) {
         if (sscanf(line, "swapchain_fix=%f", &value) == 1) swapchain_fix = value != 0;
         if (sscanf(line, "rect_clamp=%f", &value) == 1) rect_clamp = value != 0;
         if (sscanf(line, "pose_consistency=%f", &value) == 1) pose_consistency = value != 0;
+        if (sscanf(line, "pose_debug=%f", &value) == 1) pose_debug = value != 0;
+        if (sscanf(line, "pose_time_fix=%f", &value) == 1) pose_time_fix = value != 0;
         if (sscanf(line, "layer_fix=%f", &value) == 1) layer_fix = value != 0;
         if (sscanf(line, "mutable_fix=%f", &value) == 1) mutable_fix = value != 0;
         if (sscanf(line, "swap_eyes=%f", &value) == 1) swap_eyes = value != 0;
@@ -753,6 +757,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetSystemProperties(XrInstance instance, XrSyst
 }
 
 #include "flip_vk.c"
+#include "pose_time.c"
 
 // XR_KHR_convert_timespec_time for runtimes that lack it (Frame): XrTime is derived from the monotonic clock
 // using the offset measured at the last xrWaitFrame. The runtime's own implementation is preferred.
@@ -762,10 +767,14 @@ static PFN_xrConvertTimeToTimespecTimeKHR runtime_time_to_timespec;
 static XRAPI_ATTR XrResult XRAPI_CALL emu_timespec_to_time(XrInstance instance, const struct timespec *ts, XrTime *time) {
     if (runtime_timespec_to_time) {
         XrResult r = runtime_timespec_to_time(instance, ts, time);
-        if (r != XR_ERROR_FUNCTION_UNSUPPORTED) return r;
+        if (r != XR_ERROR_FUNCTION_UNSUPPORTED) {
+            if (XR_SUCCEEDED(r) && time) pose_time_note("xrConvertTimespecTimeToTimeKHR (runtime)", 0, 0, *time);
+            return r;
+        }
     }
     if (!ts || !time) return XR_ERROR_VALIDATION_FAILURE;
     *time = (XrTime)((int64_t)ts->tv_sec * 1000000000ll + ts->tv_nsec + (xr_time_calibrated ? xr_time_offset : 0));
+    pose_time_note("xrConvertTimespecTimeToTimeKHR", 0, 0, *time);
     return XR_SUCCESS;
 }
 static XRAPI_ATTR XrResult XRAPI_CALL emu_time_to_timespec(XrInstance instance, XrTime time, struct timespec *ts) {
@@ -781,6 +790,8 @@ static XRAPI_ATTR XrResult XRAPI_CALL emu_time_to_timespec(XrInstance instance, 
 }
 
 XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace baseSpace, XrTime time, XrSpaceLocation *location) {
+    time = pose_time_fixed(time);
+    pose_time_note("xrLocateSpace", (uint64_t)(uintptr_t)space, (uint64_t)(uintptr_t)baseSpace, time);
     if (emulate_scene && location) {
         XrPosef pose; XrSpaceLocationFlags flags;
         if (locate_fake(space, baseSpace, time, &pose, &flags)) {
@@ -796,6 +807,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace baseSpace, X
 static XrResult locate_spaces_common(const char *name, XrSession session, const XrSpacesLocateInfo *info,
                                      XrSpaceLocations *locations) {
     int any_fake = 0;
+    XrSpacesLocateInfo moved;
+    if (info && pose_time_fix) {
+        moved = *info;
+        moved.time = pose_time_fixed(info->time);
+        info = &moved;
+    }
+    if (info) pose_time_note(name, info->spaceCount ? (uint64_t)(uintptr_t)info->spaces[0] : 0,
+                             (uint64_t)(uintptr_t)info->baseSpace, info->time);
     if (emulate_scene && info && locations) {
         any_fake = fake_space_index(info->baseSpace) >= 0;
         for (uint32_t i = 0; i < info->spaceCount && !any_fake; ++i) any_fake = fake_space_index(info->spaces[i]) >= 0;
@@ -1079,6 +1098,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrWaitFrame(XrSession session, const XrFrameWaitI
         // predictedDisplayTime is about one display period ahead of "now".
         xr_time_offset = (int64_t)(state->predictedDisplayTime - state->predictedDisplayPeriod) - mono;
         xr_time_calibrated = 1;
+        last_display_period = state->predictedDisplayPeriod;
+        pose_time_note_offset((long long)(state->predictedDisplayTime - mono));
         if (layer_debug) debug_aim_vs_grip(state->predictedDisplayTime);
     }
     return result;
@@ -1143,6 +1164,13 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateViews(XrSession session, const XrViewLoca
         uint32_t capacity, uint32_t *count, XrView *views) {
     PFN_xrLocateViews fn = (PFN_xrLocateViews)lookup(active_instance, "xrLocateViews");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    XrViewLocateInfo moved;
+    if (info && pose_time_fix) {
+        moved = *info;
+        moved.displayTime = pose_time_fixed(info->displayTime);
+        info = &moved;
+    }
+    if (info) pose_time_note("xrLocateViews", (uint64_t)(uintptr_t)info->space, 0, info->displayTime);
     int cacheable = pose_consistency && info && state && count && views && capacity > 0;
     if (cacheable && pose_cache_lookup(session, info, state, capacity, count, views)) return XR_SUCCESS;
     XrResult result = fn(session, info, state, capacity, count, views);
@@ -1257,6 +1285,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
                     __atomic_exchange_n(&input_sync_ok, 0, __ATOMIC_RELAXED), input_last_sync_result,
                     __atomic_exchange_n(&input_bool_reads, 0, __ATOMIC_RELAXED),
                     __atomic_exchange_n(&input_bool_true, 0, __ATOMIC_RELAXED));
+            pose_time_report();
             frames = 0; drift_sum = drift_max = 0;
         }
     }
