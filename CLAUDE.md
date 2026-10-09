@@ -646,6 +646,12 @@ XR_ERROR_RUNTIME_FAILURE); OVRPlugin ignores that ("CreateSwapchain for eye 0: 0
 ovrp_EndFrame4 (memset). FrameBridge `cube_standin` (default on, `native/adapter/cube_standin.c`) serves a refused cube
 swapchain as one GL cube-map texture in the app's context (GLES only) and drops its layers. Verified headless with
 Budget Cuts Ultimate (2048² sRGB, 12 mips; runs on at ~70 fps); what the cube layer showed is simply missing.
+**Vivox API 31 (GitHub #101, 2026-10-09):** newer Vivox builds (Green Hell VR) call Android 12 AudioManager
+communication-device methods from `com.vivox.sdk.AudioChangeListener` with no SDK check → NoSuchMethodError on Lepton's
+Android 11. `frame.vivox_audio_route` (analysis `vivox_api31`, ANALYSIS_VERSION 4) makes every such method return at
+once (`Dex.return_early`: return-void / `const/4 v0,0; return v0`; nopping the invoke would leave a move-result the
+verifier rejects). Older Vivox (Eleven Table Tennis, BattleSisters) lacks that code and isn't matched. Verified
+headless: Vivox initialises, 150 s at ~65-70 fps.
 **Unresolved (as of 2026-09-28):** Arcsmith (right-eye distortion) and Time Stall (both eyes) — swap, tracking, Valve
 layers, depth, pacing ruled out. Sniper Elite VR (DEVICE LOST), Espire 1 (Mesa GL upload crash), HITMAN 3 (freedreno
 crash): use PC versions.

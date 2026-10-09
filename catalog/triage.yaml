@@ -258,6 +258,12 @@ signatures:
     diagnosis: Stress Level Zero's graphics plugin (libSLZQuestNative.so) hooks Unity's Vulkan start-up and calls an invalid function there on the Frame (e.g. BONELAB 1.2974); the game crashes or hangs before its first frame.
     suggest: [frame.slz_vulkan_hooks]
     supersedes: [java-crash, native-crash]
+  - id: vivox-api31
+    pattern: 'NoSuchMethodError: No virtual method \w*CommunicationDevice\w*\(.*Landroid/media/AudioManager'
+    severity: fatal
+    diagnosis: The game's Vivox voice-chat SDK calls Android 12 audio-routing methods (AudioManager communication devices) without checking the Android version; Lepton runs Android 11, so the app crashes (e.g. Green Hell VR). The patch makes Vivox's audio-route check return early (voice chat keeps the default route).
+    suggest: [frame.vivox_audio_route]
+    supersedes: [java-crash]
   - id: native-crash
     pattern: 'Fatal signal (\d+) \(SIG[A-Z]+\)'
     severity: fatal

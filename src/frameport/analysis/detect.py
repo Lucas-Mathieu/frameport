@@ -23,7 +23,8 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 # 1: sdl_java, min_sdk, web_wrapper, expects_obb, vr_activity, unity_version (2026-10)
 # 2: unity_split (a Unity split-binary build expects an OBB too: expects_obb) (2026-10)
 # 3: unreal_ovrp_lookups (the OVRPlugin functions Unreal's Oculus module looks up: frame.unreal_ovrp_entrypoints)
-ANALYSIS_VERSION = 3
+# 4: vivox_api31 (Vivox's audio routing calls Android 12 AudioManager methods: frame.vivox_audio_route) (2026-10)
+ANALYSIS_VERSION = 4
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -159,8 +160,11 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         prefix = f"lib/{abi}/" if abi else None
         libs = sorted(n[len(prefix):] for n in names if prefix and n.startswith(prefix) and n.endswith(".so"))
         # SDL's Java side (SDL2 / LÖVE apps): crashes in Lepton without a clipboard service (frame.sdl_clipboard)
-        sdl_java = any(b"Lorg/libsdl/app/SDLClipboardHandler;" in z.read(n) for n in names
-                       if n.startswith("classes") and n.endswith(".dex"))
+        dexes = [z.read(n) for n in names if n.startswith("classes") and n.endswith(".dex")]
+        sdl_java = any(b"Lorg/libsdl/app/SDLClipboardHandler;" in d for d in dexes)
+        # Vivox voice chat calling Android 12 audio-routing methods: crashes in Lepton (Android 11)
+        vivox_api31 = any(b"Lcom/vivox/sdk/AudioChangeListener;" in d and b"CommunicationDevice" in d for d in dexes)
+        del dexes
         manifest = z.read("AndroidManifest.xml")
         lib_bytes = {}
         if deep and prefix:
@@ -279,6 +283,7 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             # Meta's OVRManager raises MSAA at runtime (frame.unity_runtime_msaa_off); Oculus XR Plugin (multiview)
             "ovr_runtime_msaa": bool(il2cpp_meta) and b"\0useRecommendedMSAALevel\0" in il2cpp_meta,
             "sdl_java": sdl_java,
+            "vivox_api31": vivox_api31,
             "oculus_xr_plugin": bool(il2cpp_meta) and b"\0m_StereoRenderingModeAndroid\0" in il2cpp_meta,
             # Unity's built-in Oculus support checks for Meta's system apps before VR (frame.unity_oculus_check)
             "unity_oculus_check": b"\0com.oculus.systemactivities\0" in lib_bytes.get("libunity.so", b""),
