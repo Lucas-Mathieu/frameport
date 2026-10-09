@@ -33,6 +33,23 @@ signatures:
     severity: fatal
     diagnosis: Unity's render thread crashed inside the Frame's GL driver (Mesa/Zink); the picture freezes or stays grey. Known triggers - an OVROverlay copy (try "Unity - skip OVROverlay layers", e.g. The Room VR), MSAA switched on at runtime, a GPU hang (zink DEVICE LOST).
     suggest: [frame.unity_no_overlay_copy, frame.unity_runtime_msaa_off]
+  - id: unreal-msrtt-crash
+    pattern: 'fault addr 0x10000 in tid \d+ \((RHIThread|RenderThread)'
+    severity: fatal
+    diagnosis: The game's render thread jumped to address 0x10000 inside the Frame's GL driver (Mesa/Zink) a few seconds after start. Zink looks up a render-pass cache slot past its end when a game renders through multisampled render-to-texture (Unreal's mobile MSAA, e.g. Star Wars Pinball VR). Load the GL shim, which hides that extension.
+    suggest: [frame.unreal_gl_shim, frame.unity_gl_shim]
+  - id: pac-unpaired
+    pattern: 'ILL_ILLOPN\), fault addr 0x[0-9a-f]+ \(\*pc=0xd50323bf\)'
+    severity: fatal
+    diagnosis: The game crashed on a return-address check (autiasp) its code never signed. The Quest's CPU ignores these checks, the Steam Frame's enforces them; some OpenSSL assembly in game engines has such unpaired checks (e.g. Star Wars Pinball VR on its first network connection, thread HttpManager).
+    suggest: [frame.pac_hints]
+  - id: cube-swapchain-refused
+    pattern: 'xrCreateSwapchain \d+x\d+ .*faces=6 .*result=-\d+'
+    unless: 'cube_standin: runtime refused'
+    severity: fatal
+    diagnosis: The game asked for a cube-map swapchain (e.g. an OVROverlay skybox or loading cube), which the Frame's runtime doesn't have. OVRPlugin goes on without images and crashes in ovrp_EndFrame4 (Unity's render thread SIGSEGV in memset, e.g. Budget Cuts Ultimate). FrameBridge from FramePort 0.12 serves such swapchains itself and drops their cube layers (cube_standin, GLES games) - rebuild and reinstall the game.
+    suggest: [frame.adapter]
+    supersedes: [unity-render-crash, native-crash]
   - id: swapchain-rect-invalid
     pattern: 'xrEndFrame failed -25\b'
     severity: fatal
@@ -65,10 +82,26 @@ signatures:
     severity: error
     diagnosis: The Frame rejected the swapchain format (GLES games must use sRGB formats, no MSAA).
     suggest: [adapter.swapchain_fix]
+  - id: zink-shader-fix-mismatch
+    pattern: 'shader fix layer: a \d+-byte module differs from fix'
+    severity: warning
+    diagnosis: The game's OpenGL ES shader fix (zink_shader_fix) no longer matches the shader the Frame's GL driver (Zink)
+      builds - a Frame or Lepton update changed the driver's output - so the shader it fixes (e.g. Vader Immortal's
+      lightspeed jump) may hang the GPU again. Capture the new modules with zink_shader_dump=1 (files/fp_spirv/ in the
+      game's storage) and update the fix.
+    suggest: [adapter.zink_shader_dump]
+  - id: zink-shader-layer-inactive
+    pattern: 'shader fix layer: NOT active'
+    severity: warning
+    diagnosis: FramePort's shader-fix Vulkan layer couldn't add itself to the game's Vulkan layers (Android's
+      GraphicsEnv functions it uses were not found or behaved differently, e.g. after a Lepton update), so the game's
+      OpenGL ES shader fixes (zink_shader_fix) don't apply.
+    suggest: []
   - id: zink-device-lost
     pattern: 'zink.*DEVICE[_ ]LOST|VK_ERROR_DEVICE_LOST'
     severity: fatal
-    diagnosis: The GPU hung (Zink/Mesa). For GLES Unity games MSAA render-to-texture is the usual cause.
+    diagnosis: The GPU hung (Zink/Mesa). For GLES Unity games MSAA render-to-texture is the usual cause; at one effect
+      only, a shader reading undefined loop counters (e.g. Vader Immortal's lightspeed jump - frame.zink_shader_fix).
     suggest: [frame.unity_no_msaa, frame.unity_runtime_msaa_off]
   - id: unity-runtime-msaa
     pattern: 'recommended MSAA level is [248]\. Switching to the recommended level'
@@ -94,6 +127,12 @@ signatures:
     diagnosis: Unity didn't start its Oculus VR device (older Unity checks for Meta's system apps first), so the game
       runs as a hidden 2D app.
     suggest: [frame.unity_oculus_check]
+  - id: unity-frame-not-begun
+    pattern: 'frame loop shim: frame \d+: the last waited frame wasn.t begun'
+    severity: info
+    diagnosis: Unity skipped beginning a frame (typically while it activates a scene); FramePort's frame wait didn't
+      wait for that frame instead of blocking the game. A few at each scene load are normal.
+    suggest: []
   - id: sdl-no-clipboard
     pattern: 'ClipboardManager\.addPrimaryClipChangedListener|SDLClipboardHandler\.<init>'
     severity: fatal
@@ -117,6 +156,13 @@ signatures:
     severity: error
     diagnosis: Shaders written for Quest drivers fail on Mesa (GLSL strictness).
     suggest: [frame.gl_shim]
+  - id: gl-multiview-twin-failed
+    pattern: 'GLMV\s*: twin of program \d+(: stage| failed)'
+    severity: warning
+    diagnosis: The multiview interposer (frame.gl_multiview_fbo) couldn't build a single-view copy of one of the
+      game's shader programs (the line has the compiler's message); draws of that program into flat panels (HUD,
+      menus) still stay black. Please report it with the log; turning the patch off changes nothing else.
+    suggest: []
   - id: vrapi-unsupported-layer
     pattern: 'OVRPortVrApi.*Unsupported VrApi layer type (\d+)'
     severity: error
@@ -229,6 +275,18 @@ signatures:
       voice chat a few seconds after the logo).
     suggest: [frame.ovr_microphone]
     supersedes: [native-crash]
+  - id: slz-vulkan-hook-crash
+    pattern: 'SLZ Graphics plugin loading![\s\S]{0,20000}?E CRASH   : .*pc  0000000000000000'
+    severity: fatal
+    diagnosis: Stress Level Zero's graphics plugin (libSLZQuestNative.so) hooks Unity's Vulkan start-up and calls an invalid function there on the Frame (e.g. BONELAB 1.2974); the game crashes or hangs before its first frame.
+    suggest: [frame.slz_vulkan_hooks]
+    supersedes: [java-crash, native-crash]
+  - id: vivox-api31
+    pattern: 'NoSuchMethodError: No virtual method \w*CommunicationDevice\w*\(.*Landroid/media/AudioManager'
+    severity: fatal
+    diagnosis: The game's Vivox voice-chat SDK calls Android 12 audio-routing methods (AudioManager communication devices) without checking the Android version; Lepton runs Android 11, so the app crashes (e.g. Green Hell VR). The patch makes Vivox's audio-route check return early (voice chat keeps the default route).
+    suggest: [frame.vivox_audio_route]
+    supersedes: [java-crash]
   - id: native-crash
     pattern: 'Fatal signal (\d+) \(SIG[A-Z]+\)'
     severity: fatal
@@ -253,6 +311,7 @@ signatures:
     suggest: []
   - id: container-not-started
     pattern: "is not a running context|OCI runtime error"
+    unless: 'Boot complete!'  # Lepton 3.x prints the error while its container is still starting, then boots fine
     severity: fatal
     diagnosis: The Lepton container failed to start (see the error above it in launch.log).
     suggest: []
@@ -336,6 +395,19 @@ signatures:
     severity: fatal
     diagnosis: The game crashed (Unreal's crash reporter started). See the game log and crash summary in the log. Common causes are that no VR runtime reached the game (Revive off) or a GPU or driver problem under Proton.
     suggest: [pcvr.revive, pcvr.proton_log, pcvr.no_crash_reporter]
+  - id: unity-vr-init
+    kind: pcvr
+    pattern: '(?i)OpenVR failed initialization|VRInitError_(?!None\b)\w+|Initialization of device \w+ failed|Failed to (load|initialize|start) (VR|XR|OpenVR|Oculus)\b'
+    severity: error
+    diagnosis: The game's Unity log shows that a VR device failed to start. Unity games built for both the Oculus and the SteamVR (OpenVR) runtime choose one with an argument; without it they may try Oculus, which the Frame doesn't have, and run without VR or quit. Start the game with -vrmode OpenVR (Game arguments).
+    suggest: [pcvr.launch_args]
+  - id: unity-crash
+    kind: pcvr
+    pattern: 'Crash!!!|caused an Access Violation|caused an Unhandled Exception'
+    severity: fatal
+    diagnosis: The game crashed (Unity's crash handler wrote a report; the Unity log in the launch log shows the stack). Common causes are that no VR runtime reached the game or a GPU or driver problem under Proton.
+    suggest: [pcvr.proton_log]
+    supersedes: [wine-crash]
   - id: wine-crash
     kind: pcvr
     pattern: 'Unhandled exception: page fault|wine: Unhandled|Backtrace:'

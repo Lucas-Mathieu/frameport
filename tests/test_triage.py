@@ -32,6 +32,17 @@ def test_failures_map_to_patches():
     assert r.verdict == "fail"
 
 
+def test_shader_fix_layer_findings():
+    log = LOG_OK + ("09-28 17:39:06.000  1147  1174 I FrameBridge: shader fix layer: a 12016-byte module differs"
+                    " from fix 1 (another build?)\n"
+                    "09-28 17:39:06.000  1147  1147 I FrameBridge: shader fix layer: NOT active, Android's GraphicsEnv"
+                    " functions not found (setDebugLayers)\n")
+    r = triage(log, "RUNNING", "com.example.game")
+    ids = {f.id for f in r.findings}
+    assert {"zink-shader-fix-mismatch", "zink-shader-layer-inactive"} <= ids
+    assert "adapter.zink_shader_dump" in r.suggestions()
+
+
 def test_launcher_signature():
     r = triage("lepton: APP_ACTIVITY is empty\n", "NEVER_STARTED")
     assert r.suggestions() == ["frame.launcher"]
@@ -94,6 +105,17 @@ def test_swapchain_rect_invalid_is_recognised():
 
     log = "10-05 08:13:02.100  1149  1312 I FrameBridge: xrEndFrame failed -25\n"
     assert "swapchain-rect-invalid" in [f.id for f in triage.triage(log).findings]
+
+
+def test_unreal_msrtt_crash():
+    """Star Wars Pinball VR (GitHub #83): Zink jumps to 0x10000 on Unreal's RHIThread."""
+    from frameport.validate import triage
+
+    line = ("10-07 11:41:11.156  1127  1231 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr "
+            "0x10000 in tid 1231 (RHIThread), pid 1127 (MainThread-UE4)\n")
+    r = triage.triage(line, "EXITED")
+    hit = next(f for f in r.findings if f.id == "unreal-msrtt-crash")
+    assert "frame.unreal_gl_shim" in hit.suggest
 
 
 def test_frames_stopped_and_unity_render_crash():
@@ -187,3 +209,84 @@ def test_web_wrapper_signature():
            "NameNotFoundException: com.oculus.browser\n")
     r = triage(log, "EXITED")
     assert {f.id for f in r.findings} == {"web-wrapper"} and r.verdict == "fail"
+
+
+def test_slz_vulkan_hook_crash_is_recognised():
+    """BONELAB 1.2974: SLZ's Vulkan plugin crashed Unity's Vulkan start-up (pc 0) before the first frame."""
+    log = ("10-07 09:29:07.191  1131  1157 I SlzGfx  : SLZ Graphics plugin loading!\n"
+           "10-07 09:29:09.434  1131  1157 I OVRPlugin: Preinitialize: xrDestroyInstance() succeeded\n"
+           "10-07 09:29:09.445  1131  1157 E CRASH   :     sp  0000ffff189a2430  lr  0000fffdd93f6ed0  "
+           "pc  0000000000000000\n"
+           "10-07 09:29:09.500  1131  1157 E AndroidRuntime: FATAL EXCEPTION: UnityMain\n")
+    r = triage(log, "EXITED", "com.StressLevelZero.BONELAB")
+    f = next(f for f in r.findings if f.id == "slz-vulkan-hook-crash")
+    assert f.suggest == ["frame.slz_vulkan_hooks"] and "java-crash" not in [x.id for x in r.findings]
+    other = triage(log.replace("SLZ Graphics", "Other"), "EXITED", None)
+    assert "slz-vulkan-hook-crash" not in [x.id for x in other.findings]
+
+
+def test_lepton3_transient_not_running_context_is_not_a_failure():
+    """Lepton 3.0.5 prints "is not a running context" while the container is still starting, then boots (VR4 ran
+    at 72 fps); only a container that never boots is a failure."""
+    from frameport.validate import triage
+
+    err = "ERROR: 'steamlaunch-2272591617' is not a running context, use 'lepton ps' to list them, like this:\n"
+    booted = triage.triage("Waiting for boot...\n" + err + "Boot complete!\n", "RUNNING")
+    assert "container-not-started" not in [f.id for f in booted.findings]
+    failed = triage.triage("Waiting for boot...\n" + err, "EXITED")
+    assert "container-not-started" in [f.id for f in failed.findings]
+
+
+def test_refused_cube_swapchain_explains_the_render_crash():
+    """GitHub #107 (Budget Cuts Ultimate): the runtime refuses a cube swapchain, OVRPlugin crashes in EndFrame."""
+    from frameport.validate.triage import triage as run
+
+    log = ("10-09 02:34:43.131  1149  1219 I FrameBridge: xrCreateSwapchain 2048x2048 format=35907 samples=1 array=1 "
+           "faces=6 usage=0x21 flags=0x0 result=-2\n"
+           "10-09 02:34:43.131  1149  1219 D OVRPlugin: CompositorOpenXR_GLES::Layer::Initialize(): CreateSwapchain "
+           "for eye 0: 0x0, 0 stages\n"
+           "10-09 02:34:43.900  1149  1219 F libc    : Fatal signal 11 (SIGSEGV), code 2 (SEGV_ACCERR)\n"
+           "10-09 02:34:44.134  1149  1223 E CRASH   :       #00 pc 0000000000a85a80  /vendor/lib64/dri/"
+           "libgallium_dri.so (BuildId: 95)\n")
+    r = run(log, "EXITED", "com.NeatCorporation.BudgetCutsUltimate")
+    assert [f.id for f in r.findings] == ["cube-swapchain-refused"]
+    assert r.findings[0].suggest == ["frame.adapter"]
+    served = log + "I FrameBridge: cube_standin: runtime refused a 2048x2048 cube swapchain (result=-2): served\n"
+    assert "cube-swapchain-refused" not in [f.id for f in run(served, "RUNNING", "x").findings]
+
+
+def test_cube_standin_is_a_default_on_adapter_setting():
+    from frameport.patches.settings import SETTINGS
+
+    assert [s[2] for s in SETTINGS if s[0] == "cube_standin"] == [1]
+
+
+def test_unity_pcvr_signatures():
+    """Unity's Player.log in a PC VR launch log (agent v67): VR start-up failures and Unity's crash handler."""
+    log = ("===== unity log compatdata/pfx/drive_c/users/steamuser/AppData/LocalLow/SUPERHOT Team/SUPERHOT VR/"
+           "Player.log\n"
+           "XR: OpenVR Error! OpenVR failed initialization with error code VRInitError_Init_HmdNotFound\n")
+    r = triage(log, "EXITED", "rift.superhot_vr")
+    assert [f.id for f in r.findings] == ["unity-vr-init"] and "pcvr.launch_args" in r.suggestions()
+    assert not triage("VRInitError_None\n", "RUNNING", "rift.x").findings
+    crash = triage("Crash!!!\nwine: Unhandled page fault\nBacktrace:\n", "EXITED", "rift.x")
+    assert [f.id for f in crash.findings] == ["unity-crash"]
+    assert not triage(log, "EXITED", "com.example.game").findings  # PC VR signatures only for rift games
+
+
+def test_lepton_lines_survive_the_game_filter():
+    """With the package known, triage keeps only the game's logcat lines plus Lepton's own: the short "Boot complete!"
+    used to be dropped, so Lepton 3's transient "is not a running context" failed every launch test in the GUI."""
+    from frameport.validate import triage
+
+    log = ("Waiting for boot...\n"
+           "ERROR: 'steamlaunch-1' is not a running context, use 'lepton ps' to list them, like this:\n"
+           "Boot complete!\n"
+           "10-09 15:25:52.000   100   100 I ActivityManager: Start proc 1206:com.x.y/u0a12 for top-activity\n"
+           "10-09 15:25:52.416  1206  1230 I FrameBridge: settings read\n"
+           "10-09 15:25:52.500   999   999 I Other: unrelated\n")
+    lines = triage.game_lines(log, "com.x.y")
+    assert "Boot complete!" in lines and not any("Other: unrelated" in ln for ln in lines)
+    assert any("FrameBridge" in ln for ln in lines)
+    res = triage.triage(log, "RUNNING", package="com.x.y")
+    assert "container-not-started" not in [f.id for f in res.findings]

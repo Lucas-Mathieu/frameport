@@ -15,6 +15,7 @@
 //  * drops requested instance extensions the runtime lacks (e.g. XR_FB_passthrough);
 //  * retries rejected swapchains with 1 sample / a supported format (swapchain_fix, overport #71);
 //  * drops composition layers that reference swapchains that failed to create (layer_fix);
+//  * serves cube swapchains the runtime refuses as GL cube maps and drops their layers (cube_standin, cube_standin.c);
 //  * optionally requests mutable-format swapchain images (mutable_fix, off by default);
 //  * optionally swaps left/right images of stereo projection layers (swap_eyes, off by default);
 //  * emulates XR_FB_passthrough with XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND when the runtime lacks it
@@ -107,8 +108,11 @@ static int frame_open;
 static int sc_acquires, sc_waits, sc_releases, sc_wait_fails;  // per pacing period (layer_debug)  // drop XrCompositionLayerColorScaleBiasKHR (the runtime's color pass)
 static int controller_fix = 1;
 static int swapchain_fix = 1;
+static int cube_standin = 1;  // cube swapchains the runtime refuses: served by the adapter (cube_standin.c)
 static int rect_clamp = 1;
 static int pose_consistency = 0;  // repeat xrLocateViews queries for one display time get the same poses (GitHub #8)  // clamp submitted image rects to their swapchain (SteamVR rejects a 1 px overrun)
+static int pose_time_fix;   // poses asked for at CLOCK_MONOTONIC "now" or far in the past: at XrTime "now" (pose_time.c)
+static int pose_debug;      // diagnostics: requested pose times vs the predicted display time (pose_time.c)
 static int layer_fix = 1;
 static int mutable_fix = 0;
 static int swap_eyes = 0;
@@ -131,6 +135,8 @@ static int controller_models;  // serve Frame controller models via XR_FB_render
 // Per-game settings, all off by default (session_fixes.c, layer_emul_gl.c).
 static int sync_guard;       // xrSyncActions one at a time with xrPollEvent, paused briefly after focus returns
 static int profile_remap = 1; // Meta's newer controller profiles (rejected by the Frame) -> oculus/touch_controller
+static int proximity_emul;   // finger proximity from capacitive touch: 1 thumb, 2 thumb + index (session_fixes.c)
+static int runtime_has_proximity;  // the runtime has XR_FB_touch_controller_proximity itself
 static int layer_debug;      // diagnostics: layers, swapchains, session states, spaces, aim/grip, refresh rates
 static int input_diag;       // diagnostics: controller profiles, bindings, missing functions, failing input calls
 static int stable_local;     // keep every LOCAL space the app creates on the session-start origin
@@ -162,8 +168,11 @@ static void read_settings(const char *path) {
         if (sscanf(line, "snapshot=%f", &value) == 1) snapshot = value > 0 ? (int)value : 0;
         if (sscanf(line, "controller_fix=%f", &value) == 1) controller_fix = value != 0;
         if (sscanf(line, "swapchain_fix=%f", &value) == 1) swapchain_fix = value != 0;
+        if (sscanf(line, "cube_standin=%f", &value) == 1) cube_standin = value != 0;
         if (sscanf(line, "rect_clamp=%f", &value) == 1) rect_clamp = value != 0;
         if (sscanf(line, "pose_consistency=%f", &value) == 1) pose_consistency = value != 0;
+        if (sscanf(line, "pose_debug=%f", &value) == 1) pose_debug = value != 0;
+        if (sscanf(line, "pose_time_fix=%f", &value) == 1) pose_time_fix = value != 0;
         if (sscanf(line, "layer_fix=%f", &value) == 1) layer_fix = value != 0;
         if (sscanf(line, "mutable_fix=%f", &value) == 1) mutable_fix = value != 0;
         if (sscanf(line, "swap_eyes=%f", &value) == 1) swap_eyes = value != 0;
@@ -185,6 +194,7 @@ static void read_settings(const char *path) {
         if (sscanf(line, "eye_debug=%f", &value) == 1) eye_debug = value != 0;
         if (sscanf(line, "release_wait=%f", &value) == 1) release_wait = (int)value;
         if (sscanf(line, "profile_remap=%f", &value) == 1) profile_remap = value != 0;
+        if (sscanf(line, "proximity_emul=%f", &value) == 1 && value >= 0 && value <= 2) proximity_emul = (int)value;
         if (sscanf(line, "sync_guard=%f", &value) == 1) sync_guard = value != 0;
         if (sscanf(line, "stable_local=%f", &value) == 1) stable_local = value != 0;
         if (sscanf(line, "focus_hold=%f", &value) == 1) focus_hold = value != 0;
@@ -245,6 +255,8 @@ static void initialize(void) {
         log_file = fopen(path, "a");
     }
     if (input_diag) LOG("per-game: input_diag=1 (controller-input diagnostics)");
+    if (proximity_emul) LOG("per-game: proximity_emul=%d (finger proximity from capacitive touch: %s)", proximity_emul,
+                            proximity_emul > 1 ? "thumb + index" : "thumb");
     if (hide_space_warp) LOG("per-game: hide_space_warp=1 (XR_FB_space_warp hidden, space warp info removed)");
     if (strip_color_bias) LOG("per-game: strip_color_bias=%d (layer color scale/bias removed)", strip_color_bias);
     if (frame_balance) LOG("per-game: frame_balance=1 (an open frame is ended before the next one begins)");
@@ -364,6 +376,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo *info
     }
     for (uint32_t j = 0; available && j < available_count; ++j)
         if (!strcmp(available[j].extensionName, "XR_FB_composition_layer_image_layout")) runtime_has_image_layout = 1;
+        else if (!strcmp(available[j].extensionName, "XR_FB_touch_controller_proximity")) runtime_has_proximity = 1;
     // Layer types are only valid if their extension ends up enabled; some apps submit them regardless.
     int has_equirect = 0, has_equirect2 = 0, has_cylinder = 0, has_cube = 0;
     for (uint32_t i = 0; i < kept; ++i) {
@@ -504,6 +517,10 @@ static int emul_is_virtual(XrSwapchain handle);
 static void emul_virtual_destroy(XrSwapchain handle);
 static XrResult emul_virtual_enumerate(XrSwapchain handle, uint32_t capacity, uint32_t *count, XrSwapchainImageBaseHeader *images);
 static void emul_on_acquire(XrSwapchain handle, uint32_t index);
+static XrResult standin_after_failure(const XrSwapchainCreateInfo *info, XrSwapchain *out, XrResult result);
+static int is_standin(XrSwapchain handle);
+static void standin_destroy(XrSwapchain handle);
+static XrResult standin_enumerate(XrSwapchain handle, uint32_t capacity, uint32_t *count, XrSwapchainImageBaseHeader *images);
 
 static int known_swapchain(XrSwapchain handle) {
     int found = 0;
@@ -549,7 +566,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
         snap_on_create(*swapchain, &fixed);
         return result;
     }
-    if (!swapchain_fix) return result;
+    if (!swapchain_fix) return standin_after_failure(&fixed, swapchain, result);
 
     // Frame's runtime rejects some GLES formats (GL_RGBA8) and MSAA swapchains (overport #71).
     if (fixed.sampleCount > 1) {
@@ -572,7 +589,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
         emul_on_create_swapchain(*swapchain, &fixed);
         snap_on_create(*swapchain, &fixed);
     }
-    return result;
+    return standin_after_failure(&fixed, swapchain, result);
 }
 
 XRAPI_ATTR XrResult XRAPI_CALL xrDestroySwapchain(XrSwapchain swapchain) {
@@ -582,6 +599,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySwapchain(XrSwapchain swapchain) {
         static int logged;
         if (logged++ < 200) LOG("layer_debug: xrDestroySwapchain %p", (void *)swapchain);
     }
+    if (is_standin(swapchain)) { standin_destroy(swapchain); return XR_SUCCESS; }
     surf_scene_destroy(swapchain);
     forget_swapchain(swapchain);
     surf_on_destroy(swapchain);
@@ -764,6 +782,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetSystemProperties(XrInstance instance, XrSyst
 }
 
 #include "flip_vk.c"
+#include "pose_time.c"
 
 // XR_KHR_convert_timespec_time for runtimes that lack it (Frame): XrTime is derived from the monotonic clock
 // using the offset measured at the last xrWaitFrame. The runtime's own implementation is preferred.
@@ -773,10 +792,14 @@ static PFN_xrConvertTimeToTimespecTimeKHR runtime_time_to_timespec;
 static XRAPI_ATTR XrResult XRAPI_CALL emu_timespec_to_time(XrInstance instance, const struct timespec *ts, XrTime *time) {
     if (runtime_timespec_to_time) {
         XrResult r = runtime_timespec_to_time(instance, ts, time);
-        if (r != XR_ERROR_FUNCTION_UNSUPPORTED) return r;
+        if (r != XR_ERROR_FUNCTION_UNSUPPORTED) {
+            if (XR_SUCCEEDED(r) && time) pose_time_note("xrConvertTimespecTimeToTimeKHR (runtime)", 0, 0, *time);
+            return r;
+        }
     }
     if (!ts || !time) return XR_ERROR_VALIDATION_FAILURE;
     *time = (XrTime)((int64_t)ts->tv_sec * 1000000000ll + ts->tv_nsec + (xr_time_calibrated ? xr_time_offset : 0));
+    pose_time_note("xrConvertTimespecTimeToTimeKHR", 0, 0, *time);
     return XR_SUCCESS;
 }
 static XRAPI_ATTR XrResult XRAPI_CALL emu_time_to_timespec(XrInstance instance, XrTime time, struct timespec *ts) {
@@ -792,6 +815,8 @@ static XRAPI_ATTR XrResult XRAPI_CALL emu_time_to_timespec(XrInstance instance, 
 }
 
 XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace baseSpace, XrTime time, XrSpaceLocation *location) {
+    time = pose_time_fixed(time);
+    pose_time_note("xrLocateSpace", (uint64_t)(uintptr_t)space, (uint64_t)(uintptr_t)baseSpace, time);
     if (emulate_scene && location) {
         XrPosef pose; XrSpaceLocationFlags flags;
         if (locate_fake(space, baseSpace, time, &pose, &flags)) {
@@ -807,6 +832,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace baseSpace, X
 static XrResult locate_spaces_common(const char *name, XrSession session, const XrSpacesLocateInfo *info,
                                      XrSpaceLocations *locations) {
     int any_fake = 0;
+    XrSpacesLocateInfo moved;
+    if (info && pose_time_fix) {
+        moved = *info;
+        moved.time = pose_time_fixed(info->time);
+        info = &moved;
+    }
+    if (info) pose_time_note(name, info->spaceCount ? (uint64_t)(uintptr_t)info->spaces[0] : 0,
+                             (uint64_t)(uintptr_t)info->baseSpace, info->time);
     if (emulate_scene && info && locations) {
         any_fake = fake_space_index(info->baseSpace) >= 0;
         for (uint32_t i = 0; i < info->spaceCount && !any_fake; ++i) any_fake = fake_space_index(info->spaces[i]) >= 0;
@@ -840,6 +873,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySpace(XrSpace space) {
 #include "input_diag.c"
 #include "session_fixes.c"
 #include "layer_emul_gl.c"
+#include "cube_standin.c"
 #include "snapshot_gl.c"
 #include "surface_swapchain.c"
 
@@ -1044,6 +1078,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateSwapchainImages(XrSwapchain swapchain,
         XrSwapchainImageBaseHeader *images) {
     PFN_xrEnumerateSwapchainImages fn = (PFN_xrEnumerateSwapchainImages)lookup(active_instance, "xrEnumerateSwapchainImages");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if (is_standin(swapchain)) return standin_enumerate(swapchain, capacity, count, images);
     XrResult result = equirect_emul && emul_is_virtual(swapchain) ? emul_virtual_enumerate(swapchain, capacity, count, images)
                                                                   : fn(swapchain, capacity, count, images);
     if (XR_SUCCEEDED(result) && images && capacity && count) {
@@ -1058,6 +1093,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateSwapchainImages(XrSwapchain swapchain,
 XRAPI_ATTR XrResult XRAPI_CALL xrWaitSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageWaitInfo *info) {
     PFN_xrWaitSwapchainImage fn = (PFN_xrWaitSwapchainImage)lookup(active_instance, "xrWaitSwapchainImage");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if (is_standin(swapchain)) return XR_SUCCESS;
     XrResult result = fn(swapchain, info);
     __atomic_add_fetch(&sc_waits, 1, __ATOMIC_RELAXED);
     if (result != XR_SUCCESS) __atomic_add_fetch(&sc_wait_fails, 1, __ATOMIC_RELAXED);
@@ -1067,6 +1103,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrWaitSwapchainImage(XrSwapchain swapchain, const
 XRAPI_ATTR XrResult XRAPI_CALL xrReleaseSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageReleaseInfo *info) {
     PFN_xrReleaseSwapchainImage fn = (PFN_xrReleaseSwapchainImage)lookup(active_instance, "xrReleaseSwapchainImage");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if (is_standin(swapchain)) return XR_SUCCESS;
     __atomic_add_fetch(&sc_releases, 1, __ATOMIC_RELAXED);
     return fn(swapchain, info);
 }
@@ -1075,6 +1112,11 @@ XRAPI_ATTR XrResult XRAPI_CALL xrAcquireSwapchainImage(XrSwapchain swapchain, co
         uint32_t *index) {
     PFN_xrAcquireSwapchainImage fn = (PFN_xrAcquireSwapchainImage)lookup(active_instance, "xrAcquireSwapchainImage");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if (is_standin(swapchain)) {  // adapter-served cube stand-in: one image
+        if (!index) return XR_ERROR_VALIDATION_FAILURE;
+        *index = 0;
+        return XR_SUCCESS;
+    }
     if (equirect_emul && emul_is_virtual(swapchain)) {  // adapter-served write-once picture: one image
         if (!index) return XR_ERROR_VALIDATION_FAILURE;
         *index = 0;
@@ -1216,6 +1258,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrWaitFrame(XrSession session, const XrFrameWaitI
         // predictedDisplayTime is about one display period ahead of "now".
         xr_time_offset = (int64_t)(state->predictedDisplayTime - state->predictedDisplayPeriod) - mono;
         xr_time_calibrated = 1;
+        last_display_period = state->predictedDisplayPeriod;
+        pose_time_sample(xr_time_offset);
+        pose_time_display(state->predictedDisplayTime);
+        pose_time_note_offset((long long)(state->predictedDisplayTime - mono));
         if (layer_debug) debug_aim_vs_grip(state->predictedDisplayTime);
     }
     return result;
@@ -1280,6 +1326,13 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateViews(XrSession session, const XrViewLoca
         uint32_t capacity, uint32_t *count, XrView *views) {
     PFN_xrLocateViews fn = (PFN_xrLocateViews)lookup(active_instance, "xrLocateViews");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    XrViewLocateInfo moved;
+    if (info && pose_time_fix) {
+        moved = *info;
+        moved.displayTime = pose_time_fixed(info->displayTime);
+        info = &moved;
+    }
+    if (info) pose_time_note("xrLocateViews", (uint64_t)(uintptr_t)info->space, 0, info->displayTime);
     int cacheable = pose_consistency && info && state && count && views && capacity > 0;
     if (cacheable && pose_cache_lookup(session, info, state, capacity, count, views)) return XR_SUCCESS;
     XrResult result = fn(session, info, state, capacity, count, views);
@@ -1397,6 +1450,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
                     __atomic_exchange_n(&input_sync_ok, 0, __ATOMIC_RELAXED), input_last_sync_result,
                     __atomic_exchange_n(&input_bool_reads, 0, __ATOMIC_RELAXED),
                     __atomic_exchange_n(&input_bool_true, 0, __ATOMIC_RELAXED));
+            pose_time_report();
             frames = 0; drift_sum = drift_max = 0;
         }
     }
@@ -1515,6 +1569,12 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
                                     ? ((const XrCompositionLayerQuad *)layer)->subImage.swapchain
                                     : ((const XrCompositionLayerCylinderKHR *)layer)->subImage.swapchain)) {
             ++dropped;  // an emulated video surface without a frame yet
+            continue;
+        }
+        if (layer_uses_standin(layer)) {  // a cube layer whose swapchain the runtime refused (cube_standin.c)
+            static int logged;
+            if (logged++ < 3) LOG("cube_standin: dropped a layer (type=%d) that shows a stand-in swapchain", layer->type);
+            ++dropped;
             continue;
         }
         if (!layer || (layer_fix && !layer_usable(layer))) { ++dropped; continue; }
@@ -1923,14 +1983,27 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const 
     }
     if (surface_emul) HOOK_AS(xrCreateSwapchainAndroidSurfaceKHR, hook_xrCreateSwapchainAndroidSurfaceKHR)
     if (eye_debug || release_wait) HOOK_AS(xrReleaseSwapchainImage, eye_hook_xrReleaseSwapchainImage)
-    if (layer_debug) {  // counters only; every other wait/release hook above takes precedence
+    if (layer_debug || cube_standin) {  // counters + cube stand-ins; every other wait/release hook above takes precedence
         HOOK(xrWaitSwapchainImage)
         HOOK(xrReleaseSwapchainImage)
     }
+    if (cube_standin && (!strcmp(name, "xrUpdateSwapchainFB") || !strcmp(name, "xrGetSwapchainStateFB"))) {
+        XrResult result = next_gipa(instance, name, function);  // only wrapped where the runtime has it
+        if (XR_FAILED(result) || !*function) return result;
+        if (!strcmp(name, "xrUpdateSwapchainFB")) {
+            real_update_swapchain = (PFN_xrUpdateSwapchainFB)*function;
+            *function = (PFN_xrVoidFunction)standin_update_swapchain;
+        } else {
+            real_get_swapchain_state = (PFN_xrGetSwapchainStateFB)*function;
+            *function = (PFN_xrVoidFunction)standin_get_swapchain_state;
+        }
+        return result;
+    }
     if (sync_guard || layer_debug || input_diag) HOOK_AS(xrSyncActions, hook_xrSyncActions)
     if (layer_debug) HOOK_AS(xrGetActionStateBoolean, hook_xrGetActionStateBoolean)
-    if (layer_debug || aim_correction_on() || profile_remap || input_diag)
+    if (layer_debug || aim_correction_on() || profile_remap || input_diag || proximity_emul)
         HOOK_AS(xrSuggestInteractionProfileBindings, hook_xrSuggestInteractionProfileBindings)
+    if (proximity_emul) HOOK_AS(xrCreateAction, hook_xrCreateAction)
     if (layer_debug || aim_correction_on()) {
         HOOK_AS(xrCreateActionSpace, hook_xrCreateActionSpace)
     }

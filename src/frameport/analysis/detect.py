@@ -9,11 +9,25 @@ from pathlib import Path
 from ..apk import axml
 from ..core.models import Analysis
 from . import elf
+from .unity_split import split_build as unity_split_build
 
 logging.getLogger("pyaxmlparser").setLevel(logging.ERROR)
 
 UNITY_GGM = "assets/bin/Data/globalgamemanagers"
 IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
+
+# The version of what analyze() stores (Analysis.extra["analysis_version"]). BUMP IT whenever analyze() gains a field
+# or detects something differently that patches/heuristics read: library entries analysed by an older FramePort are
+# then analysed again in the background at the next start (pipeline.refresh_analyses), so their new patches are
+# offered (GitHub #104: entries from before `sdl_java` never got frame.sdl_clipboard). Entries without it are 0.
+# 1: sdl_java, min_sdk, web_wrapper, expects_obb, vr_activity, unity_version (2026-10)
+# 2: unity_split (a Unity split-binary build expects an OBB too: expects_obb) (2026-10)
+# 3: unreal_ovrp_lookups (the OVRPlugin functions Unreal's Oculus module looks up: frame.unreal_ovrp_entrypoints)
+# 4: vivox_api31 (Vivox's audio routing calls Android 12 AudioManager methods: frame.vivox_audio_route) (2026-10)
+# 5: unreal_quest_gates (Quest-only branches in ILMxLAB's Unreal: frame.unreal_quest_precompile/_keymap) (2026-10)
+# 6: gl_multiview_libs (own-engine libraries with OVR_multiview GLSL: frame.gl_multiview_fbo) (2026-10)
+# 7: unreal_thumb_touch (UE4 OculusInput's ThumbUp from near-touch, matched exactly: frame.unreal_thumb_touch)
+ANALYSIS_VERSION = 7
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -149,8 +163,11 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         prefix = f"lib/{abi}/" if abi else None
         libs = sorted(n[len(prefix):] for n in names if prefix and n.startswith(prefix) and n.endswith(".so"))
         # SDL's Java side (SDL2 / LÖVE apps): crashes in Lepton without a clipboard service (frame.sdl_clipboard)
-        sdl_java = any(b"Lorg/libsdl/app/SDLClipboardHandler;" in z.read(n) for n in names
-                       if n.startswith("classes") and n.endswith(".dex"))
+        dexes = [z.read(n) for n in names if n.startswith("classes") and n.endswith(".dex")]
+        sdl_java = any(b"Lorg/libsdl/app/SDLClipboardHandler;" in d for d in dexes)
+        # Vivox voice chat calling Android 12 audio-routing methods: crashes in Lepton (Android 11)
+        vivox_api31 = any(b"Lcom/vivox/sdk/AudioChangeListener;" in d and b"CommunicationDevice" in d for d in dexes)
+        del dexes
         manifest = z.read("AndroidManifest.xml")
         lib_bytes = {}
         if deep and prefix:
@@ -166,6 +183,8 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
                 if "assets/bin/Data/boot.config" in names else "")
         ggm = z.read(UNITY_GGM) if deep and UNITY_GGM in names else None
         il2cpp_meta = z.read(IL2CPP_METADATA) if deep and IL2CPP_METADATA in names and "libil2cpp.so" in libs else None
+        # a Unity split build: the rest of the game is in a zip OBB (analysis/unity_split.py)
+        unity_split = "libunity.so" in libs and unity_split_build(z, names, ggm, deep)
 
     package, version, label, activity, apk_info = _read_manifest_info(path)
     libset = set(libs)
@@ -234,6 +253,7 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         is_overport_output=is_overport,
         debuggable=bool(axml.Axml(manifest).get_bool("application", "debuggable")),
         extra={
+            "analysis_version": ANALYSIS_VERSION,
             "frame_patched": "libframe_settings.so" in libset,  # already has FramePort's FrameBridge adapter
             # Team Beef's TBXR ports pick their OpenXR path by headset maker (frame.tbxr_vendor): their libraries
             # the game asks Meta's platform for asset files (content shipped as separate files, frame.asset_files)
@@ -266,6 +286,7 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             # Meta's OVRManager raises MSAA at runtime (frame.unity_runtime_msaa_off); Oculus XR Plugin (multiview)
             "ovr_runtime_msaa": bool(il2cpp_meta) and b"\0useRecommendedMSAALevel\0" in il2cpp_meta,
             "sdl_java": sdl_java,
+            "vivox_api31": vivox_api31,
             "oculus_xr_plugin": bool(il2cpp_meta) and b"\0m_StereoRenderingModeAndroid\0" in il2cpp_meta,
             # Unity's built-in Oculus support checks for Meta's system apps before VR (frame.unity_oculus_check)
             "unity_oculus_check": b"\0com.oculus.systemactivities\0" in lib_bytes.get("libunity.so", b""),
@@ -276,11 +297,80 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             "min_sdk": axml.min_sdk(manifest),
             # a website in an Android wrapper (TWA): nothing to port
             "web_wrapper": web_wrapper(meta, manifest_strings, apk_info),
-            # Unreal packaged its content as an OBB (expansion file): without it the game hangs at start (GitHub #85).
-            # (Unity's split-binary builds show no reliable sign in the APK.)
-            "expects_obb": expects_obb(meta),
+            # Unreal packaged its content as an OBB (expansion file), or a Unity split build keeps all but its first
+            # scene in one: without it the game hangs at start (GitHub #85, #92)
+            "expects_obb": expects_obb(meta) or unity_split,
+            "unity_split": unity_split,
+            # Unreal's Oculus module needs every OVRPlugin function it looks up (frame.unreal_ovrp_entrypoints)
+            "unreal_ovrp_lookups": (ovrp_lookups(lib_bytes.get(engine_lib.rsplit("/", 1)[1], b""))
+                                    if engine_lib and "libOVRPlugin.so" in libset else []),
+            # Quest-only branches that leave ILMxLAB's Unreal games stuck on the Frame (frame.unreal_quest_*)
+            "unreal_quest_gates": (unreal_quest_gates(lib_bytes.get(engine_lib.rsplit("/", 1)[1], b""))
+                                   if engine_lib else []),
+            # UE4's Oculus input animates the thumb from near-touch, which the Frame never reports
+            # (frame.unreal_thumb_touch: True only where its exact code matches)
+            "unreal_thumb_touch": (unreal_thumb_touch(lib_bytes.get(engine_lib.rsplit("/", 1)[1], b""))
+                                   if engine_lib and engine_lib.startswith("lib/arm64-v8a/") else False),
+            # own-engine libraries whose GLSL declares OVR_multiview views (frame.gl_multiview_fbo, e.g. Doom3Quest)
+            "gl_multiview_libs": multiview_glsl_libs(lib_bytes) if engine == "Other" else [],
         },
     )
+
+
+# Quest-only branches in ILMxLAB's Unreal (IsRunningOnSantaCruz) that leave the game stuck on the Frame: the exported
+# function each frame.unreal_quest_* patch rewrites
+UNREAL_QUEST_GATES = {
+    "quest_precompile": "_ZN8UVRUtils31GetQuestShaderPrecompilePercentEv",
+    "rpoc_keymap": "_ZN27URPOCKeyMapManagerComponent14AddAxisMappingERK15FRPOCKeyMappingR16FRPOCInputMapSet",
+}
+
+
+# libraries that hold GLSL but aren't the game's renderer
+NOT_GL_ENGINE = ("libopenxr", "libOVR", "libovr", "libvrapi", "libfp", "libframe", "libglshim", "libVkLayer", "libc++")
+
+
+def multiview_glsl_libs(lib_bytes: dict[str, bytes]) -> list[str]:
+    """Own-engine libraries with OVR_multiview shaders (`layout(num_views=…) in;` + gl_ViewID_OVR): such an engine may
+    also draw them into ordinary framebuffers, which Mesa refuses (frame.gl_multiview_fbo, GitHub #77)."""
+    return sorted(n for n, d in lib_bytes.items() if not n.startswith(NOT_GL_ENGINE) and elf.is_elf(d)
+                  and b"num_views" in d and b"gl_ViewID_OVR" in d)
+
+
+UNREAL_THUMB_TOUCH = "_ZN11OculusInput12FOculusInput20SendControllerEventsEv"
+
+
+def unreal_thumb_touch(data: bytes) -> bool:
+    """UE4's OculusInput sets ThumbUp from near-touch in exactly the code frame.unreal_thumb_touch rewrites (or
+    already rewrote)."""
+    if b"\0" + UNREAL_THUMB_TOUCH.encode() + b"\0" not in data:
+        return False
+    from ..patches.frame.unreal_thumb_touch import thumb_site
+
+    try:
+        return thumb_site(data) is not None
+    except Exception:  # noqa: BLE001 - a malformed library: no suggestion
+        return False
+
+
+def unreal_quest_gates(data: bytes) -> list[str]:
+    """The gate functions an Unreal engine library exports (a search of the symbol names, no ELF parsing)."""
+    return sorted(k for k, sym in UNREAL_QUEST_GATES.items() if b"\0" + sym.encode() + b"\0" in data)
+
+
+def ovrp_lookups(data: bytes) -> list[str]:
+    """The OVRPlugin function names (`ovrp_*` strings) an engine library holds: Unreal's Oculus module looks each one
+    up with dlsym in libOVRPlugin.so and gives up on VR when any is missing (FOculusHMDModule::
+    InitializeOculusPluginWrapper)."""
+    names, at = set(), data.find(b"\0ovrp_")
+    while at >= 0:
+        end = data.find(b"\0", at + 1)
+        if end < 0:
+            break
+        name = data[at + 1:end]
+        if re.fullmatch(rb"ovrp_[A-Za-z0-9_]+", name):
+            names.add(name.decode())
+        at = data.find(b"\0ovrp_", end)
+    return sorted(names)
 
 
 def unity_text_fields(metadata: bytes) -> list[str]:

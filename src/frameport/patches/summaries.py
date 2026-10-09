@@ -40,10 +40,18 @@ SUMMARIES = {
     "frame.launcher": "Makes the game start from the Frame's Steam library.",
     "frame.start_activity": "Opens the app straight in VR, skipping its flat launcher screen (turn off to use the "
                             "launcher, e.g. to import new content).",
-    "frame.ltw_depth": "Fixes the black picture in Minecraft launchers (e.g. QuestCraft): uses depth formats the "
+    "frame.gl_multiview_fbo": "Experimental: shows HUD, menu and other flat panels that stay black because the "
+                              "Frame's graphics driver skips them (e.g. Doom3Quest's HUD and PDA).",
+    "frame.ltw_depth":"Fixes the black picture in Minecraft launchers (e.g. QuestCraft): uses depth formats the "
                        "Frame's graphics driver accepts.",
     "frame.unity_gl_shim": "Stops a grey or frozen screen in Unity games that turn on anti-aliasing while running "
                            "(e.g. The Room VR).",
+    "frame.unreal_gl_shim": "Stops a crash a few seconds after start in Unreal games whose anti-aliasing the Frame's "
+                            "graphics driver can't handle (e.g. Star Wars Pinball VR).",
+    "frame.unreal_ovrp_entrypoints": "Lets older Unreal games start VR although the converted VR plugin lacks a few "
+                                     "functions they look for (e.g. Star Wars Pinball VR).",
+    "frame.pac_hints": "Stops a crash on the Frame's CPU in games whose code has unpaired security checks the Quest "
+                       "ignores (e.g. Star Wars Pinball VR's first network connection).",
     "frame.unity_no_overlay_copy": "Stops a grey screen crash in some Unity games by skipping their overlay "
                                    "layers (e.g. The Room VR's screen fades).",
     "frame.nodebug": "Stops strict debugging checks that make some games quit.",
@@ -54,12 +62,16 @@ SUMMARIES = {
                        "waiting for a download that never comes.",
     "frame.ovr_trace": "For troubleshooting: records the game's requests to Meta's platform services and which ones "
                        "never get an answer.",
+    "frame.slz_vulkan_hooks": "Lets Unity start the graphics itself instead of Stress Level Zero's plugin, "
+                              "which crashes on the Frame (e.g. BONELAB 1.2974).",
     "frame.unity_user_presence": "Counts the headset as worn, so games that only move the player while it's worn "
                                  "get head tracking and controls (e.g. BONELAB).",
     "frame.unity_no_msaa": "Turns off a smoothing setting that crashes some older Unity games on the Frame.",
     "frame.unity_runtime_msaa_off": "Keeps a smoothing setting off that the game turns on itself and that can freeze "
                                     "the Frame.",
     "frame.sdl_clipboard": "Lets SDL and LÖVE games start on the Frame (they'd crash looking for a clipboard).",
+    "frame.vivox_audio_route": "Lets games with Vivox voice chat start on the Frame (they'd crash on an Android 12 "
+                               "audio call).",
     "frame.unity_oculus_check": "Lets older Unity games start VR without Meta's system apps (they'd stay on a 2D "
                                 "screen).",
     "frame.unity_multipass": "Draws each eye separately; try it when one eye shows a grey or broken picture.",
@@ -77,6 +89,14 @@ SUMMARIES = {
     "frame.oculusos": "Provides stand-ins for Quest system reporting some games call at start.",
     "frame.unity_text_input": "Lets you type into this app's text fields on the Frame (they'd close at once).",
     "frame.vk_sanitize": "Cleans up graphics data that crashes some Unreal games on the Frame.",
+    "frame.unreal_quest_precompile": "Lets the game leave its loading screen: it waited for a Quest-only step that "
+                                     "never starts on the Frame (e.g. Vader Immortal).",
+    "frame.unreal_quest_keymap": "Makes grip, trigger and touch controls reach the game's hands (it picked the "
+                                 "empty Gear VR controls on the Frame, e.g. Vader Immortal).",
+    "frame.unreal_thumb_touch": "Makes the hands' thumbs follow what your thumb touches (they always pointed up: the "
+                                "Frame doesn't sense a thumb hovering, e.g. Vader Immortal).",
+    "frame.zink_shader_fix":"Repairs shaders that hang the graphics chip at certain effects, from the game's "
+                             "recipe (e.g. Vader Immortal's lightspeed jump).",
     # Files and environment on the Frame
     "device.files": "Puts settings files next to the game on the Frame (e.g. to turn off an unsupported effect).",
     "device.hide_navbar": "Hides Android's back/home/recents buttons, which cover the app's own buttons.",

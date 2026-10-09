@@ -76,6 +76,13 @@
   `device.foveation`: `fixed` = `FDM_DEBUG=disable_offsets`, `off` = `VK_INSTANCE_LAYERS=""`. Lepton passes `FDM`,
   `FDM_DEBUG`, `FOVE_LEVEL` and `FDM_SWAPCHAIN_SIZE` through to the container (liblepton/mounting.sh PASSTHROUGH_VARS);
   the layers are chosen on the host, so setting them inside the game does nothing.
+- How Lepton loads them: `liblepton/vulkan_layers.sh` mounts the chosen layers (only those in the OS image's
+  `/usr/share/guestos/android/vendor/vulkan_layers`) into the app's lib dir and writes their names to Android's
+  `settings global gpu_debug_layers` for `gpu_debug_app` = the game; Android's loader reads that list from GraphicsEnv
+  at each vkCreateInstance and searches the app's lib dir (`/data/app/…/lib/arm64`). A layer bundled in the APK is
+  found there too; FramePort's shader-fix layer (`frame.zink_shader_fix`) adds its own name to GraphicsEnv's list from
+  inside the process (`android::GraphicsEnv::setDebugLayers`, exported by the guest's libgraphicsenv.so, Lepton 3.0.5).
+  That is the only way to reach the Vulkan side of OpenGL ES games (Zink creates the instance inside Mesa).
 - GL ES: Zink (Mesa GL on Vulkan). Strict GLSL (see PLAYBOOK) and occasional `DEVICE LOST` with MSAA render-to-texture.
 
 ## Proton / Windows games (surveyed 2026-09-29; running a Rift game under it not yet verified)
@@ -143,6 +150,18 @@
   Plasma's launcher exits right after starting the program, so with `FRAMEPORT_DESKTOP=1` the Linux launcher skips
   its "Steam parent gone → end the app" watchdog and keeps the desktop's DISPLAY/WAYLAND_DISPLAY instead of taking
   gamescope's from Steam. Not yet tried from the Frame's Desktop Mode.
+- Linux apps' own icons (GitHub #99, agent v64): finalize_linux (and every refresh of the menu entries) copies the
+  app's icon to `<anchor>/artwork/app-icon.{png,svg}`: an AppImage's `squashfs-root/.DirIcon` (usually a symlink),
+  else the `Icon=` of its top-level `.desktop` file (a folder app: the first `.desktop` within 3 levels) looked up
+  next to it, in `(usr/)share/icons/hicolor/*/apps/` and `(usr/)share/pixmaps/`; the biggest PNG ≥128 px, else an
+  SVG, else the biggest PNG. Symlinks are resolved and must stay inside the app folder; absolute and `../` names
+  are ignored. Precedence for the menu entry's `Icon=` and the Steam shortcut's icon: the user's chosen/store icon
+  (`artwork/.icon-source` = `custom`, written by the PC with every art upload) > the app's own (Steam: PNG only) >
+  FramePort's placeholder (`artwork/icon.*`). `StartupWMClass=` is copied from the app's `.desktop` file (Plasma's
+  task bar matches the window to the entry). A PNG ≤1 MiB goes back to the PC (finalize result `app_icon.png`,
+  base64) and becomes the library's icon when the game has none and nothing was picked (`.app-icon` marker = its
+  sha256, no `.picked`); folder apps get it on the PC at add time (`analysis/linux.find_icon`). Not yet seen in
+  Desktop Mode on the device.
 
 ## Video of the headset view (surveyed 2026-10-05; used by the Live view tab)
 - `steamvr-v4l2cam.service` (user unit, part of gamescope-session.target, `Restart=always`) runs SteamVR's

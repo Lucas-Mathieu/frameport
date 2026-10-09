@@ -53,7 +53,10 @@ def settings_diff(game: dict, frame_info: dict | None) -> tuple[list[str], list[
     if not isinstance(rec, dict) or "patches" not in rec:
         return None
     installed, now = set(rec["patches"]), set((game.get("recipe") or {}).get("patches") or {})
-    added, removed = sorted(now - installed), sorted(installed - now)
+    # patches a build left out because the OVRPort runtime already has the fix (patches/upstream.py) are not missing:
+    # counting them kept "Update on Frame" up after every update (e.g. haptic_fix with runtime 3.4.3-aa54c3f)
+    superseded = set((game.get("build") or {}).get("superseded") or {})
+    added, removed = sorted(now - installed - superseded), sorted(installed - now)
     return (added, removed) if added or removed else None
 
 

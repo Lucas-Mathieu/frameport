@@ -414,3 +414,123 @@ def test_linux_launcher_from_desktop_mode(monkeypatch, tmp_path):
     while time.time() < deadline and not (tmp_path / "out").exists():
         time.sleep(0.5)
     assert (tmp_path / "out").read_text().strip() == "finished"
+
+
+# ------------------------------------------------------------------------------------------ Linux apps' icons (#99)
+def png(width: int) -> bytes:
+    """Enough of a PNG for the agent (signature + IHDR size)."""
+    return b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + width.to_bytes(4, "big") * 2 + b"\x08\x06\x00\x00\x00" + b"x" * 40
+
+
+SVG = b'<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"></svg>\n'
+
+
+def appimage_install(a, tmp_path, tree):
+    """An "AppImage" whose --appimage-extract copies the folder `tree` (symlinks kept) as squashfs-root."""
+    prep = a.cmd_prepare_linux({"package": "linux.tool", "title": "Tool"})
+    exe = Path(prep["incoming"]) / "app" / "Tool-aarch64.AppImage"
+    exe.write_text(f"#!/bin/sh\ncp -a '{tree}' squashfs-root\nprintf '#!/bin/sh\\n' > squashfs-root/AppRun\n"
+                   "chmod +x squashfs-root/AppRun\n")
+    os.makedirs(os.path.join(prep["base"], "incoming-artwork"))
+    Path(prep["base"], "incoming-artwork", "icon.png").write_bytes(b"placeholder")
+    res = a.cmd_finalize_linux({"package": "linux.tool", "title": "Tool", "exe": exe.name, "appimage": True,
+                                "manifests": {"app": {exe.name: exe.stat().st_size}}})
+    return prep, res
+
+
+def entry_lines(a):
+    text = (Path(a.HOME) / ".local/share/applications/frameport-tool.desktop").read_text()
+    return dict(line.split("=", 1) for line in text.splitlines()[1:])
+
+
+def test_appimage_icon_from_its_diricon_symlink(monkeypatch, tmp_path):
+    import base64
+
+    a = load(monkeypatch, tmp_path)
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "tool.desktop").write_text("[Desktop Entry]\nName=Tool\nIcon=tool\nStartupWMClass=ToolWindow\n")
+    (tree / "tool.png").write_bytes(png(256))
+    (tree / ".DirIcon").symlink_to("tool.png")
+    prep, res = appimage_install(a, tmp_path, tree)
+    anchor = Path(prep["anchor"])
+    icon = anchor / "artwork" / "app-icon.png"
+    assert icon.read_bytes() == png(256) and not icon.is_symlink()
+    lines = entry_lines(a)
+    assert lines["Icon"] == str(icon) and lines["StartupWMClass"] == "ToolWindow"
+    assert base64.b64decode(res["app_icon"]["png"]) == png(256)
+    assert a.shortcut_args("linux.tool")[3] == str(icon)  # the Steam shortcut too
+    # the user's own icon (PC: "custom") wins over the app's
+    (anchor / "artwork" / ".icon-source").write_text("custom")
+    a.refresh_desktop_entries()
+    assert entry_lines(a)["Icon"] == str(anchor / "artwork" / "icon.png")
+    assert a.shortcut_args("linux.tool")[3] == str(anchor / "artwork" / "icon.png")
+    # an art update replaces the artwork folder: the app's icon comes back
+    (anchor / "artwork" / ".icon-source").write_text("generated")
+    icon.unlink()
+    a.refresh_desktop_entries()
+    assert icon.exists() and entry_lines(a)["Icon"] == str(icon)
+
+
+def test_appimage_icon_from_hicolor_and_svg(monkeypatch, tmp_path):
+    a = load(monkeypatch, tmp_path)
+    tree = tmp_path / "tree"
+    (tree / "usr/share/icons/hicolor/48x48/apps").mkdir(parents=True)
+    (tree / "usr/share/icons/hicolor/scalable/apps").mkdir(parents=True)
+    (tree / "org.tool.App.desktop").write_text("[Desktop Entry]\nName=Tool\nIcon=org.tool.App\n")
+    (tree / "usr/share/icons/hicolor/scalable/apps/org.tool.App.svg").write_bytes(SVG)
+    (tree / "usr/share/icons/hicolor/48x48/apps/org.tool.App.png").write_bytes(b"not a png")
+    prep, res = appimage_install(a, tmp_path, tree)
+    icon = Path(prep["anchor"]) / "artwork" / "app-icon.svg"
+    assert icon.exists() and entry_lines(a)["Icon"] == str(icon) and "StartupWMClass" not in entry_lines(a)
+    assert res["app_icon"]["file"] == "app-icon.svg" and "png" not in res["app_icon"]  # the PC can't draw SVG
+    # Steam takes PNGs only: the shortcut keeps the art set's icon
+    assert a.shortcut_args("linux.tool")[3] == str(Path(prep["anchor"]) / "artwork" / "icon.png")
+
+
+def test_app_icon_prefers_big_pngs_and_stays_inside_the_app(monkeypatch, tmp_path):
+    a = load(monkeypatch, tmp_path)
+    root = tmp_path / "root"
+    for size in (32, 512):
+        d = root / "usr/share/icons/hicolor" / f"{size}x{size}" / "apps"
+        d.mkdir(parents=True)
+        (d / "tool.png").write_bytes(png(size))
+    (root / "usr/share/icons/hicolor/scalable/apps").mkdir(parents=True)
+    (root / "usr/share/icons/hicolor/scalable/apps/tool.svg").write_bytes(SVG)
+    (root / "tool.desktop").write_text("[Desktop Entry]\nIcon=tool\n[Desktop Action x]\nIcon=other\n")
+    assert a.find_app_icon(str(root), True)["icon"].endswith("512x512/apps/tool.png")
+    (root / "usr/share/icons/hicolor/512x512/apps/tool.png").unlink()
+    assert a.find_app_icon(str(root), True)["icon"].endswith("scalable/apps/tool.svg")  # SVG beats a 32 px PNG
+    # a symlink out of the app (or an absolute / ../ Icon=) is never followed
+    secret = tmp_path / "secret.png"
+    secret.write_bytes(png(1024))
+    for p in list(root.rglob("tool.*")):
+        if p.suffix != ".desktop":
+            p.unlink()
+    (root / ".DirIcon").symlink_to(secret)
+    (root / "usr/share/pixmaps").mkdir(parents=True)
+    (root / "usr/share/pixmaps/tool.png").symlink_to(secret)
+    assert a.find_app_icon(str(root), True)["icon"] is None
+    for name in (str(secret), "../secret.png"):
+        (root / "tool.desktop").write_text(f"[Desktop Entry]\nIcon={name}\n")
+        assert a.find_app_icon(str(root), True)["icon"] is None
+
+
+def test_folder_app_icon_next_to_its_desktop_file(monkeypatch, tmp_path):
+    a = load(monkeypatch, tmp_path)
+    prep = a.cmd_prepare_linux({"package": "linux.tool", "title": "Tool"})
+    app = Path(prep["incoming"]) / "app"
+    (app / "Tool/share/pixmaps").mkdir(parents=True)
+    (app / "Tool/share/applications").mkdir(parents=True)
+    shutil.copy("/bin/true", app / "Tool" / "tool")
+    (app / "Tool/share/applications/tool.desktop").write_text("[Desktop Entry]\nIcon=tool.png\n")
+    (app / "Tool/share/pixmaps/tool.png").write_bytes(png(64))
+    manifest = {rel: (app / rel).stat().st_size for rel in
+                ("Tool/tool", "Tool/share/applications/tool.desktop", "Tool/share/pixmaps/tool.png")}
+    a.cmd_finalize_linux({"package": "linux.tool", "title": "Tool", "exe": "Tool/tool", "manifests": {"app": manifest}})
+    icon = Path(prep["anchor"]) / "artwork" / "app-icon.png"
+    assert icon.read_bytes() == png(64) and entry_lines(a)["Icon"] == str(icon)
+    # a new version without an icon: the old copy goes
+    (Path(prep["base"]) / "app/Tool/share/pixmaps/tool.png").unlink()
+    a.ensure_app_icon(a.deployment("linux.tool"), prep["anchor"], refresh=True)
+    assert not icon.exists()
