@@ -2166,6 +2166,7 @@ trap 'exit 143' TERM
 setsid {lepton_q} start >"$app_dir/launch.log" 2>&1 &
 child=$!
 {dashboard}
+{logcat}
 wait "$child"
 """)
 
@@ -2193,8 +2194,20 @@ SINGLE_LINE = ('exec 9>"$app_dir/.launch.lock"; flock -n 9 || '
                'exit 0; }')
 
 
+# Lepton mirrors the game's logcat into launch.log, and that reader sometimes dies right after the game starts
+# ("logcat: Unexpected EOF!", seen with Vader Immortal on Lepton 3.0.5 and Under Cover on 2.8.14). The game runs on,
+# but launch.log stays empty: no dashboard auto-hide, no launch-test result. _logcat_keeper then reads the
+# container's logcat itself and appends it to launch.log.
+LOGCAT_LINE = ('python3 {agent_q} _logcat_keeper "$app_dir/launch.log" "$SteamAppId" $$ '
+               '>"$app_dir/logcat-keeper.log" 2>&1 9>&- &')
+
+
 def dashboard_line():
     return DASHBOARD_LINE.format(agent_q=shlex.quote(os.path.abspath(__file__)))
+
+
+def logcat_line():
+    return LOGCAT_LINE.format(agent_q=shlex.quote(os.path.abspath(__file__)))
 
 
 def plays_lines(anchor):
@@ -2221,6 +2234,8 @@ def upgrade_launchers():
             new = new.replace(OLD_WATCHDOG, WATCHDOG, 1)
         if "_dashboard_worker" not in new and 'child=$!\nwait "$child"' in new:
             new = new.replace('child=$!\nwait "$child"', 'child=$!\n' + dashboard_line() + '\nwait "$child"', 1)
+        if "_logcat_keeper" not in new and "_dashboard_worker" in new and '\nwait "$child"' in new:
+            new = new.replace('\nwait "$child"', '\n' + logcat_line() + '\nwait "$child"', 1)
         guard = '[[ -d "$app_dir/lepton-app" ]] ||'
         if ".launch.lock" not in new and guard in new:
             i = new.index("\n", new.index(guard)) + 1
@@ -2263,7 +2278,8 @@ def write_launcher(anchor, base, pkg, title, appid, lepton, env):
                     if re.fullmatch(r"[A-Z_][A-Z0-9_]*", k))
     text = LAUNCH_SH.format(title=title.replace("\n", " "), pkg=pkg, base_q=shlex.quote(base), appid=appid,
                             lepton_q=shlex.quote(lepton), extra_env=extra, watchdog=WATCHDOG,
-                            dashboard=dashboard_line(), single=SINGLE_LINE, plays_start=plays_lines(anchor)[0],
+                            dashboard=dashboard_line(), logcat=logcat_line(), single=SINGLE_LINE,
+                            plays_start=plays_lines(anchor)[0],
                             plays_end=plays_lines(anchor)[1])
     path = os.path.join(anchor, "launch.sh")
     with open(path + ".tmp", "w") as f:
@@ -4693,6 +4709,51 @@ def user_opened_dashboard(log, pos):
         return False, pos
 
 
+LOGCAT_EOF = "logcat: Unexpected EOF"
+
+
+def logcat_keeper(log, appid, parent, poll=2.0, restarts=5, popen=None):
+    """Keep launch.log filling when Lepton's logcat mirror dies while the game runs (LOGCAT_LINE): once the log shows
+    LOGCAT_EOF after "Waiting for app", read the container's logcat ourselves (from its last 2000 lines, so the start
+    of the game isn't lost) and append it; restart it if it ends while the game still runs (at most `restarts` times).
+    Ends with the launcher."""
+    popen = popen or subprocess.Popen
+    container = f"lepton-steamlaunch-{appid}"
+
+    def alive():
+        try:
+            os.kill(int(parent), 0)
+            return True
+        except (OSError, ValueError):
+            return False
+
+    proc, started = None, 0
+    while alive():
+        if proc is None or proc.poll() is not None:
+            try:
+                with open(log, errors="replace") as f:
+                    text = f.read()
+            except OSError:
+                text = ""
+            i = text.find("Waiting for app")
+            if i >= 0 and LOGCAT_EOF in text[i:] and started < restarts:
+                started += 1
+                with open(log, "a") as f:
+                    f.write(f"FramePort: Lepton's logcat ended; reading {container}'s logcat again ({started})\n")
+                out = open(log, "ab")
+                try:
+                    proc = popen(["podman", "exec", container, "logcat", "-v", "threadtime", "-T", "2000"],
+                                 stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+                except OSError as exc:
+                    print(f"logcat_keeper: {exc}", flush=True)
+                    proc = None
+                finally:
+                    out.close()
+        time.sleep(poll)
+    if proc is not None and proc.poll() is None:
+        proc.terminate()
+
+
 def dashboard_worker(log, parent, wait_start=240, window=120, poll=0.5, ui_log=None, max_hides=10):
     """Close SteamVR's dashboard (Steam's "Resume game" frame menu) that opens when the game submits its first VR
     frame: watch from FrameBridge's first "new layer:" line (the first submitted frame; Steam showed the menu ~0.3 s
@@ -5548,6 +5609,9 @@ def main():
         return 0
     if len(sys.argv) >= 3 and sys.argv[1] == "_xr_probe":
         xr_probe(sys.argv[2])
+        return 0
+    if len(sys.argv) >= 5 and sys.argv[1] == "_logcat_keeper":
+        logcat_keeper(sys.argv[2], sys.argv[3], sys.argv[4])
         return 0
     if len(sys.argv) >= 4 and sys.argv[1] == "_dashboard_worker":
         dashboard_worker(sys.argv[2], sys.argv[3])

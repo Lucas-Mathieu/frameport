@@ -1415,8 +1415,8 @@ def test_second_launch_while_starting_is_ignored(monkeypatch, tmp_path):
     lepton.write_text(f"#!/bin/bash\necho started >>{tmp_path}/starts\nsleep ${{FAKE_RUN:-30}}\n")
     lepton.chmod(0o755)
     text = a.LAUNCH_SH.format(title="T", pkg="com.x.y", base_q=str(base), appid=1, lepton_q=str(lepton), extra_env="",
-                              watchdog=a.WATCHDOG, dashboard="true", single=a.SINGLE_LINE, plays_start="true",
-                              plays_end="true")
+                              watchdog=a.WATCHDOG, dashboard="true", logcat="true", single=a.SINGLE_LINE,
+                              plays_start="true", plays_end="true")
     launcher = tmp_path / "launch.sh"
     launcher.write_text(text)
     launcher.chmod(0o755)
@@ -1532,3 +1532,50 @@ def test_game_logs_collect_unity_player_log(monkeypatch, tmp_path):
     (data / "output_log.txt").write_text("old unity\n")
     text = "\n".join(a.game_logs(str(base)))
     assert "not this game" in text and "old unity" in text
+
+
+def test_logcat_keeper_reads_the_container_logcat_after_leptons_mirror_died(monkeypatch, tmp_path):
+    """Lepton's logcat mirror died right after Vader Immortal started ("logcat: Unexpected EOF!"): launch.log stayed
+    empty, so the dashboard was never closed. The keeper reads the container's logcat itself."""
+    a = load_agent(monkeypatch, tmp_path)
+    monkeypatch.setattr(a.time, "sleep", lambda s: None)
+    log = tmp_path / "launch.log"
+    log.write_text("Boot complete!\nWaiting for app com.x.y to exit...\nlogcat: Unexpected EOF!\n")
+    calls, alive = [], iter([True, True, False])
+    monkeypatch.setattr(a.os, "kill", lambda pid, sig: None if next(alive) else (_ for _ in ()).throw(OSError()))
+
+    class Proc:
+        def __init__(self, argv, stdout, **kw):
+            calls.append(argv)
+            stdout.write(b"10-09 10:01:00.000 1 2 I FrameBridge: new layer: type=35\n")
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            calls.append("terminated")
+
+    a.logcat_keeper(str(log), "123", os.getpid(), popen=Proc)
+    assert calls[0][:4] == ["podman", "exec", "lepton-steamlaunch-123", "logcat"] and calls[-1] == "terminated"
+    text = log.read_text()
+    assert "reading lepton-steamlaunch-123's logcat again" in text and "new layer: type=35" in text
+
+
+def test_logcat_keeper_does_nothing_while_leptons_mirror_works(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    monkeypatch.setattr(a.time, "sleep", lambda s: None)
+    log = tmp_path / "launch.log"
+    log.write_text("Waiting for app com.x.y to exit...\n10-09 I FrameBridge: pacing: 72 fps\n")
+    alive = iter([True, True, False])
+    monkeypatch.setattr(a.os, "kill", lambda pid, sig: None if next(alive) else (_ for _ in ()).throw(OSError()))
+    a.logcat_keeper(str(log), "123", os.getpid(), popen=lambda *x, **k: pytest.fail("must not start logcat"))
+
+
+def test_upgrade_launchers_adds_logcat_keeper(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    anchor = tmp_path / "Applications/quest-frame/com.x.y"
+    anchor.mkdir(parents=True)
+    (anchor / "launch.sh").write_text(f'{a.OLD_WATCHDOG}\nsetsid lepton start &\nchild=$!\nwait "$child"\n')
+    a.upgrade_launchers()
+    text = (anchor / "launch.sh").read_text()
+    assert "_logcat_keeper" in text and text.index("_logcat_keeper") < text.index('wait "$child"')
