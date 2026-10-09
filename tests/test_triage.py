@@ -32,6 +32,17 @@ def test_failures_map_to_patches():
     assert r.verdict == "fail"
 
 
+def test_shader_fix_layer_findings():
+    log = LOG_OK + ("09-28 17:39:06.000  1147  1174 I FrameBridge: shader fix layer: a 12016-byte module differs"
+                    " from fix 1 (another build?)\n"
+                    "09-28 17:39:06.000  1147  1147 I FrameBridge: shader fix layer: NOT active, Android's GraphicsEnv"
+                    " functions not found (setDebugLayers)\n")
+    r = triage(log, "RUNNING", "com.example.game")
+    ids = {f.id for f in r.findings}
+    assert {"zink-shader-fix-mismatch", "zink-shader-layer-inactive"} <= ids
+    assert "adapter.zink_shader_dump" in r.suggestions()
+
+
 def test_launcher_signature():
     r = triage("lepton: APP_ACTIVITY is empty\n", "NEVER_STARTED")
     assert r.suggestions() == ["frame.launcher"]

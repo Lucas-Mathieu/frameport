@@ -285,6 +285,90 @@ static int touch_has(const char *path) {
     return 0;
 }
 
+// ---------------------------------------------------------------- finger proximity from touch (proximity_emul)
+// Meta's OVRPlugin reports a thumb or index finger resting near the controller through XR_FB_touch_controller_proximity
+// (.../thumb_fb/proximity_fb, .../trigger/proximity_fb). The Frame's runtime doesn't have it; OVRPort's loader offers
+// it to the game anyway, and the proximity actions never get a working binding: "near" stays false, so games that
+// animate the hands from it show a thumb that never moves (Unreal's ThumbUp axis is "no thumb proximity", e.g. Vader
+// Immortal; found by Klownicle, GitHub #49). With proximity_emul those actions are bound to the capacitive touch inputs
+// instead (OpenXR combines several bindings of one boolean action with OR): thumb = thumbstick, face buttons or thumb
+// rest touched; index (proximity_emul=2) = trigger touched. Only when the runtime lacks the extension itself.
+static XrAction thumb_proximity_action, trigger_proximity_action;
+
+static XRAPI_ATTR XrResult XRAPI_CALL hook_xrCreateAction(XrActionSet set, const XrActionCreateInfo *info,
+        XrAction *action) {
+    PFN_xrCreateAction fn = (PFN_xrCreateAction)lookup(active_instance, "xrCreateAction");
+    if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    XrResult r = fn(set, info, action);
+    if (XR_SUCCEEDED(r) && info && action) {  // OVRPlugin's action names
+        if (!strcmp(info->actionName, "hand_thumb_proximity")) thumb_proximity_action = *action;
+        else if (!strcmp(info->actionName, "hand_trigger_proximity")) trigger_proximity_action = *action;
+        else return r;
+        LOG("proximity_emul: game action %s found", info->actionName);
+    }
+    return r;
+}
+
+static const char *const THUMB_TOUCH_LEFT[] = {"x/touch", "y/touch", "thumbstick/touch", "thumbrest/touch"};
+static const char *const THUMB_TOUCH_RIGHT[] = {"a/touch", "b/touch", "thumbstick/touch", "thumbrest/touch"};
+
+static int add_binding(XrInstance instance, PFN_xrStringToPath to_path, XrActionSuggestedBinding *b, uint32_t *n,
+                       XrAction action, const char *hand, const char *input) {
+    char path[XR_MAX_PATH_LENGTH];
+    snprintf(path, sizeof(path), "/user/hand/%s/input/%s", hand, input);
+    XrPath p;
+    if (XR_FAILED(to_path(instance, path, &p))) return 0;
+    for (uint32_t i = 0; i < *n; ++i)
+        if (b[i].action == action && b[i].binding == p) return 0;
+    b[*n].action = action;
+    b[(*n)++].binding = p;
+    return 1;
+}
+
+// Suggests Touch bindings with finger proximity bound to the touch inputs (proximity_emul), falling back to the
+// bindings as given when the runtime refuses them.
+static XrResult suggest_touch(XrInstance instance, PFN_xrSuggestInteractionProfileBindings fn,
+                              PFN_xrPathToString to_string, const XrInteractionProfileSuggestedBinding *suggested) {
+    PFN_xrStringToPath to_path = (PFN_xrStringToPath)lookup(instance, "xrStringToPath");
+    if (!proximity_emul || runtime_has_proximity || !to_path || !to_string) return fn(instance, suggested);
+    XrAction thumb = thumb_proximity_action, index = proximity_emul > 1 ? trigger_proximity_action : XR_NULL_HANDLE;
+    uint32_t n = suggested->countSuggestedBindings, kept = 0, dropped = 0, added = 0;
+    XrActionSuggestedBinding *b = calloc(n + 2 * 5, sizeof(*b));
+    if (!b) return fn(instance, suggested);
+    for (uint32_t i = 0; i < n; ++i) {
+        char path[XR_MAX_PATH_LENGTH];
+        uint32_t size = 0;
+        const XrActionSuggestedBinding *s = &suggested->suggestedBindings[i];
+        if (XR_SUCCEEDED(to_string(instance, s->binding, sizeof(path), &size, path)) && strstr(path, "/proximity_")) {
+            // the game's own proximity binding, which the runtime doesn't know: its action is bound to touch below
+            if (strstr(path, "/thumb")) { if (!thumb) thumb = s->action; }
+            else if (proximity_emul > 1 && !index) index = s->action;
+            ++dropped;
+            continue;
+        }
+        b[kept++] = *s;
+    }
+    for (int hand = 0; hand < 2; ++hand) {
+        const char *name = hand ? "right" : "left";
+        const char *const *thumb_inputs = hand ? THUMB_TOUCH_RIGHT : THUMB_TOUCH_LEFT;
+        for (int c = 0; thumb && c < 4; ++c) added += add_binding(instance, to_path, b, &kept, thumb, name, thumb_inputs[c]);
+        if (index) added += add_binding(instance, to_path, b, &kept, index, name, "trigger/touch");
+    }
+    XrResult r;
+    if (!added && !dropped) r = fn(instance, suggested);
+    else {
+        XrInteractionProfileSuggestedBinding copy = *suggested;
+        copy.countSuggestedBindings = kept;
+        copy.suggestedBindings = b;
+        r = fn(instance, &copy);
+        LOG("proximity_emul: finger proximity bound to touch (%u binding(s) added, %u proximity path(s) replaced): %d",
+            added, dropped, r);
+        if (XR_FAILED(r)) r = fn(instance, suggested);
+    }
+    free(b);
+    return r;
+}
+
 static XrResult remap_to_touch(XrInstance instance, PFN_xrSuggestInteractionProfileBindings fn,
                                PFN_xrPathToString to_string, const XrInteractionProfileSuggestedBinding *suggested,
                                const char *profile) {
@@ -305,7 +389,7 @@ static XrResult remap_to_touch(XrInstance instance, PFN_xrSuggestInteractionProf
     copy.interactionProfile = touch;
     copy.countSuggestedBindings = kept;
     copy.suggestedBindings = b;
-    XrResult r = kept ? fn(instance, &copy) : XR_ERROR_PATH_UNSUPPORTED;
+    XrResult r = kept ? suggest_touch(instance, fn, to_string, &copy) : XR_ERROR_PATH_UNSUPPORTED;
     free(b);
     LOG("controller profile %s -> oculus/touch_controller (%u bindings, %u dropped): %d", profile + 22, kept,
         n - kept, r);
@@ -325,12 +409,14 @@ static XRAPI_ATTR XrResult XRAPI_CALL hook_xrSuggestInteractionProfileBindings(X
             if (XR_SUCCEEDED(to_string(instance, suggested->suggestedBindings[i].binding, sizeof(path), &size, path)))
                 note_pose_binding(suggested->suggestedBindings[i].action, path);
         }
-    XrResult r = fn(instance, suggested);
-    input_diag_suggested(instance, suggested, r, to_string);  // the runtime's answer to the game's own suggestion
-    if (!profile_remap || !suggested || !to_string) return r;
     char profile[XR_MAX_PATH_LENGTH] = {0};
     uint32_t size = 0;
-    if (XR_FAILED(to_string(instance, suggested->interactionProfile, sizeof(profile), &size, profile))) return r;
+    int known = suggested && to_string &&
+                XR_SUCCEEDED(to_string(instance, suggested->interactionProfile, sizeof(profile), &size, profile));
+    XrResult r = known && !strcmp(profile, TOUCH_PROFILE) ? suggest_touch(instance, fn, to_string, suggested)
+                                                         : fn(instance, suggested);
+    input_diag_suggested(instance, suggested, r, to_string);  // the runtime's answer to the game's own suggestion
+    if (!profile_remap || !known) return r;
     if (!strcmp(profile, TOUCH_PROFILE)) {
         if (XR_SUCCEEDED(r)) app_suggested_touch = 1;  // the app's own Touch bindings win over a remap
         return r;

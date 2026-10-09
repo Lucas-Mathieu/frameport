@@ -139,6 +139,12 @@ SETTINGS = [
      "OpenXR time, which on the Frame runs seconds behind the runtime's clock, so its \"now\" poses (Unity's physics "
      "step, controller poses) came from the past: hands trailing the controllers (e.g. BattleSisters, Sniper Elite "
      "VR)."),
+    ("proximity_emul", "int", 0, "Finger proximity from touch",
+     "Meta's OVRPlugin reports a thumb (or index finger) resting near the controller through "
+     "XR_FB_touch_controller_proximity, which the Frame's runtime lacks: \"near\" stays false and games that animate "
+     "the hands from it show a thumb that never moves (e.g. Vader Immortal; found by Klownicle, GitHub #49). Binds the "
+     "game's proximity actions to the capacitive touch inputs instead: 1 = thumb (thumbstick, face buttons or thumb "
+     "rest touched), 2 = also the index finger (trigger touched). Only when the runtime lacks the extension."),
     ("pose_debug", "int", 0, "Pose time diagnostics (log)",
      "Every 5 s, logs per located space how far the requested times are from the frame's predicted display time, and "
      "the runtime clock's offset from the monotonic clock. No effect on the game."),
@@ -161,6 +167,16 @@ SETTINGS = [
      "e.g. stores that initialize locals a shader reads before writing (an undefined loop counter hung the GPU in "
      "VR4's campaign). Format: <size>:<sha256>:<byte offset>:<word>,<word>,...; several separated by ';'. Comes from "
      "a game's recipe."),
+    ("zink_shader_fix", "str", "", "OpenGL ES shader fixes",
+     "Shader-fix Vulkan layer (frame.zink_shader_fix) for OpenGL ES games, whose GLSL the Frame's GL driver (Zink) "
+     "turns into SPIR-V: modules matching size + SHA-256 get words inserted at a byte offset, e.g. stores that set "
+     "loop counters and accumulators a shader reads before writing (Vader Immortal's lightspeed jump hung the GPU; "
+     "found by Klownicle, GitHub #49). Same format as vk_shader_fix. Comes from a game's recipe; the driver's "
+     "output can change with a Frame update, then the fix no longer matches (logged)."),
+    ("zink_shader_dump", "int", 0, "OpenGL ES shader dump (diagnostics)",
+     "Shader-fix Vulkan layer (frame.zink_shader_fix): writes every distinct SPIR-V module the GL driver creates to "
+     "Android/data/<package>/files/fp_spirv/<size>_<sha256>.spv, to capture a shader for a new zink_shader_fix. No "
+     "effect on the game."),
     ("vk_query_slots", "int", 0, "Vulkan shim: slots per occlusion query",
      "Vulkan shim (frame.vk_sanitize): on gives every occlusion query room for both eyes. In multiview passes the "
      "Frame's driver writes a zero result for the second eye into the next query, so engines that count on one slot "
@@ -226,6 +242,10 @@ UI: dict[str, dict] = {
     "pose_time_fix": dict(group="controllers", level="advanced", label="Fix hands lagging behind controllers",
                           help="For games whose hands trail the controllers when you move them (e.g. BattleSisters).",
                           control=("switch",)),
+    "proximity_emul": dict(group="controllers", level="advanced", label="Animate fingers from touch",
+                           help="For games whose hands' thumbs never move when you touch the buttons or thumbstick "
+                                "(e.g. Vader Immortal).",
+                           control=("choice", [(0, "Off"), (1, "Thumbs"), (2, "Thumbs and index fingers")])),
     "haptic_fix": dict(group="controllers", level="advanced", label="Fix freezes when controllers vibrate",
                        help="For games that freeze the Frame when a controller vibrates (e.g. Lucky's Tale). Needs a "
                             "rebuild.",
@@ -307,7 +327,8 @@ UI: dict[str, dict] = {
         "foveation_fix", "hide_space_warp", "swapchain_fix", "cube_standin", "layer_fix", "gl_hide_multiview",
         "mutable_fix", "flip_quads", "swap_eyes", "vk_validation", "rect_clamp", "gl_hide_msrtt", "strip_color_bias",
         "snapshot", "strip_depth", "respace_kick", "layer_debug", "eye_debug", "input_diag", "release_wait",
-        "vk_hide_fdm", "ovrp_begin_gate", "ovrp_hold_physics", "pose_debug")},
+        "vk_hide_fdm", "ovrp_begin_gate", "ovrp_hold_physics", "pose_debug",
+        "zink_shader_dump")},
 }
 
 
@@ -377,8 +398,11 @@ class AdapterSetting(Patch):
             "vk_hide_fdm": lambda a: a.engine == "Unreal",  # Unreal's Vulkan isn't always detected (Metro Awakening)
             "vk_query_slots": lambda a: a.engine == "Unreal" and ap.is_vulkan(a),
             "vk_validation": lambda a: a.engine == "Unreal",
+            "zink_shader_fix": ap.is_gles,
+            "zink_shader_dump": ap.is_gles,
             "haptic_fix": lambda a: "libOVRPlugin.so" in a.libs,
             "pose_time_fix": lambda a: "libOVRPlugin.so" in a.libs,
+            "proximity_emul": lambda a: "libOVRPlugin.so" in a.libs,
             "vk_spec_fixes": lambda a: a.engine == "Unreal" and ap.is_vulkan(a),
             "controller_models": ap.may_use_render_models,
             **{k: ap.is_gles for k in ("equirect_emul", "equirect_face", "equirect_res", "equirect_flip",

@@ -87,6 +87,12 @@ SUMMARIES = {
     "frame.oculusos": "Provides stand-ins for Quest system reporting some games call at start.",
     "frame.unity_text_input": "Lets you type into this app's text fields on the Frame (they'd close at once).",
     "frame.vk_sanitize": "Cleans up graphics data that crashes some Unreal games on the Frame.",
+    "frame.unreal_quest_precompile": "Lets the game leave its loading screen: it waited for a Quest-only step that "
+                                     "never starts on the Frame (e.g. Vader Immortal).",
+    "frame.unreal_quest_keymap": "Makes grip, trigger and touch controls reach the game's hands (it picked the "
+                                 "empty Gear VR controls on the Frame, e.g. Vader Immortal).",
+    "frame.zink_shader_fix": "Repairs shaders that hang the graphics chip at certain effects, from the game's "
+                             "recipe (e.g. Vader Immortal's lightspeed jump).",
     # Files and environment on the Frame
     "device.files": "Puts settings files next to the game on the Frame (e.g. to turn off an unsupported effect).",
     "device.hide_navbar": "Hides Android's back/home/recents buttons, which cover the app's own buttons.",

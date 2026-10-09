@@ -10,7 +10,7 @@ timefix OpenXR layer for Proton games (linux-arm64, glibc; the NDK's clang build
 OculusHMDConnected helper for Rift games under Proton (win-x64 PE; the NDK's clang + lld-link, no Windows SDK), the
 live view's hardware H.264 encoder fp_venc (linux-arm64-bin, static freestanding executable), and rewrites artifacts/SHA256SUMS. Run `frameport parity` afterwards to see which games change.
 
-    python native/build.py [--only adapter,bridge,compat,langpack,glshim,eglfmt,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,ovrpshim,vrsettings,venc] [--ndk PATH]
+    python native/build.py [--only adapter,bridge,compat,langpack,glshim,eglfmt,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,zinkfix,ovrpshim,vrsettings,venc] [--ndk PATH]
 """
 from __future__ import annotations
 
@@ -300,6 +300,14 @@ def build_vkshim(tc: Path):
         cwd=src)
 
 
+def build_zinkfix(tc: Path):
+    """Shader-fix Vulkan layer for OpenGL ES games (see zinkfix/zinkfix.c): between Zink and the driver."""
+    src = HERE / "zinkfix"
+    run([exe(tc, "aarch64-linux-android29-clang"), "-shared", "-fPIC", "-O2", "-Wall", "-Wextra", "-Werror",
+         "-fvisibility=hidden", "-Wl,-soname,libVkLayer_fp_shaderfix.so", "-Wl,-z,max-page-size=16384", "zinkfix.c",
+         "-ldl", "-llog", "-o", ART / "arm64-v8a/libVkLayer_fp_shaderfix.so"], cwd=src)
+
+
 def build_ovrpshim(tc: Path):
     """OVRPlugin frame-loop shim (see ovrpshim/ovrpshim.c) for Unity 2017-2018 built-in Oculus support."""
     src = HERE / "ovrpshim"
@@ -352,7 +360,7 @@ def write_sums():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", default="adapter,bridge,compat,langpack,glshim,eglfmt,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,ovrpshim,vrsettings,venc")
+    ap.add_argument("--only", default="adapter,bridge,compat,langpack,glshim,eglfmt,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,zinkfix,ovrpshim,vrsettings,venc")
     ap.add_argument("--ndk")
     args = ap.parse_args()
     parts = set(args.only.split(","))
@@ -363,9 +371,10 @@ def main():
              "langpack": lambda: build_langpack(tc),
              "glshim": lambda: build_glshim(tc), "eglfmt": lambda: build_eglfmt(tc), "ovrtrace": lambda: build_ovrtrace(tc), "xrshim": lambda: build_xrshim(tc), "dex": build_dex, "xrlayer": lambda: build_xrlayer(tc),
              "oculushmd": lambda: build_oculushmd(tc), "vkshim": lambda: build_vkshim(tc),
+             "zinkfix": lambda: build_zinkfix(tc),
              "ovrpshim": lambda: build_ovrpshim(tc),
              "vrsettings": lambda: build_vrsettings(tc), "venc": lambda: build_venc(tc)}
-    for name in ("adapter", "bridge", "compat", "langpack", "glshim", "eglfmt", "ovrtrace", "xrshim", "vkshim", "ovrpshim", "dex", "xrlayer", "oculushmd", "vrsettings", "venc"):
+    for name in ("adapter", "bridge", "compat", "langpack", "glshim", "eglfmt", "ovrtrace", "xrshim", "vkshim", "zinkfix", "ovrpshim", "dex", "xrlayer", "oculushmd", "vrsettings", "venc"):
         if name in parts:
             log(f"build {name}")
             steps[name]()

@@ -24,7 +24,8 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 # 2: unity_split (a Unity split-binary build expects an OBB too: expects_obb) (2026-10)
 # 3: unreal_ovrp_lookups (the OVRPlugin functions Unreal's Oculus module looks up: frame.unreal_ovrp_entrypoints)
 # 4: vivox_api31 (Vivox's audio routing calls Android 12 AudioManager methods: frame.vivox_audio_route) (2026-10)
-ANALYSIS_VERSION = 4
+# 5: unreal_quest_gates (Quest-only branches in ILMxLAB's Unreal: frame.unreal_quest_precompile/_keymap) (2026-10)
+ANALYSIS_VERSION = 5
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -301,8 +302,24 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             # Unreal's Oculus module needs every OVRPlugin function it looks up (frame.unreal_ovrp_entrypoints)
             "unreal_ovrp_lookups": (ovrp_lookups(lib_bytes.get(engine_lib.rsplit("/", 1)[1], b""))
                                     if engine_lib and "libOVRPlugin.so" in libset else []),
+            # Quest-only branches that leave ILMxLAB's Unreal games stuck on the Frame (frame.unreal_quest_*)
+            "unreal_quest_gates": (unreal_quest_gates(lib_bytes.get(engine_lib.rsplit("/", 1)[1], b""))
+                                   if engine_lib else []),
         },
     )
+
+
+# Quest-only branches in ILMxLAB's Unreal (IsRunningOnSantaCruz) that leave the game stuck on the Frame: the exported
+# function each frame.unreal_quest_* patch rewrites
+UNREAL_QUEST_GATES = {
+    "quest_precompile": "_ZN8UVRUtils31GetQuestShaderPrecompilePercentEv",
+    "rpoc_keymap": "_ZN27URPOCKeyMapManagerComponent14AddAxisMappingERK15FRPOCKeyMappingR16FRPOCInputMapSet",
+}
+
+
+def unreal_quest_gates(data: bytes) -> list[str]:
+    """The gate functions an Unreal engine library exports (a search of the symbol names, no ELF parsing)."""
+    return sorted(k for k, sym in UNREAL_QUEST_GATES.items() if b"\0" + sym.encode() + b"\0" in data)
 
 
 def ovrp_lookups(data: bytes) -> list[str]:
