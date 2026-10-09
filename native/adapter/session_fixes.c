@@ -163,6 +163,39 @@ static void focus_hold_note(int state) {
     else if (state >= 0 && state != XR_SESSION_STATE_FOCUSED) is_focused = 0;
 }
 
+// ---------------------------------------------------------------- focus log (always on: rare events, cheap)
+// Every time the runtime takes focus away and gives it back, as the runtime reports it (before focus_hold hides a dip
+// from the app): FramePort's session triage counts these dips after a play session and suggests a longer
+// focus_hold_ms when they keep reaching the game.
+static PFN_xrPollEvent focus_log_next;
+static int focus_log_focused;
+static int64_t focus_log_lost_at;
+static int focus_log_lost_state;
+
+static XRAPI_ATTR XrResult XRAPI_CALL focus_log_poll(XrInstance instance, XrEventDataBuffer *event) {
+    XrResult r = focus_log_next(instance, event);
+    if (r != XR_SUCCESS || !event) return r;
+    int state = session_state_of(event);
+    if (state < 0) return r;
+    if (state == XR_SESSION_STATE_FOCUSED) {
+        if (focus_log_lost_at)
+            LOG("focus: back after %.0f ms (lost to state %d)", (monotonic_ns() - focus_log_lost_at) / 1e6,
+                focus_log_lost_state);
+        focus_log_focused = 1;
+        focus_log_lost_at = 0;
+    } else if (focus_log_focused && (state == XR_SESSION_STATE_VISIBLE || state == XR_SESSION_STATE_SYNCHRONIZED)) {
+        focus_log_focused = 0;
+        focus_log_lost_at = monotonic_ns();
+        focus_log_lost_state = state;
+        LOG("focus: lost (state %d)", state);
+    } else if (state != XR_SESSION_STATE_VISIBLE && state != XR_SESSION_STATE_SYNCHRONIZED) {
+        focus_log_focused = 0;  // stopping, loss pending, exiting: the session ends, not a dip
+        if (focus_log_lost_at) LOG("focus: session ending (state %d)", state);
+        focus_log_lost_at = 0;
+    }
+    return r;
+}
+
 static XrResult focus_hold_poll(PFN_xrPollEvent fn, XrInstance instance, XrEventDataBuffer *event) {
     for (;;) {
         if (held.delivering) {  // hand held events to the app, oldest first

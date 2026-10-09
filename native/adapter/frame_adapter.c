@@ -1188,7 +1188,9 @@ XRAPI_ATTR XrResult XRAPI_CALL xrPollEvent(XrInstance instance, XrEventDataBuffe
         if (got) return XR_SUCCESS;
     }
     if (sync_guard) pthread_mutex_lock(&sync_lock);
-    XrResult result = focus_hold && event ? focus_hold_poll(fn, instance, event) : fn(instance, event);
+    focus_log_next = fn;  // the runtime's own focus changes are logged, before focus_hold hides any
+    XrResult result = focus_hold && event ? focus_hold_poll(focus_log_poll, instance, event)
+                                          : focus_log_poll(instance, event);
     if (sync_guard) {
         if (result == XR_SUCCESS && event && session_state_of(event) == XR_SESSION_STATE_FOCUSED)
             sync_resume_at = monotonic_ns() + SYNC_GUARD_PAUSE_NS;
