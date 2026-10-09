@@ -1,6 +1,9 @@
 # Log signature -> diagnosis -> suggested fix. Matched against the game's launch.log (Lepton logcat mirror).
 # `pattern` is a Python regex (case-sensitive). `suggest` lists patch ids (+ optional params) the UI offers as
-# "apply and rebuild". `severity`: fatal (the game can't run) | error | warning | info.
+# "apply and rebuild"; an entry `adapter.<key>=<value>` sets that value (else 1). `severity`: fatal (the game can't
+# run) | error | warning | info. `question`: a symptom only the player sees (play sessions, GUI "Last session"): its
+# fix is offered as that question, never applied on its own. `report: true` = the useful next step is a problem report
+# with diagnostics. Launch tests and real play sessions (agent session_log, `frameport session`) are both matched.
 # Sources: every failure we hit porting 34 games to the Steam Frame (see docs/PLAYBOOK.md).
 signatures:
   - id: no-launcher
@@ -34,7 +37,7 @@ signatures:
     diagnosis: Unity's render thread crashed inside the Frame's GL driver (Mesa/Zink); the picture freezes or stays grey. Known triggers - an OVROverlay copy (try "Unity - skip OVROverlay layers", e.g. The Room VR), MSAA switched on at runtime, a GPU hang (zink DEVICE LOST).
     suggest: [frame.unity_no_overlay_copy, frame.unity_runtime_msaa_off]
   - id: unreal-msrtt-crash
-    pattern: 'fault addr 0x10000 in tid \d+ \((RHIThread|RenderThread)'
+    pattern: 'fault addr 0x10000 in tid \d+ \((RHIThread|RenderThread)|libgallium_dri\.so \(find_rp_state'
     severity: fatal
     diagnosis: The game's render thread jumped to address 0x10000 inside the Frame's GL driver (Mesa/Zink) a few seconds after start. Zink looks up a render-pass cache slot past its end when a game renders through multisampled render-to-texture (Unreal's mobile MSAA, e.g. Star Wars Pinball VR). Load the GL shim, which hides that extension.
     suggest: [frame.unreal_gl_shim, frame.unity_gl_shim]
@@ -103,6 +106,24 @@ signatures:
     diagnosis: The GPU hung (Zink/Mesa). For GLES Unity games MSAA render-to-texture is the usual cause; at one effect
       only, a shader reading undefined loop counters (e.g. Vader Immortal's lightspeed jump - frame.zink_shader_fix).
     suggest: [frame.unity_no_msaa, frame.unity_runtime_msaa_off]
+  - id: gpu-hang
+    pattern: 'kernel: .*(?i:hangcheck|gpu fault|msm_drm.*(hang|recover)|kgsl.*(hang|fault)|adreno.*(hang|fault))'
+    severity: fatal
+    diagnosis: The Frame's GPU hung while the game ran (the kernel reset it; the game froze or closed). Usually one
+      shader or effect the Frame's driver can't handle (e.g. Vader Immortal's lightspeed jump). FramePort can't fix
+      that on its own; capture the game's shaders (OpenGL ES games) and send a problem report with diagnostics, so a
+      shader fix can be added for this game.
+    suggest: [adapter.zink_shader_dump]
+    report: true
+  - id: space-warp-used
+    pattern: 'xrCreateSwapchain \d+x\d+ format=(97|129) '
+    unless: 'per-game: hide_space_warp=1'
+    severity: info
+    diagnosis: The game uses Meta's space warp (it renders half of its frames plus motion vectors, and the runtime makes
+      up the rest). On the Frame that can make textures flicker, jump or smear while you move (e.g. Into The Radius 2,
+      Metro Awakening). Turning it off makes the game render every frame itself.
+    question: Did textures flicker, jump or smear while you moved?
+    suggest: [adapter.hide_space_warp]
   - id: unity-runtime-msaa
     pattern: 'recommended MSAA level is [248]\. Switching to the recommended level'
     severity: info

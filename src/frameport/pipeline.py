@@ -961,34 +961,54 @@ def proton_alternative_worth_trying(package: str, verdict: str | None) -> bool:
 
 
 def useful_suggestions(package: str, suggestions: list[str]) -> list[str]:
-    """Triage suggestions that would change something: not already on, and not conflicting with the recipe (e.g. no
-    Revive for a repack that runs its own)."""
+    """Triage suggestions that would change something: not already on (a value suggestion: not already that value),
+    and not conflicting with the recipe (e.g. no Revive for a repack that runs its own)."""
     from .patches.base import REGISTRY
+    from .validate.triage import split_suggestion
 
     entry = library.game(package) or {}
-    on = set((entry.get("recipe") or {}).get("patches") or {})
+    patches = (entry.get("recipe") or {}).get("patches") or {}
     out = []
-    for pid in suggestions:
+    for s in suggestions:
+        pid, value = split_suggestion(s)
         p = REGISTRY.get(pid)
-        if pid in on or (p and any(c in on for c in p.conflicts)):
+        if p and any(c in patches for c in p.conflicts):
             continue
-        out.append(pid)
+        if pid in patches and (value is None or _same_value((patches[pid] or {}).get("value"), value)):
+            continue
+        if s not in out:
+            out.append(s)
     return out
 
 
+def _same_value(a, b) -> bool:
+    try:
+        return float(a) == float(b)
+    except (TypeError, ValueError):
+        return str(a) == str(b)
+
+
 def apply_suggestions(package: str, suggestions: list[str]) -> Recipe:
-    """Add triage-suggested patches to the game's recipe (the user confirms in the UI before rebuilding)."""
+    """Add triage-suggested patches to the game's recipe (the user confirms in the UI before rebuilding). A value
+    suggestion ("adapter.scale=0.85") sets that value; a plain adapter setting is switched on (1)."""
+    from .patches.base import get
+    from .validate.triage import split_suggestion
+
     entry = library.game(package)
     recipe = library.recipe_from_dict(entry["recipe"])
-    for pid in suggestions:
+    for s in suggestions:
+        pid, value = split_suggestion(s)
         if pid == PROTON_TOOL:
             recipe.patches[pid] = {"tool": "proton-experimental"}
             recipe.reasons[pid] = "It failed on the stable Proton: trying Proton Experimental."
             continue
         if pid.startswith("adapter."):
-            from .patches.base import get
-
-            recipe.patches[pid] = {"value": 1 if get(pid).params[0].kind == "int" else get(pid).params[0].default}
+            param = get(pid).params[0]
+            if value is not None:
+                recipe.patches[pid] = {"value": float(value) if param.kind == "float" else
+                                       int(float(value)) if param.kind == "int" else value}
+            else:
+                recipe.patches[pid] = {"value": 1 if param.kind == "int" else param.default}
         else:
             recipe.patches.setdefault(pid, {})
         recipe.reasons[pid] = "Suggested by log triage."
@@ -999,6 +1019,82 @@ def apply_suggestions(package: str, suggestions: list[str]) -> Recipe:
             recipe.patches.pop(pid, None)
     set_recipe(package, recipe)
     return recipe
+
+
+def adapter_only(suggestions: list[str]) -> bool:
+    """Every suggestion is a FrameBridge setting: it can be applied on the Frame without a rebuild."""
+    from .validate.triage import split_suggestion
+
+    return bool(suggestions) and all(split_suggestion(s)[0].startswith("adapter.") for s in suggestions)
+
+
+def apply_suggestions_live(package: str, suggestions: list[str], target: Target | None) -> bool:
+    """apply_suggestions, then, when every suggestion is a FrameBridge setting and a target is given, write the game's
+    settings on the Frame right away (agent set_settings, as the Game settings dialog does): no rebuild, used from the
+    game's next start. Returns True when they were pushed; else the game needs a rebuild + install."""
+    recipe = apply_suggestions(package, suggestions)
+    if target is None or not adapter_only(suggestions):
+        return False
+    from .patches.settings import SETTINGS, adapter_settings
+
+    numeric = {key for key, kind, *_ in SETTINGS if kind in ("int", "float")}
+    target.set_settings(package, {k: v for k, v in adapter_settings(recipe.patches).items() if k in numeric})
+    return True
+
+
+SESSION_MAX_AGE = 7 * 86400  # s: older play sessions aren't fetched (the first connection after an update)
+
+
+def triage_session(package: str, target: Target) -> dict:
+    """Fetch and triage the game's newest play session on the Frame (agent session_log, v70): log signatures, the
+    frame rate and focus dips (validate/session.py). Stores it as the game's `last_session` (the game page's "Last
+    session" callout) and returns it ({} when the game was never played)."""
+    from .core.paths import user_data_dir
+    from .validate import session
+
+    res = target.session_log(package)
+    s = res.get("session") or {}
+    if not s:
+        return {}
+    entry = library.game(package) or {}
+    text = res.get("text") or ""
+    summary = session.analyze(text, package, entry, crash=res.get("crash") or "", kernel=res.get("kernel") or "")
+    for f in summary["findings"]:
+        f["suggest"] = useful_suggestions(package, f["suggest"])
+    summary["suggestions"] = useful_suggestions(
+        package, [x for f in summary["findings"] if not f.get("question") for x in f["suggest"]])
+    logs = user_data_dir() / "logs"
+    logs.mkdir(exist_ok=True)
+    log_path = logs / f"{package}-session-{time.strftime('%Y%m%d-%H%M%S')}.log"
+    log_path.write_text(text + ("\n--------- crash logcat\n" + res["crash"] if res.get("crash") else "")
+                        + ("\n--------- kernel\n" + res["kernel"] if res.get("kernel") else ""),
+                        encoding="utf-8", errors="replace")
+    for old in sorted(logs.glob(f"{package}-session-*.log"))[:-3]:
+        old.unlink(missing_ok=True)
+    summary.update(start=s.get("start"), ended=s.get("end"), cut=bool(res.get("cut")), time=time.time(),
+                   log_path=str(log_path))
+    library.upsert_game(package, last_session=summary, last_session_checked=s.get("end") or s.get("start"))
+    return summary
+
+
+def mark_session_checked(package: str, end: float) -> None:
+    """A session that isn't triaged (a launch test's, or too old): don't look at it again."""
+    library.upsert_game(package, last_session_checked=end)
+
+
+def sessions_due(installed: list[dict], now: float | None = None) -> list[tuple[str, dict, bool]]:
+    """[(package, last_play, fetch)] for library games whose newest play session ended after the last one looked at
+    (agent v70 list_installed `last_play`). fetch=False: only mark it (a launch test's session, or an old one)."""
+    now = time.time() if now is None else now
+    out = []
+    for d in installed or []:
+        lp = d.get("last_play") or {}
+        pkg = d.get("package") or ""
+        g = library.game(pkg) if pkg else None
+        if not g or not lp.get("end") or lp["end"] <= (g.get("last_session_checked") or 0):
+            continue
+        out.append((pkg, lp, not lp.get("test") and now - lp["end"] < SESSION_MAX_AGE))
+    return out
 
 
 # ------------------------------------------------------------------------------------------ sharing / diagnostics

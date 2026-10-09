@@ -1888,6 +1888,93 @@ class FramePortApp:
                       "crashed it, please report it.").format(title=game.get("title") or pkg), error=True,
                    action=tr("Report a problem"), on_action=lambda e: self.report_problem_dialog(pkg))
 
+    def _check_sessions(self, info: dict | None) -> None:
+        """A FramePort game's play session ended since FramePort last looked (agent v70 `last_play`): fetch and triage
+        its log on a background thread (pipeline.triage_session); the game page shows the result ("Last session")."""
+        if getattr(self, "_sessions_busy", False):
+            return
+        try:
+            due = pipeline.sessions_due((info or {}).get("installed") or [])
+        except Exception:  # noqa: BLE001 (never fail the connection refresh over it)
+            applog.log.exception("checking for finished play sessions failed")
+            return
+        if not due or self.target is None:
+            return
+        self._sessions_busy, target = True, self.target
+
+        def work():
+            try:
+                for pkg, lp, fetch in due:
+                    if not fetch:
+                        pipeline.mark_session_checked(pkg, lp["end"])
+                        continue
+                    try:
+                        summary = pipeline.triage_session(pkg, target)
+                    except Exception as exc:  # noqa: BLE001 (an older agent, the connection dropped: look next time)
+                        applog.log.warning("session triage of %s failed: %s", pkg, exc)
+                        if isinstance(exc, AgentFailed):  # the agent answered: asking again won't help
+                            pipeline.mark_session_checked(pkg, lp["end"])
+                        continue
+                    self._session_triaged(pkg, summary)
+            finally:
+                self._sessions_busy = False
+        threading.Thread(target=work, daemon=True).start()
+
+    def _session_triaged(self, pkg: str, summary: dict) -> None:
+        from ..validate.session import shown_findings
+
+        if not summary or not shown_findings(summary):
+            return
+        if self.route[:2] == ("game", pkg):
+            self.refresh_view()
+        else:
+            self.toast(tr("FramePort looked at your last session of {title} and has something to try.")
+                       .format(title=self._title(pkg)), action=tr("Open game"),
+                       on_action=lambda e: self.open_game(pkg))
+
+    def apply_session_fix(self, pkg: str, suggestions: list[str], finding: str | None = None) -> None:
+        """A fix from the game page's "Last session": FrameBridge settings are written on the Frame at once (no
+        rebuild); anything else goes into the recipe and the game is rebuilt and reinstalled."""
+        g = library.game(pkg) or {}
+
+        def mark():
+            def fn(entry):
+                ls = entry.get("last_session")
+                if isinstance(ls, dict):
+                    ls.setdefault("applied", []).extend(x for x in suggestions if x not in ls.get("applied", []))
+                    if finding:
+                        ls.setdefault("answered", []).append(finding)
+            library.update_game(pkg, fn)
+        on_frame = self.target is not None and C.install_state(g, self.frame_info) in ("installed", "outdated")
+        if pipeline.adapter_only(suggestions) and on_frame:
+            target = self.target
+
+            def work():
+                pipeline.apply_suggestions_live(pkg, suggestions, target)
+                mark()
+                self.toast(tr("Done. It's used the next time you start {title}.").format(title=self._title(pkg)))
+                self.refresh_view()
+            self.run_bg(work)
+            return
+        pipeline.apply_suggestions(pkg, suggestions)
+        mark()
+        if self.frame_state == "connected":
+            self.install(pkg, "frame")
+        else:
+            self.toast(tr("Added to the game's patches. Install it on your Frame to use it."))
+            self.refresh_view()
+
+    def answer_session_question(self, pkg: str, finding: str) -> None:
+        """No to a "Last session" question: don't ask it again for this session."""
+        library.update_game(pkg, lambda g: isinstance(g.get("last_session"), dict) and
+                            g["last_session"].setdefault("answered", []).append(finding))
+        self.refresh_view()
+
+    def dismiss_session(self, pkg: str) -> None:
+        library.update_game(pkg, lambda g: isinstance(g.get("last_session"), dict) and
+                            g["last_session"].__setitem__("dismissed", True))
+        self.refresh_view()
+
     def _battery_check(self, fetch: bool) -> None:
         """Battery level for the sidebar, and the queue on battery power: warn once, pause before the Frame would
         switch itself off mid-upload, continue when it charges (ui/battery.py)."""
@@ -2065,6 +2152,7 @@ class FramePortApp:
                     self.frame_state != "connected"
                 self.frame_info, self.frame_state = info, "connected"
                 self._check_frame_restart(info)
+                self._check_sessions(info)
             except Exception as exc:  # noqa: BLE001
                 frame = getattr(target, "frame", None)
                 if frame is not None and frame.alive():

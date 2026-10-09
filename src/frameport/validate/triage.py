@@ -19,6 +19,8 @@ class Finding:
     suggest: list[str]
     evidence: str
     use_alt: bool = False
+    question: str = ""  # a symptom only the player sees: its fix is offered as "Did … ? Yes = apply", never on its own
+    report: bool = False  # nothing to switch on: diagnostics (a problem report) are what helps
 
 
 @dataclass
@@ -37,8 +39,11 @@ class TriageResult:
         return "fail" if fatal or self.state in ("EXITED", "NEVER_STARTED") else "unknown"
 
     def suggestions(self) -> list[str]:
+        """Fixes to offer without asking (findings with a symptom question are left to the player)."""
         out = []
         for f in self.findings:
+            if f.question:
+                continue
             for s in f.suggest:
                 if s not in out:
                     out.append(s)
@@ -82,12 +87,21 @@ def game_lines(log: str, package: str | None = None) -> list[str]:
     return out
 
 
-def triage(log: str, state: str = "UNKNOWN", package: str | None = None, crash: str = "") -> TriageResult:
-    """`crash` = the container's crash logcat (tombstones come from crash_dump's pid, so it isn't pid-filtered)."""
+def split_suggestion(s: str) -> tuple[str, str | None]:
+    """A suggestion is a patch id, or a value for an adapter setting ("adapter.focus_hold_ms=2500")."""
+    pid, eq, value = s.partition("=")
+    return pid.strip(), (value.strip() if eq else None)
+
+
+def triage(log: str, state: str = "UNKNOWN", package: str | None = None, crash: str = "",
+           kernel: str = "") -> TriageResult:
+    """`crash` = the container's crash logcat (tombstones come from crash_dump's pid, so it isn't pid-filtered);
+    `kernel` = kernel log lines of a play session ("kernel: …", GPU hangs; agent session_log)."""
     db = database()
     kind = "pcvr" if package and package.startswith("rift.") else "quest"  # Proton/Revive logs vs Lepton logcat
     lines = game_lines(log, package) if kind == "quest" else [ANSI.sub("", ln) for ln in log.splitlines()]
     lines += [ANSI.sub("", ln) for ln in crash.splitlines()]
+    lines += [ANSI.sub("", ln) for ln in kernel.splitlines()]
     text = "\n".join(lines)
     res = TriageResult(state, None)
     for m in db["milestones"]:
@@ -105,7 +119,8 @@ def triage(log: str, state: str = "UNKNOWN", package: str | None = None, crash: 
         if hit:
             line = next((ln for ln in lines if re.search(sig["pattern"], ln)), hit.group(0))
             res.findings.append(Finding(sig["id"], sig["severity"], sig["diagnosis"], list(sig.get("suggest") or []),
-                                        line.strip()[:300], bool(sig.get("use_alt"))))
+                                        line.strip()[:300], bool(sig.get("use_alt")), sig.get("question") or "",
+                                        bool(sig.get("report"))))
     # a root-cause finding hides the generic crash findings it explains
     hidden = {h for sig in db["signatures"] if any(f.id == sig["id"] for f in res.findings)
               for h in sig.get("supersedes") or []}

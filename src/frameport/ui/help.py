@@ -65,6 +65,10 @@ HELP: dict[str, str] = _Translated({
     "launch_test": "Starts the game on the Frame while nobody is wearing it and reads the log: did it start, create a "
                    "VR session and render frames. It can't check what you'd see: tracking only runs with the "
                    "headset on.",
+    "last_session": "After you play a game on the Frame, FramePort reads that session's log (while the Frame is "
+                    "connected): crashes, the frame rate, and moments the headset took focus away from the game. "
+                    "Fixes that are game settings take effect the next time you start the game; others rebuild and "
+                    "reinstall it. Your saves are kept.",
     "install_links": "Some developers put an \"Install with FrameDrop\" button on their site (the protocol of the "
                      "FrameDrop sideloader). FramePort reads the same links: it shows what the link offers, asks, "
                      "downloads it, adds it to your library and installs it on the Frame. Only https links to "
