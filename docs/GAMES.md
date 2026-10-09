@@ -44,7 +44,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Lucky's Tale | Quest | ✅ Works |  |
 | Marvel's Deadpool VR | Quest | ✅ Works |  |
 | Marvel's Iron Man VR | Quest | ✅ Works |  |
-| Matilda | Quest | ✅ Works |  |
+| Max Mustard | Quest | ✅ Works |  |
 | Medieval Dynasty New Settlement | Quest | ✅ Works |  |
 | Metro Awakening | Quest | ✅ Works |  |
 | Mobile Suit Gundam: Silver Phantom | Quest | ✅ Works |  |

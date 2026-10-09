@@ -1,5 +1,5 @@
 package: com.ToastVR.Matilda
-title: Matilda
+title: Max Mustard
 status: works
 tested_version: 1.1.0
 engine: Unity
@@ -18,4 +18,5 @@ verified:
   frame_build: '20261007.6125817'
   agent: 59
   issue: 110
+updated: '2026-10-09'
 source_hint: com.ToastVR.Matilda
