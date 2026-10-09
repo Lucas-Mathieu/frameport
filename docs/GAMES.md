@@ -72,6 +72,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | The Boys VR | Quest | ✅ Works |  |
 | The Climb 2 | Quest | ✅ Works |  |
 | The Room VR | Quest | ✅ Works |  |
+| The Tale of Onogoro | Quest | ✅ Works |  |
 | Time Crisis VR (Experimental) | Quest | ✅ Works |  |
 | Toy Master | Quest | ✅ Works |  |
 | Under Cover | Quest | ✅ Works |  |
