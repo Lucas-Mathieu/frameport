@@ -52,6 +52,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | palazzo_santacruz | Quest | ✅ Works |  |
 | Path of the Warrior | Quest | ✅ Works |  |
 | Pistol Whip | Quest | ✅ Works |  |
+| Please Don't Touch Anything | Quest | ✅ Works |  |
 | PowerWash Simulator VR | Quest | ✅ Works |  |
 | QuestCraft | Quest | ✅ Works |  |
 | Retronika | Quest | ✅ Works |  |
