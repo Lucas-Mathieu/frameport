@@ -772,3 +772,13 @@ def test_avatar_stub_keeps_the_loaders_functions(tmp_path, quest_manifest):
         assert p.apply(base.ApkContext(ws, a, {}, Reporter(), {p.id: {}}))
         stub = ws.read_lib("libovravatarloader.so")
         assert elf.dyn_symbols(stub, True) == {"ovrAvatar_InitializeAndroid", "ovrAvatarMessage_Pop"}
+
+
+def test_unreal_gl_shim_offered_for_unreal_gles_only():
+    """Star Wars Pinball VR (GitHub #83): Zink crashes Unreal's MSRTT path; the shim is an option, not a suggestion."""
+    shim = base.get("frame.unreal_gl_shim")
+    gles = _analysis(engine="Unreal", graphics="GLES or unknown (no Vulkan declaration)")
+    assert shim.applies(gles) and shim.detect(gles) is None
+    assert not shim.applies(_analysis(engine="Unreal"))  # Vulkan
+    assert not shim.applies(_analysis(engine="Unity", graphics="GLES (Unity boot.config)"))
+    assert not shim.applies(gles.__class__(**{**gles.__dict__, "abis": ["armeabi-v7a"]}))

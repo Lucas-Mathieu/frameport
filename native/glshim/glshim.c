@@ -30,7 +30,7 @@ static void (*real_glGetIntegerv)(GLenum, GLint *);
 static __eglMustCastToProperFunctionPointerType (*real_eglGetProcAddress)(const char *);
 static pthread_once_t once = PTHREAD_ONCE_INIT;
 
-static int hide_multiview = -1;  // -1: not set (Unity keeps multiview, everything else hides it)
+static int hide_multiview = -1;  // -1: not set (Unity and Unreal keep multiview, everything else hides it)
 static int hide_msrtt = 1;
 
 static void read_conf_file(const char *path) {
@@ -335,10 +335,16 @@ static void init(void) {
     real_glGetStringi = gles ? dlsym(gles, "glGetStringi") : NULL;
     real_glGetIntegerv = gles ? dlsym(gles, "glGetIntegerv") : NULL;
     real_eglGetProcAddress = egl ? dlsym(egl, "eglGetProcAddress") : NULL;
-    if (hide_multiview < 0) {  // Unity renders multiview itself and only needs MSRTT hidden
-        void *unity = dlopen("libunity.so", RTLD_NOW | RTLD_NOLOAD);
-        hide_multiview = unity ? 0 : 1;
-        if (unity) dlclose(unity);
+    if (hide_multiview < 0) {  // Unity and Unreal render multiview themselves and only need MSRTT hidden
+        static const char *const engines[] = {"libunity.so", "libUE4.so", "libUnreal.so"};
+        hide_multiview = 1;
+        for (unsigned i = 0; i < sizeof engines / sizeof *engines && hide_multiview; i++) {
+            void *engine = dlopen(engines[i], RTLD_NOW | RTLD_NOLOAD);
+            if (engine) {
+                hide_multiview = 0;
+                dlclose(engine);
+            }
+        }
     }
     LOG("GL shim active: hide_multiview=%d hide_msrtt=%d", hide_multiview, hide_msrtt);
 }

@@ -96,6 +96,17 @@ def test_swapchain_rect_invalid_is_recognised():
     assert "swapchain-rect-invalid" in [f.id for f in triage.triage(log).findings]
 
 
+def test_unreal_msrtt_crash():
+    """Star Wars Pinball VR (GitHub #83): Zink jumps to 0x10000 on Unreal's RHIThread."""
+    from frameport.validate import triage
+
+    line = ("10-07 11:41:11.156  1127  1231 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr "
+            "0x10000 in tid 1231 (RHIThread), pid 1127 (MainThread-UE4)\n")
+    r = triage.triage(line, "EXITED")
+    hit = next(f for f in r.findings if f.id == "unreal-msrtt-crash")
+    assert "frame.unreal_gl_shim" in hit.suggest
+
+
 def test_frames_stopped_and_unity_render_crash():
     """The Room VR passed its launch test although Unity's render thread had crashed in libgallium (GitHub #38)."""
     from frameport.validate import triage

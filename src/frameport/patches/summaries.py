@@ -44,6 +44,8 @@ SUMMARIES = {
                        "Frame's graphics driver accepts.",
     "frame.unity_gl_shim": "Stops a grey or frozen screen in Unity games that turn on anti-aliasing while running "
                            "(e.g. The Room VR).",
+    "frame.unreal_gl_shim": "Stops a crash a few seconds after start in Unreal games whose anti-aliasing the Frame's "
+                            "graphics driver can't handle (e.g. Star Wars Pinball VR).",
     "frame.unity_no_overlay_copy": "Stops a grey screen crash in some Unity games by skipping their overlay "
                                    "layers (e.g. The Room VR's screen fades).",
     "frame.nodebug": "Stops strict debugging checks that make some games quit.",

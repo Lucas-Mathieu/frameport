@@ -33,6 +33,11 @@ signatures:
     severity: fatal
     diagnosis: Unity's render thread crashed inside the Frame's GL driver (Mesa/Zink); the picture freezes or stays grey. Known triggers - an OVROverlay copy (try "Unity - skip OVROverlay layers", e.g. The Room VR), MSAA switched on at runtime, a GPU hang (zink DEVICE LOST).
     suggest: [frame.unity_no_overlay_copy, frame.unity_runtime_msaa_off]
+  - id: unreal-msrtt-crash
+    pattern: 'fault addr 0x10000 in tid \d+ \((RHIThread|RenderThread)'
+    severity: fatal
+    diagnosis: The game's render thread jumped to address 0x10000 inside the Frame's GL driver (Mesa/Zink) a few seconds after start. Zink looks up a render-pass cache slot past its end when a game renders through multisampled render-to-texture (Unreal's mobile MSAA, e.g. Star Wars Pinball VR). Load the GL shim, which hides that extension.
+    suggest: [frame.unreal_gl_shim, frame.unity_gl_shim]
   - id: swapchain-rect-invalid
     pattern: 'xrEndFrame failed -25\b'
     severity: fatal
