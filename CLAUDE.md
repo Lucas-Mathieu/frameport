@@ -312,6 +312,9 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
 - `native/` — sources of the prebuilt binaries in `artifacts/` (adapter, VrApi bridge patches, GL shim, stubs).
   `native/build.py` rebuilds them with NDK r27c (downloaded on demand into `native/.cache`, git-ignored; uses
   `-ffile-prefix-map` so no local paths get embedded; zip symlinks are restored as copies). Users never need the NDK.
+  `native/a32translator/` (not an artifact, not shipped) = `a32run`, an AArch32 → AArch64 user-mode translator
+  (interpreter + JIT, ARM/Thumb-2/VFP/NEON) for running 32-bit ARM Linux programs on the Frame; its README has the
+  design, the qemu-arm differential fuzzer and program tests, and the next steps towards an Android native bridge.
 - `scripts/` — `package.py` (flet build/pack), `eval_heuristics.py` (score heuristics), `ui_smoke.py` (GUI screenshots).
 - `docs/` — PLAYBOOK, FRAME_RUNTIME, ARCHITECTURE, INSTALL (end users), parity reports (offline + device).
 
