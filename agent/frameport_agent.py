@@ -39,7 +39,7 @@ import zipfile
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 69
+AGENT_VERSION = 70
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -1451,6 +1451,7 @@ def cmd_list_installed(args):
             apk = os.path.join(dep["base"], "lepton-app/game.apk")
             dep["apk_present"] = os.path.exists(apk)
             dep["apk_size"] = os.path.getsize(apk) if dep["apk_present"] else 0
+        dep["last_play"] = last_play(dep["anchor"])  # agent v70: the PC triages a finished play session's log
         games.append(dep)
     return {"games": games}
 
@@ -1926,6 +1927,42 @@ def play_sessions():
             later = [x[0] for x in sessions[i + 1:] if x[0] > s[0]]
             s[1] = min([s[0] + OPEN_SESSION] + later)
     return [tuple(s) for s in sessions]
+
+
+TEST_MARK_WINDOW = 60  # s: a "test <unix>" line in plays.log marks a session starting this soon after as a launch test
+
+
+def last_play(anchor):
+    """The newest play session in <anchor>/plays.log: {start, end (None while it runs, and for Proton launchers, which
+    exec the game), test (started by a launch test, not by the player)}, or None."""
+    text = _tail(os.path.join(anchor, PLAYS_LOG), 8192)
+    if not text:
+        return None
+    start = end = None
+    tests = []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            continue
+        t = int(parts[1])
+        if parts[0] == "start":
+            start, end = t, None
+        elif parts[0] == "end" and start is not None and t >= start:
+            end = t
+        elif parts[0] == "test":
+            tests.append(t)
+    if start is None:
+        return None
+    return {"start": start, "end": end, "test": any(0 <= start - t <= TEST_MARK_WINDOW for t in tests)}
+
+
+def mark_launch_test(anchor):
+    """A launch test runs the game's launcher, which logs a play session: mark it so the PC doesn't triage it as one."""
+    try:
+        with open(os.path.join(anchor, PLAYS_LOG), "a") as f:
+            f.write(f"test {int(time.time())}\n")
+    except OSError:
+        pass
 
 
 def session_game(t, sessions):
@@ -3683,7 +3720,7 @@ def cmd_uninstall(args):
         raise AgentError("the game is running")
     keep_data = args.get("keep_data", True)
     names = ("game", "revive", "xrlayer", "shadercache", "incoming", "incoming-artwork") if pcvr else \
-        ("app", "incoming", "incoming-artwork", "launch.log") if linux else \
+        ("app", "incoming", "incoming-artwork", "launch.log", "session.log") if linux else \
         ("lepton-app", "lepton-shaders", "incoming", "previous-game.apk")
     for name in names:
         p = os.path.join(base, name)
@@ -3709,7 +3746,7 @@ def cmd_uninstall(args):
     if not keep_data or base != anchor:
         remove_tree(anchor)
     else:  # saves live next to the launcher (Quest games): keep them, drop what marks the game as installed
-        for name in ("deployment.json", "launch.sh", "artwork", "launch.log", "launch-test.log"):
+        for name in ("deployment.json", "launch.sh", "artwork", "launch.log", "launch-test.log", "session.log"):
             p = os.path.join(anchor, name)
             remove_tree(p)
     return {"removed": True, "kept_saves": keep_data, "shortcut_removed": removed_sc}
@@ -4145,6 +4182,7 @@ def cmd_launch_test(args):
     keys = key_usage()
     unit = f"frameport-test-{appid}"
     run(["systemctl", "--user", "reset-failed", unit])
+    mark_launch_test(anchor)
     p = run(["systemd-run", "--user", "--collect", "--quiet", f"--unit={unit}", os.path.join(anchor, "launch.sh")])
     if p.returncode:
         raise AgentError("could not start the launcher: " + p.stderr[-300:])
@@ -4194,6 +4232,7 @@ def launch_test_linux(dep, anchor, log, seconds):
         raise AgentError("the app is already running")
     unit = f"frameport-test-{appid}"
     run(["systemctl", "--user", "reset-failed", unit])
+    mark_launch_test(anchor)
     start = time.time()
     p = run(["systemd-run", "--user", "--quiet", f"--unit={unit}", "--property=RemainAfterExit=no",
              os.path.join(anchor, "launch.sh")])
@@ -4227,6 +4266,7 @@ def launch_test_pcvr(dep, anchor, log, seconds):
         raise AgentError("the game is already running")
     unit = f"frameport-test-{appid}"
     run(["systemctl", "--user", "reset-failed", unit])
+    mark_launch_test(anchor)
     p = run(["systemd-run", "--user", "--quiet", f"--unit={unit}", "--property=RemainAfterExit=no",
              os.path.join(anchor, "launch.sh")])
     if p.returncode:
@@ -4263,6 +4303,92 @@ def launch_test_pcvr(dep, anchor, log, seconds):
         f.write("\n".join(parts))
     return {"state": state, "elapsed": elapsed, "log": combined, "log_size": os.path.getsize(combined),
             "kind": "pcvr", "game_process": bool(game_seen)}
+
+
+SESSION_LOG_MAX = 4 << 20  # bytes of a play session's log the PC triages
+SESSION_READ_MAX = 64 << 20  # a longer launch.log is read from its end
+SESSION_KEEP = re.compile(r"FrameBridge|focus|pacing|Fatal signal|FATAL|CRASH|#\d\d pc |Abort message|DEVICE.LOST|"
+                          r"AndroidRuntime|vrclient|Start proc|lepton", re.I)
+KERNEL_GPU = re.compile(r"hangcheck|gpu fault|adreno|kgsl|msm_drm.*(hang|recover)", re.I)
+
+
+def slice_session_log(text, max_bytes=SESSION_LOG_MAX):
+    """A long play session's log cut to max_bytes: its start (a quarter) and its end (half) whole, from the middle
+    only FrameBridge's, focus, pacing and crash lines (oldest first, while they fit). Returns (text, cut)."""
+    if len(text) <= max_bytes:
+        return text, False
+    head = text[:max_bytes // 4]
+    head = head[:head.rfind("\n") + 1]
+    tail = text[-(max_bytes // 2):]
+    tail = tail[tail.find("\n") + 1:]
+    middle = text[len(head):len(text) - len(tail)]
+    budget, kept = max_bytes - len(head) - len(tail) - 200, []
+    for line in middle.splitlines():
+        if SESSION_KEEP.search(line):
+            budget -= len(line) + 1
+            if budget < 0:
+                break
+            kept.append(line)
+    note = f"[FramePort: {len(middle)} bytes in the middle of this session cut, {len(kept)} lines kept]\n"
+    return head + note + "".join(ln + "\n" for ln in kept) + tail, True
+
+
+def session_kernel_lines(start, end):
+    """Kernel GPU lines (hangs, faults, recoveries) logged during a play session."""
+    until = (end or time.time()) + 120
+    try:
+        text = run(["journalctl", "-k", "--since", f"@{int(start)}", "--until", f"@{int(until)}", "-q", "--no-pager",
+                    "-o", "short-unix"]).stdout
+    except OSError:
+        return ""
+    lines = [ln for ln in text.splitlines() if KERNEL_GPU.search(ln)]
+    return "".join(f"kernel: {ln}\n" for ln in lines[-200:])
+
+
+def cmd_session_log(args):
+    """The log of the game's newest play session (agent v70), for triage on the PC: {session: {start, end, test},
+    log: path of the session's log (launch.log sliced to 4 MB; PC VR: + Revive's and the game's own logs), log_size,
+    cut, crash: that session's crash logcat (tombstones), kernel: GPU hang/fault lines from the kernel log}.
+    session is None when the game was never played."""
+    pkg = check_pkg(args["package"])
+    dep = deployment(pkg)
+    if not dep:
+        raise AgentError(f"{pkg} is not installed")
+    anchor, base = os.path.join(ANCHORS, pkg), dep["base"]
+    session = last_play(anchor)
+    out = {"session": session, "log": None, "log_size": 0, "cut": False, "crash": "", "kernel": "",
+           "kind": dep.get("kind", "quest")}
+    if not session:
+        return out
+    start, end = session["start"], session["end"]
+    parts = []
+    log = os.path.join(base, "launch.log")
+    if os.path.exists(log) and os.path.getmtime(log) >= start - 5:  # else no log of this session is left
+        size = os.path.getsize(log)
+        with open(log, "rb") as f:
+            if size > SESSION_READ_MAX:
+                f.seek(size - SESSION_READ_MAX)
+            parts.append(f.read().decode("utf-8", "replace"))
+    if dep.get("kind") == "pcvr":
+        for rel in PCVR_LOGS:
+            path = os.path.join(base, rel)
+            if os.path.exists(path) and os.path.getmtime(path) >= start - 5:
+                parts.append(f"===== {rel}\n" + (_tail(path, 400000) or ""))
+        parts += game_logs(base, since=start - 5)
+    text, cut = slice_session_log("\n".join(parts), int(args.get("max_bytes", SESSION_LOG_MAX)))
+    path = os.path.join(base, "session.log")
+    with open(path, "w") as f:
+        f.write(text)
+    out.update(log=path, log_size=os.path.getsize(path), cut=cut)
+    crash = os.path.join(STEAM, "logs", "lepton-logcats", f"steamlaunch-{dep['appid']}", "logcat-crash.log")
+    try:
+        mtime = os.path.getmtime(crash)
+        if start - 1 <= mtime <= (end or time.time()) + 120:
+            out["crash"] = _tail(crash, 256 * 1024) or ""
+    except OSError:
+        pass
+    out["kernel"] = session_kernel_lines(start, end)
+    return out
 
 
 def steam_library_report():
