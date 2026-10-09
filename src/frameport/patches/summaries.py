@@ -46,6 +46,8 @@ SUMMARIES = {
                            "(e.g. The Room VR).",
     "frame.unreal_gl_shim": "Stops a crash a few seconds after start in Unreal games whose anti-aliasing the Frame's "
                             "graphics driver can't handle (e.g. Star Wars Pinball VR).",
+    "frame.unreal_ovrp_entrypoints": "Lets older Unreal games start VR although the converted VR plugin lacks a few "
+                                     "functions they look for (e.g. Star Wars Pinball VR).",
     "frame.unity_no_overlay_copy": "Stops a grey screen crash in some Unity games by skipping their overlay "
                                    "layers (e.g. The Room VR's screen fades).",
     "frame.nodebug": "Stops strict debugging checks that make some games quit.",
