@@ -38,6 +38,7 @@
 //   /sdcard/Android/data/<package>/files/framebridge.conf
 //   $FRAMEBRIDGE_CONFIG
 #define _GNU_SOURCE
+#define VK_USE_PLATFORM_ANDROID_KHR
 #define XR_EXTENSION_PROTOTYPES
 #include <openxr/openxr.h>
 #include <android/log.h>
@@ -74,6 +75,7 @@ static void fb_log(const char *fmt, ...) {
 }
 #define LOG(...) fb_log(__VA_ARGS__)
 #include "audio_metadata.h"
+#include "surface_views.h"
 
 static void *loader;
 static PFN_xrGetInstanceProcAddr next_gipa;
@@ -81,8 +83,10 @@ static pthread_once_t init_once = PTHREAD_ONCE_INIT;
 static XrInstance active_instance = XR_NULL_HANDLE;
 static void *android_vm;     // JavaVM from XrInstanceCreateInfoAndroidKHR (surface_swapchain.c)
 static int surface_emul = 1;  // setting: emulate Android surface swapchains
+static int surface_native;   // internal: GPU shared video buffers (panoramic video clients)
 static int eye_debug;          // setting: per-eye diagnostics + file log (eye_debug.c)
 static int release_wait;       // setting: wait for the app's GPU work before releasing images (2 = after 60 s: A/B)
+static void surf_scene_destroy(XrSwapchain handle);
 static void surf_on_destroy(XrSwapchain handle);
 
 static float scale = 1.0f;
@@ -143,7 +147,7 @@ static float aim_pitch, aim_yaw, aim_forward;  // aim pose correction (degrees, 
 static float refresh_rate;   // requested display refresh rate (Hz), 0 = the app's choice
 static int equirect_emul;    // show 360 layers as cube faces (GLES)
 static int equirect_face = 1536;  // max cube map face size (px)
-static int equirect_res = 1536;   // projection image size per eye (px)
+static int equirect_res = 1536, equirect_res_set;   // projection image size per eye (px)
 static int equirect_flip;    // source orientation fix: 1 upside down, 2 mirrored, 4 turned 180 degrees
 static float equirect_fps = 60;   // max redraws per second per 360 layer (0 = no limit)
 static int equirect_stereo;  // 0 auto (mono if the layer limit can't hold both eyes), 1 stereo, 2 mono
@@ -186,6 +190,7 @@ static void read_settings(const char *path) {
         if (sscanf(line, "layer_debug=%f", &value) == 1) layer_debug = value != 0;
         if (sscanf(line, "input_diag=%f", &value) == 1) input_diag = value != 0;
         if (sscanf(line, "surface_emul=%f", &value) == 1) surface_emul = value != 0;
+        if (sscanf(line, "surface_native=%f", &value) == 1) surface_native = value != 0;
         if (sscanf(line, "eye_debug=%f", &value) == 1) eye_debug = value != 0;
         if (sscanf(line, "release_wait=%f", &value) == 1) release_wait = (int)value;
         if (sscanf(line, "profile_remap=%f", &value) == 1) profile_remap = value != 0;
@@ -201,7 +206,7 @@ static void read_settings(const char *path) {
         if (sscanf(line, "refresh_rate=%f", &value) == 1 && (value == 0 || (value >= 60 && value <= 144))) refresh_rate = value;
         if (sscanf(line, "equirect_emul=%f", &value) == 1) equirect_emul = value != 0;
         if (sscanf(line, "equirect_face=%f", &value) == 1 && value >= 256 && value <= 2730) equirect_face = (int)value;
-        if (sscanf(line, "equirect_res=%f", &value) == 1 && value >= 512 && value <= 4096) equirect_res = (int)value;
+        if (sscanf(line, "equirect_res=%f", &value) == 1 && value >= 512 && value <= 4096) {equirect_res = (int)value;equirect_res_set=1;}
         if (sscanf(line, "equirect_flip=%f", &value) == 1 && value >= 0 && value <= 7) equirect_flip = (int)value;
         if (sscanf(line, "equirect_fps=%f", &value) == 1 && value >= 0 && value <= 144) equirect_fps = value;
         if (sscanf(line, "equirect_stereo=%f", &value) == 1 && value >= 0 && value <= 2) equirect_stereo = (int)value;
@@ -538,6 +543,11 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
         fixed.next = p;
     }
     if (mutable_fix) fixed.usageFlags |= XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT;
+    // Internal native-video composition snapshots the owned stereo scene before
+    // release. Other games and UI/depth/MSAA swapchains keep their original usage.
+    if(surface_native && fixed.arraySize==2 && fixed.sampleCount==1 &&
+        (fixed.usageFlags&XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT))
+        fixed.usageFlags |= XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT;
     if (equirect_emul && swapchain && emul_virtual_create(session, &fixed, swapchain)) {
         remember_swapchain(*swapchain);
         emul_on_create_swapchain(*swapchain, &fixed);
@@ -590,6 +600,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySwapchain(XrSwapchain swapchain) {
         if (logged++ < 200) LOG("layer_debug: xrDestroySwapchain %p", (void *)swapchain);
     }
     if (is_standin(swapchain)) { standin_destroy(swapchain); return XR_SUCCESS; }
+    surf_scene_destroy(swapchain);
     forget_swapchain(swapchain);
     surf_on_destroy(swapchain);
     flip_on_destroy(swapchain);
@@ -865,6 +876,105 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySpace(XrSpace space) {
 #include "cube_standin.c"
 #include "snapshot_gl.c"
 #include "surface_swapchain.c"
+
+// GPU video buffers need explicit external-memory support on the app's device.
+// Preserve the runtime's extension list and both Vulkan-enable entry points.
+XRAPI_ATTR XrResult XRAPI_CALL xrCreateVulkanInstanceKHR(XrInstance instance,const XrVulkanInstanceCreateInfoKHR *info,
+        VkInstance *created,VkResult *vulkanResult) {
+    PFN_xrCreateVulkanInstanceKHR fn=(PFN_xrCreateVulkanInstanceKHR)lookup(instance,"xrCreateVulkanInstanceKHR");
+    if(!fn)return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if(!surface_native)return fn(instance,info,created,vulkanResult);
+    XrResult result=fn(instance,info,created,vulkanResult);
+    if(XR_SUCCEEDED(result) && created && vulkanResult && *vulkanResult==VK_SUCCESS)vk.instance=*created;
+    return result;
+}
+static const char *surf_device_exts[] = {"VK_ANDROID_external_memory_android_hardware_buffer",
+    "VK_KHR_external_memory", "VK_KHR_get_memory_requirements2", "VK_KHR_dedicated_allocation",
+    "VK_EXT_queue_family_foreign", "VK_KHR_sampler_ycbcr_conversion", "VK_KHR_bind_memory2", "VK_KHR_maintenance1"};
+static int surf_extension_present(const char *text,const char *name) {
+    size_t length=strlen(name);
+    for(const char *p=text;(p=strstr(p,name));p++)
+        if((p==text || p[-1]==' ') && (p[length]==' ' || p[length]=='\0'))return 1;
+    return 0;
+}
+static int surf_device_supported(PFN_vkGetInstanceProcAddr gipa, VkInstance instance, VkPhysicalDevice physical) {
+    if (!surface_native || !gipa) return 0;
+    if(!physical){
+        // Unity can ask for extension strings before it creates its instance.
+        // Query a temporary instance instead of depending on that call order.
+        PFN_vkCreateInstance create=(PFN_vkCreateInstance)gipa(VK_NULL_HANDLE,"vkCreateInstance");
+        VkApplicationInfo app={VK_STRUCTURE_TYPE_APPLICATION_INFO,NULL,"FrameBridge video capabilities",0,NULL,0,VK_API_VERSION_1_1};
+        VkInstanceCreateInfo ci={VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,NULL,0,&app};
+        VkInstance probe=VK_NULL_HANDLE;if(!create || create(&ci,NULL,&probe)!=VK_SUCCESS)return 0;
+        PFN_vkEnumeratePhysicalDevices devices=(PFN_vkEnumeratePhysicalDevices)gipa(probe,"vkEnumeratePhysicalDevices");
+        PFN_vkDestroyInstance destroy=(PFN_vkDestroyInstance)gipa(probe,"vkDestroyInstance");
+        uint32_t count=0;VkPhysicalDevice gpu=VK_NULL_HANDLE;
+        int ok=devices && devices(probe,&count,NULL)==VK_SUCCESS && count==1 &&
+            devices(probe,&count,&gpu)==VK_SUCCESS && surf_device_supported(gipa,probe,gpu);
+        if(destroy)destroy(probe,NULL);return ok;
+    }
+    PFN_vkEnumerateDeviceExtensionProperties enumerate=(PFN_vkEnumerateDeviceExtensionProperties)
+        gipa(instance,"vkEnumerateDeviceExtensionProperties");
+    uint32_t count=0;
+    if(!enumerate || enumerate(physical,NULL,&count,NULL)!=VK_SUCCESS || count>2048)return 0;
+    VkExtensionProperties *exts=calloc(count,sizeof(*exts));
+    if(!exts)return 0;
+    int ok=enumerate(physical,NULL,&count,exts)==VK_SUCCESS;
+    for(unsigned j=0;j<sizeof(surf_device_exts)/sizeof(*surf_device_exts);j++){
+        int found=0;for(uint32_t i=0;i<count;i++)found|=!strcmp(exts[i].extensionName,surf_device_exts[j]);
+        ok &= found;
+    }
+    free(exts);return ok;
+}
+XRAPI_ATTR XrResult XRAPI_CALL xrGetVulkanGraphicsDeviceKHR(XrInstance instance,XrSystemId system,
+        VkInstance vulkanInstance,VkPhysicalDevice *physical) {
+    PFN_xrGetVulkanGraphicsDeviceKHR fn=(PFN_xrGetVulkanGraphicsDeviceKHR)lookup(instance,"xrGetVulkanGraphicsDeviceKHR");
+    if(!surface_native)return fn?fn(instance,system,vulkanInstance,physical):XR_ERROR_FUNCTION_UNSUPPORTED;
+    XrResult result=fn?fn(instance,system,vulkanInstance,physical):XR_ERROR_FUNCTION_UNSUPPORTED;
+    if(XR_SUCCEEDED(result) && physical){vk.instance=vulkanInstance;vk.physical=*physical;}
+    return result;
+}
+XRAPI_ATTR XrResult XRAPI_CALL xrGetVulkanDeviceExtensionsKHR(XrInstance instance,XrSystemId system,
+        uint32_t capacity,uint32_t *count,char *buffer) {
+    PFN_xrGetVulkanDeviceExtensionsKHR fn=(PFN_xrGetVulkanDeviceExtensionsKHR)lookup(instance,"xrGetVulkanDeviceExtensionsKHR");
+    if(!fn)return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if(!surface_native)return fn(instance,system,capacity,count,buffer);
+    void *lib=dlopen("libvulkan.so",RTLD_NOW|RTLD_LOCAL);
+    PFN_vkGetInstanceProcAddr gipa=lib?(PFN_vkGetInstanceProcAddr)dlsym(lib,"vkGetInstanceProcAddr"):NULL;
+    if(!surf_device_supported(gipa,vk.instance,vk.physical))return fn(instance,system,capacity,count,buffer);
+    uint32_t original=0;XrResult result=fn(instance,system,0,&original,NULL);
+    if(XR_FAILED(result) || !count || original>65536)return result;
+    char *text=calloc(original+1024,1);if(!text)return XR_ERROR_OUT_OF_MEMORY;
+    result=fn(instance,system,original,&original,text);
+    if(XR_SUCCEEDED(result)){
+        for(unsigned i=0;i<sizeof(surf_device_exts)/sizeof(*surf_device_exts);i++){
+            if(!surf_extension_present(text,surf_device_exts[i])){if(*text)strcat(text," ");strcat(text,surf_device_exts[i]);}
+        }
+        *count=(uint32_t)strlen(text)+1;
+        if(capacity && (capacity<*count || !buffer))result=XR_ERROR_SIZE_INSUFFICIENT;
+        else if(capacity)memcpy(buffer,text,*count);
+    }
+    free(text);return result;
+}
+XRAPI_ATTR XrResult XRAPI_CALL xrCreateVulkanDeviceKHR(XrInstance instance,const XrVulkanDeviceCreateInfoKHR *info,
+        VkDevice *device,VkResult *vulkanResult) {
+    PFN_xrCreateVulkanDeviceKHR fn=(PFN_xrCreateVulkanDeviceKHR)lookup(instance,"xrCreateVulkanDeviceKHR");
+    if(!fn)return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if(!surface_native)return fn(instance,info,device,vulkanResult);
+    if(!info || !info->vulkanCreateInfo || !surf_device_supported(info->pfnGetInstanceProcAddr,
+        vk.instance,info->vulkanPhysicalDevice))return fn(instance,info,device,vulkanResult);
+    VkDeviceCreateInfo ci=*info->vulkanCreateInfo;
+    const char **names=calloc(ci.enabledExtensionCount+8,sizeof(*names));
+    if(!names)return XR_ERROR_OUT_OF_MEMORY;
+    for(uint32_t i=0;i<ci.enabledExtensionCount;i++)names[i]=ci.ppEnabledExtensionNames[i];
+    for(unsigned j=0;j<8;j++){
+        int found=0;for(uint32_t i=0;i<ci.enabledExtensionCount;i++)found|=!strcmp(names[i],surf_device_exts[j]);
+        if(!found)names[ci.enabledExtensionCount++]=surf_device_exts[j];
+    }
+    ci.ppEnabledExtensionNames=names;
+    XrVulkanDeviceCreateInfoKHR fixed=*info;fixed.vulkanCreateInfo=&ci;
+    XrResult result=fn(instance,&fixed,device,vulkanResult);free(names);return result;
+}
 #include "eye_debug.c"
 
 // OpenXR requires xrGet*GraphicsRequirementsKHR before xrCreateSession; Meta's runtime doesn't enforce it, the Frame's
@@ -1023,6 +1133,37 @@ XRAPI_ATTR XrResult XRAPI_CALL xrAcquireSwapchainImage(XrSwapchain swapchain, co
         flip_on_acquire(swapchain, *index);
         emul_on_acquire(swapchain, *index);
         snap_on_acquire(swapchain, *index);
+    }
+    return result;
+}
+
+// Copy scene content only while the oldest acquired image is successfully waited
+// and still application-owned. Release itself is forwarded immediately.
+static XRAPI_ATTR XrResult XRAPI_CALL surf_composite_release(XrSwapchain handle,const XrSwapchainImageReleaseInfo *info) {
+    pthread_mutex_lock(&flip_lock);
+    tracked_swapchain *t=find_tracked(handle,0);
+    if(t && t->acquired_count && t->waited_count)surf_scene_capture(t,t->acquired[0]);
+    pthread_mutex_unlock(&flip_lock);
+    XrResult result=equirect_emul?hook_xrReleaseSwapchainImage(handle,info):
+        ((PFN_xrReleaseSwapchainImage)lookup(active_instance,"xrReleaseSwapchainImage"))(handle,info);
+    if(XR_SUCCEEDED(result)) {
+        surf_scene_release_commit(handle);
+        pthread_mutex_lock(&flip_lock);t=find_tracked(handle,0);
+        if(t && t->acquired_count) {
+            memmove(t->acquired,t->acquired+1,(--t->acquired_count)*sizeof(t->acquired[0]));
+            if(t->waited_count)t->waited_count--;
+        }
+        pthread_mutex_unlock(&flip_lock);
+    }
+    return result;
+}
+static XRAPI_ATTR XrResult XRAPI_CALL surf_composite_wait(XrSwapchain handle,const XrSwapchainImageWaitInfo *info) {
+    XrResult result=equirect_emul?hook_xrWaitSwapchainImage(handle,info):
+        ((PFN_xrWaitSwapchainImage)lookup(active_instance,"xrWaitSwapchainImage"))(handle,info);
+    if(result==XR_SUCCESS) {
+        pthread_mutex_lock(&flip_lock);tracked_swapchain *t=find_tracked(handle,0);
+        if(t && t->waited_count<t->acquired_count)t->waited_count++;
+        pthread_mutex_unlock(&flip_lock);
     }
     return result;
 }
@@ -1200,6 +1341,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateViews(XrSession session, const XrViewLoca
     if (cacheable && pose_cache_lookup(session, info, state, capacity, count, views)) return XR_SUCCESS;
     XrResult result = fn(session, info, state, capacity, count, views);
     if (cacheable && result == XR_SUCCESS) pose_cache_store(session, info, state, *count, views);
+    if(surface_native && surface_emul && XR_SUCCEEDED(result) && count)
+        surf_views_record(session,info,state,*count<capacity?*count:capacity,views);
     if (equirect_emul && XR_SUCCEEDED(result) && info && count && views && state &&
         (state->viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT))
         emul_on_locate_views(info->space, info->displayTime, *count < capacity ? *count : capacity, views);
@@ -1276,6 +1419,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
     frame_open = 0;
     __atomic_add_fetch(&frame_ends, 1, __ATOMIC_RELAXED);
     snap_end_frame(info);
+    if(surface_native)++sc_serial;
     if (eye_debug) eye_debug_end_frame(session, info);
     {   // frame pacing statistics every ~5 s: fps and submitted-vs-predicted display time
         static struct timespec start;
@@ -1354,9 +1498,38 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
     XrCompositionLayerProjectionView views[64][2];
     XrCompositionLayerQuad quads[64];
     uint32_t count = 0, dropped = 0, swapped = 0, passthrough = 0;
+    const XrCompositionLayerBaseHeader *surface_projections[SURF_MAX];
+    int surface_projection_count = 0;
     for (uint32_t i = 0; i < info->layerCount; ++i) {
         const XrCompositionLayerBaseHeader *layer = info->layers[i];
         if (!layer) { ++dropped; continue; }
+        if (emul_is_equirect(layer)) {
+            const XrCompositionLayerBaseHeader *replacement = surface_native ? surf_projection_frame(session, info, layer) : NULL;
+            if (replacement) {
+                int already = 0;
+                for (int k = 0; k < surface_projection_count; ++k) already |= surface_projections[k] == replacement;
+                if (!already && surface_projection_count < SURF_MAX) {
+                    surface_projections[surface_projection_count++] = replacement;
+                    // An opaque native hemisphere covering the guarded stereo
+                    // view hides every earlier layer. Cull only that hidden
+                    // prefix: video becomes the primary projection, while
+                    // later subtitles/menus keep their original order. Fades
+                    // and uncovered views use the ordinary layered path.
+                    const XrCompositionLayerBaseHeader *combined=NULL;
+                    if(surface_native && count==1 && kept[0]->type==XR_TYPE_COMPOSITION_LAYER_PROJECTION && surf_composite_candidate(info,layer))
+                        combined=surf_composite_frame(session,info,(const void*)kept[0],replacement);
+                    if(combined) {kept[0]=combined;++swapped;}
+                    else if (surf_projection_occludes(replacement)) {
+                        dropped += count;
+                        count = 0;
+                        passthrough = 0;
+                    }
+                    if(!combined)kept[count++] = replacement;
+                }
+                ++swapped;
+                continue;
+            }
+        }
         if (emulate_passthrough && layer->type == XR_TYPE_COMPOSITION_LAYER_PASSTHROUGH_FB) {
             ++passthrough;  // replaced by the runtime's camera environment below
             continue;
@@ -1738,6 +1911,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateApiLayerProperties(uint32_t capacity, 
 // For native/xrshim: emulated functions that overport's dispatcher doesn't know (it never asks us for them).
 __attribute__((visibility("default"))) PFN_xrVoidFunction framebridge_extension_proc(const char *name) {
     pthread_once(&init_once, initialize);
+    if(surface_native && name){
+#define NATIVE_PROC(fn) if(!strcmp(name,#fn))return (PFN_xrVoidFunction)fn;
+        NATIVE_PROC(xrGetVulkanGraphicsDeviceKHR)
+        NATIVE_PROC(xrGetVulkanDeviceExtensionsKHR)
+        NATIVE_PROC(xrCreateVulkanDeviceKHR)
+        NATIVE_PROC(xrCreateVulkanInstanceKHR)
+#undef NATIVE_PROC
+    }
     return name ? render_model_emulation(name) : NULL;
 }
 
@@ -1787,6 +1968,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const 
     HOOK(xrEnumerateInstanceExtensionProperties)
     // Per-game hooks: only installed when their setting is on, so other games run through exactly the same calls.
 #define HOOK_AS(fn, impl) if (!strcmp(name, #fn)) { *function = (PFN_xrVoidFunction)impl; return XR_SUCCESS; }
+    if (surface_native) {
+        HOOK(xrGetVulkanGraphicsDeviceKHR)
+        HOOK(xrGetVulkanDeviceExtensionsKHR)
+        HOOK(xrCreateVulkanDeviceKHR)
+        HOOK(xrCreateVulkanInstanceKHR)
+        HOOK_AS(xrReleaseSwapchainImage, surf_composite_release)
+        HOOK_AS(xrWaitSwapchainImage, surf_composite_wait)
+    }
     if (equirect_emul) {
         HOOK_AS(xrReleaseSwapchainImage, hook_xrReleaseSwapchainImage)
         HOOK_AS(xrWaitSwapchainImage, hook_xrWaitSwapchainImage)

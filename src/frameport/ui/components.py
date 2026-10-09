@@ -126,8 +126,8 @@ def recipe_changed(game: dict) -> bool:
     if not recipe:
         return False
     if b.get("recipe_fp"):
-        return b["recipe_fp"] != recipe_fingerprint(recipe)
-    return revised_since_unrecorded(recipe)
+        return b["recipe_fp"] != recipe_fingerprint(recipe, game.get("package", ""))
+    return revised_since_unrecorded(recipe, game.get("package", ""))
 
 
 def pc_outdated(g: dict, dep: dict) -> bool:

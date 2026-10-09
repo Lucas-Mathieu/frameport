@@ -35,10 +35,11 @@ import struct
 import subprocess
 import sys
 import time
+import zipfile
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 68
+AGENT_VERSION = 69
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -2151,6 +2152,7 @@ export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 export IS_PARENT=true
 {extra_env}
+[[ ! -x "$app_dir/frameport-codec/bin/podman" ]] || export PATH="$app_dir/frameport-codec/bin:$PATH"
 child=''
 stop() {{
     trap - EXIT INT TERM
@@ -2292,6 +2294,47 @@ def data_files_dir(base, pkg):
     return os.path.join(base, "lepton-data/external/Android/data", pkg, "files")
 
 
+def install_video_codec(base, lepton, appid):
+    """Extract the APK's codec assets for this game's container. Never alter shared Lepton or MP4 files."""
+    directory = os.path.join(base, "frameport-codec")
+    prefix = "assets/frameport/hevc/"
+    with zipfile.ZipFile(os.path.join(base, "lepton-app/game.apk")) as apk:
+        if prefix + "manifest.json" not in apk.namelist():
+            # An older/unpatched APK must not keep using an obsolete codec.
+            wrapper = os.path.join(directory, "bin/podman")
+            if os.path.exists(wrapper):
+                os.remove(wrapper)
+            return False
+        manifest = json.loads(apk.read(prefix + "manifest.json"))
+        data = {}
+        for name in ("libstagefrighthw.so", "media_codecs_frameport.xml", "podman.py", "COPYING.FFmpeg"):
+            info = apk.getinfo(prefix + name)
+            if info.file_size > 16 * 1024 * 1024:
+                raise AgentError(f"oversized video codec asset: {name}")
+            data[name] = apk.read(info)
+            if hashlib.sha256(data[name]).hexdigest() != manifest["files"][name]:
+                raise AgentError(f"video codec asset checksum mismatch: {name}")
+    real_podman = shutil.which("podman")
+    if not real_podman:
+        raise AgentError("podman is unavailable")
+    os.makedirs(os.path.join(directory, "bin"), exist_ok=True)
+    config = {"lepton": lepton, "appid": str(appid), "podman": real_podman,
+              "runtime_sha256": manifest["runtime_sha256"]}
+    path = os.path.join(directory, "deployment.json")
+    with open(path + ".tmp", "w") as f:
+        json.dump(config, f)
+    os.replace(path + ".tmp", path)
+    # Publish the executable last: a first install cannot expose a wrapper
+    # whose configuration or codec files have not been written yet.
+    for name in (*[n for n in data if n != "podman.py"], "podman.py"):
+        path = os.path.join(directory, "bin/podman" if name == "podman.py" else name)
+        with open(path + ".tmp", "wb") as f:
+            f.write(data[name])
+        os.chmod(path + ".tmp", 0o755 if name == "podman.py" else 0o644)
+        os.replace(path + ".tmp", path)
+    return True
+
+
 def set_flatscreen(app_dir, on):
     """Lepton shows an app as a flat (2D) window only when its app folder holds this marker
     (liblepton/app_metadata.sh); otherwise the app runs headless and only OpenXR output reaches the headset."""
@@ -2372,6 +2415,7 @@ def cmd_finalize(args):
         with open(target, "w") as f:
             f.write(content)
     models = install_controller_models(files_dir, str(settings.get("controller_models", 0)) not in ("0", "0.0"))
+    install_video_codec(base, lepton, appid)
     write_launcher(anchor, base, pkg, title, appid, lepton, args.get("env"))
     art_in = os.path.join(base, "incoming-artwork")
     if os.path.isdir(art_in):
