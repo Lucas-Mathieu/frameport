@@ -80,7 +80,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Wander | Quest | ✅ Works |  |
 | Arcsmith | Quest | ⚠️ Works with issues | Right eye distorts during movement (unresolved; swap, tracking, Valve layers, depth and pacing ruled out). |
 | Assassin's Creed Nexus | Quest | ⚠️ Works with issues | Some launch warning text is still upside down; the rest of the UI is fixed by flip emulation. |
-| BONELAB | Quest | ⚠️ Works with issues | Build 1.2068 plays (head tracking and controls work with frame.unity_user_presence); the newer build 1.2974 crashes at start (Vulkan), no fix yet. |
+| BONELAB | Quest | ⚠️ Works with issues | Build 1.2068 plays; 1.2974 starts with frame.slz_vulkan_hooks but isn't checked in the headset yet. |
 | Doom3Quest | Quest | ⚠️ Works with issues | PDA shows black screen. |
 | Myst | Quest | ⚠️ Works with issues | Minor graphical glitches on some objects. |
 | Phantom: Covert Ops | Quest | ⚠️ Works with issues | DLC/store button crashes (no Meta store). |

@@ -60,6 +60,8 @@ SUMMARIES = {
                        "waiting for a download that never comes.",
     "frame.ovr_trace": "For troubleshooting: records the game's requests to Meta's platform services and which ones "
                        "never get an answer.",
+    "frame.slz_vulkan_hooks": "Lets Unity start the graphics itself instead of Stress Level Zero's plugin, "
+                              "which crashes on the Frame (e.g. BONELAB 1.2974).",
     "frame.unity_user_presence": "Counts the headset as worn, so games that only move the player while it's worn "
                                  "get head tracking and controls (e.g. BONELAB).",
     "frame.unity_no_msaa": "Turns off a smoothing setting that crashes some older Unity games on the Frame.",

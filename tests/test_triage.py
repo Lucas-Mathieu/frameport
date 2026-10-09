@@ -198,3 +198,17 @@ def test_web_wrapper_signature():
            "NameNotFoundException: com.oculus.browser\n")
     r = triage(log, "EXITED")
     assert {f.id for f in r.findings} == {"web-wrapper"} and r.verdict == "fail"
+
+
+def test_slz_vulkan_hook_crash_is_recognised():
+    """BONELAB 1.2974: SLZ's Vulkan plugin crashed Unity's Vulkan start-up (pc 0) before the first frame."""
+    log = ("10-07 09:29:07.191  1131  1157 I SlzGfx  : SLZ Graphics plugin loading!\n"
+           "10-07 09:29:09.434  1131  1157 I OVRPlugin: Preinitialize: xrDestroyInstance() succeeded\n"
+           "10-07 09:29:09.445  1131  1157 E CRASH   :     sp  0000ffff189a2430  lr  0000fffdd93f6ed0  "
+           "pc  0000000000000000\n"
+           "10-07 09:29:09.500  1131  1157 E AndroidRuntime: FATAL EXCEPTION: UnityMain\n")
+    r = triage(log, "EXITED", "com.StressLevelZero.BONELAB")
+    f = next(f for f in r.findings if f.id == "slz-vulkan-hook-crash")
+    assert f.suggest == ["frame.slz_vulkan_hooks"] and "java-crash" not in [x.id for x in r.findings]
+    other = triage(log.replace("SLZ Graphics", "Other"), "EXITED", None)
+    assert "slz-vulkan-hook-crash" not in [x.id for x in other.findings]

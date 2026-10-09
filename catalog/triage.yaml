@@ -245,6 +245,12 @@ signatures:
       voice chat a few seconds after the logo).
     suggest: [frame.ovr_microphone]
     supersedes: [native-crash]
+  - id: slz-vulkan-hook-crash
+    pattern: 'SLZ Graphics plugin loading![\s\S]{0,20000}?E CRASH   : .*pc  0000000000000000'
+    severity: fatal
+    diagnosis: Stress Level Zero's graphics plugin (libSLZQuestNative.so) hooks Unity's Vulkan start-up and calls an invalid function there on the Frame (e.g. BONELAB 1.2974); the game crashes or hangs before its first frame.
+    suggest: [frame.slz_vulkan_hooks]
+    supersedes: [java-crash, native-crash]
   - id: native-crash
     pattern: 'Fatal signal (\d+) \(SIG[A-Z]+\)'
     severity: fatal
