@@ -666,6 +666,21 @@ table comes from dlsym on that handle; also first DT_NEEDED for its direct gl*/e
 built single-view twin (view 0, uniforms copied per draw); eglMakeCurrent resets the per-thread cache. Host-tested only
 (rewriter on all 19 Doom3Quest shaders + glmv.c against a stand-in GL, `tests/test_gl_multiview_fbo.py`); the host's
 Mesa 23.2 llvmpipe has no OVR_multiview, so no real-driver test yet. Not in the catalog until a headset test.
+**Session triage (agent v70, 2026-10-09):** launch tests never reach FOCUSED, so real play sessions are triaged
+too. list_installed gives each game `last_play` {start, end, test} from `<anchor>/plays.log` (launch tests write a
+`test <unix>` line first → test sessions are only marked); `session_log` returns the newest session's launch.log
+(`<base>/session.log`, ≤4 MB: head + tail + FrameBridge/crash lines between) + that session's logcat-crash.log +
+`journalctl -k` GPU lines ("kernel: …"). The GUI's connection refresh (`app._check_sessions` → `pipeline.sessions_due`,
+background thread; sessions >7 days old are skipped) runs `pipeline.triage_session` = `validate/session.analyze`
+(triage.yaml signatures incl. `space-warp-used` (info, `question:`, never auto-applied), `gpu-hang` (`report: true`)
++ computed `slow-frames` (pacing windows vs the nearest refresh rate) and `focus-dips` (FrameBridge always logs
+`focus: lost` / `focus: back after N ms`, session_fixes.c)) → library `last_session` / `last_session_checked` → game
+page "Last session" callout (Try this fix / Rebuild with this fix / Yes-No question / Report / Dismiss). Suggestions may
+be values (`adapter.scale=0.85`, `triage.split_suggestion`); adapter-only fixes are pushed live (`apply_suggestions_live`
+→ agent set_settings, like the Game settings dialog). CLI `frameport session <pkg> [--apply]`. PC VR (Proton) launchers
+log no session end, so they aren't triaged yet. pac_hints stays triage-only: a survey of all 68 dump APKs found unpaired
+PAC hints in 21 libraries of 18 games (OpenSSL's 38/40 in most UE4 libUE4.so and libEOSSDK.so, UE5 libUnreal.so ~400
+vs +2-3, libass, libopencv, …), most of them games that work, so default-on would rewrite many working builds.
 **Unresolved (as of 2026-09-28):** Arcsmith (right-eye distortion) and Time Stall (both eyes) — swap, tracking, Valve
 layers, depth, pacing ruled out. Sniper Elite VR (DEVICE LOST), Espire 1 (Mesa GL upload crash), HITMAN 3 (freedreno
 crash): use PC versions.
