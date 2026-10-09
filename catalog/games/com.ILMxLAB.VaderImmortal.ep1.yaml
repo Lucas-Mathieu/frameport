@@ -1,20 +1,18 @@
 package: com.ILMxLAB.VaderImmortal.ep1
 title: 'Vader Immortal: Episode I'
-status: unknown
-notes: To test in the headset - five fixes from a reporter's playthrough of chapter 1 (GitHub issue 49) - the loading
-  card now ends, grip/trigger bindings, the lightspeed jump's GPU hang, hands lagging behind the controllers and thumbs
-  that never moved. Needs FramePort 0.12.1 or newer.
+status: works
+notes: 'Plays (owner''s headset test): loading card, grip/trigger, thumbs, hands and the lightspeed sequence fixed.'
 details: Unreal Engine 4 (GLES). Found and verified in gameplay on a Frame by Klownicle (GitHub issue 49); FramePort
   reimplements them as patches that match the game's code exactly and change nothing when it differs. The engine's
   Quest checks (IsRunningOnSantaCruz) answer "not a Quest" on the Frame - the menu waited for a Quest-only shader
-  precompile that never starts (frame.unreal_quest_precompile makes the non-Quest branch report 100 %), and the game's
-  key map picked the empty Gear VR controls (frame.unreal_quest_keymap keeps the Quest set). Two lightspeed shaders,
-  as the Frame's GL driver (Zink) compiles them, read loop counters and accumulators before setting them and hang the
-  GPU; a Vulkan layer under Zink inserts the stores that zero them (frame.zink_shader_fix, zink_shader_fix; the
-  captured modules are from Lepton 2.8.14 and stop matching if a Frame update changes the driver's output - the layer
-  logs that). OVRPlugin asks for poses at its own clock (pose_time_fix) and reports thumb proximity from an extension
-  the Frame lacks (proximity_emul binds it to the capacitive touch inputs). The Frame's SteamVR runtime leaks about 20
-  MB a second while the game runs (reported to Valve).
+  precompile that never starts (frame.unreal_quest_precompile makes the non-Quest branch report 100 %), and the
+  game's key map picked the empty Gear VR controls (frame.unreal_quest_keymap keeps the Quest set). Two lightspeed
+  shaders, as the Frame's GL driver (Zink) compiles them, read loop counters and accumulators before setting them
+  and hang the GPU; a Vulkan layer under Zink inserts the stores that zero them (frame.zink_shader_fix, zink_shader_fix;
+  the captured modules are from Lepton 2.8.14 and stop matching if a Frame update changes the driver's output -
+  the layer logs that). OVRPlugin asks for poses at its own clock (pose_time_fix) and reports thumb proximity from
+  an extension the Frame lacks (proximity_emul binds it to the capacitive touch inputs). The Frame's SteamVR runtime
+  leaks about 20 MB a second while the game runs (reported to Valve).
 tested_version: 1.1.1+667256.cl.387770
 engine: Unreal
 xr: VrApi
@@ -27,11 +25,9 @@ frame:
 adapter:
   pose_time_fix: 1
   proximity_emul: 1
-  # the two lightspeed fragment shaders as Zink compiles them (Lepton 2.8.14): twelve OpStores each that zero three
-  # loop counters and nine accumulators read before they are set (Klownicle's capture, GitHub issue 49)
   zink_shader_fix: 12016:b2919629761ad268e0b21c72ac8520f81b76e72c3adc26897f97eae9a3e70a66:3092:0x0003003e,166,82,0x0003003e,177,82,0x0003003e,183,82,0x0003003e,189,82,0x0003003e,256,82,0x0003003e,266,82,0x0003003e,272,82,0x0003003e,278,82,0x0003003e,318,82,0x0003003e,328,82,0x0003003e,334,82,0x0003003e,340,82;11436:6f18be49f2aaa2452f962eb16f7af744c5c22a7b25f37ce681e0d6399e35a869:2932:0x0003003e,164,80,0x0003003e,175,80,0x0003003e,181,80,0x0003003e,187,80,0x0003003e,254,80,0x0003003e,264,80,0x0003003e,270,80,0x0003003e,276,80,0x0003003e,316,80,0x0003003e,326,80,0x0003003e,332,80,0x0003003e,338,80
 verified:
-  date: '2026-10-06'
+  date: '2026-10-09'
   issue: 49
 updated: '2026-10-09'
 min_app: 0.12.1

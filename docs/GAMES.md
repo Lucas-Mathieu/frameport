@@ -78,6 +78,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Time Crisis VR (Experimental) | Quest | ✅ Works |  |
 | Toy Master | Quest | ✅ Works |  |
 | Under Cover | Quest | ✅ Works |  |
+| Vader Immortal: Episode I | Quest | ✅ Works |  |
 | VR HOT Quest | Quest | ✅ Works |  |
 | VR4 | Quest | ✅ Works |  |
 | Walkabout Mini Golf | Quest | ✅ Works |  |
