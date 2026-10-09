@@ -38,7 +38,7 @@ import time
 import zlib
 from types import SimpleNamespace
 
-AGENT_VERSION = 67
+AGENT_VERSION = 68
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -4077,6 +4077,9 @@ def game_logs(base, since=0.0):
     return out
 
 
+LAUNCH_INSTALL_GRACE = 240  # s a launch test waits at most for Lepton's boot + app install before its own window
+
+
 def cmd_launch_test(args):
     """Start the game headless (as Steam would), wait, classify, stop. Without the headset worn the OpenXR session
     never reaches FOCUSED, so this proves startup, not visuals."""
@@ -4103,14 +4106,24 @@ def cmd_launch_test(args):
         raise AgentError("could not start the launcher: " + p.stderr[-300:])
     start = time.time()
     state = "RUNNING"
-    while time.time() - start < seconds:
+    app_start = None  # when Lepton started the app ("Waiting for app"): the test window counts from there
+    while True:
         time.sleep(3)
+        now = time.time()
         text = open(log, errors="replace").read() if os.path.exists(log) else ""
         if "Exited!" in text:
             state = "EXITED"
             break
-        if "Early-exit" in text or not_started(text, time.time() - start):
+        if "Early-exit" in text or not_started(text, now - start):
             state = "NEVER_STARTED"
+            break
+        if app_start is None and "Waiting for app" in text:
+            app_start = now
+        # the first start after an APK change boots Lepton and installs the app first (a minute or more): stopping the
+        # container then left a half-installed APK ("base.apk is not zip") that never started again (VR HOT)
+        if app_start is not None and now - app_start >= seconds:
+            break
+        if now - start >= seconds + LAUNCH_INSTALL_GRACE:
             break
     elapsed = round(time.time() - start)
     if state == "EXITED":  # Lepton dumps the container's logcat buffers (crash backtraces) after "Exited!"

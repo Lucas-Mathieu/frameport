@@ -1579,3 +1579,29 @@ def test_upgrade_launchers_adds_logcat_keeper(monkeypatch, tmp_path):
     a.upgrade_launchers()
     text = (anchor / "launch.sh").read_text()
     assert "_logcat_keeper" in text and text.index("_logcat_keeper") < text.index('wait "$child"')
+
+
+def test_launch_test_window_starts_when_the_app_starts(monkeypatch, tmp_path):
+    """The first start after an APK change spends ~90 s booting Lepton and installing the app; a 45 s window counted
+    from the launcher stopped the container mid-install and left a broken APK copy ("base.apk is not zip", VR HOT)."""
+    a = load_agent(monkeypatch, tmp_path)
+    base = tmp_path / "base"
+    base.mkdir()
+    log = base / "launch.log"
+    log.write_text("Waiting for boot...\n")
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(a.time, "time", lambda: clock["t"])
+
+    def sleep(s):
+        clock["t"] += s
+        if clock["t"] >= 1090 and "Waiting for app" not in log.read_text():
+            log.write_text("Waiting for boot...\nBoot complete!\nInstalling game.apk...\nSuccess\n"
+                           "Waiting for app com.x.y to exit...\n")
+    monkeypatch.setattr(a.time, "sleep", sleep)
+    monkeypatch.setattr(a, "deployment", lambda pkg: {"base": str(base), "appid": 1})
+    monkeypatch.setattr(a, "container_running", lambda appid: False)
+    monkeypatch.setattr(a, "ensure_host_fixes", lambda: None)
+    monkeypatch.setattr(a, "key_usage", lambda: None)
+    monkeypatch.setattr(a, "run", lambda *x, **k: type("R", (), {"returncode": 0, "stderr": ""})())
+    res = a.cmd_launch_test({"package": "com.x.y", "seconds": 45})
+    assert res["state"] == "RUNNING" and res["elapsed"] >= 90 + 45
