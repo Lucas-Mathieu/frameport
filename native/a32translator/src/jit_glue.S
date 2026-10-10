@@ -16,6 +16,7 @@
     .text
     .p2align 4
     .global jit_enter
+    .hidden jit_enter
     .type jit_enter, %function
 /* int jit_enter(a32_cpu *c, const void *code): runs translated code until it exits, returns c->exit_reason */
 jit_enter:
@@ -60,6 +61,7 @@ jit_enter:
 
     .p2align 4
     .global jit_exit
+    .hidden jit_exit
     .type jit_exit, %function
 /* reached by a branch from translated code; the guest pc etc. are already stored */
 jit_exit:

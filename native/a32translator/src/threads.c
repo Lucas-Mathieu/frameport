@@ -15,6 +15,7 @@
 #include "signals.h"
 
 __thread a32_thread *g_self;
+__thread a32_adopt *g_clone_adopt;
 static a32_thread main_thread;
 static int live_threads = 1;
 static pthread_mutex_t list_lock = PTHREAD_MUTEX_INITIALIZER; /* guards the thread list (main_thread.next...) */
@@ -37,9 +38,12 @@ static void *thread_start(void *arg)
     if (s->flags & CLONE_PARENT_SETTID) st32(s->ptid, (uint32_t)t->tid);
     /* done by thread_exit: bionic's pthread_exit cancels the kernel's CLEARTID for detached threads */
     if (s->flags & CLONE_CHILD_CLEARTID) t->clear_tid = s->ctid;
-    sigset_t none;
-    sigemptyset(&none);
-    pthread_sigmask(SIG_SETMASK, &none, NULL);
+    if (!opt_bridge) {
+        /* bridge mode keeps the creator's mask: the host process may expect signals blocked (ART's SIGQUIT) */
+        sigset_t none;
+        sigemptyset(&none);
+        pthread_sigmask(SIG_SETMASK, &none, NULL);
+    }
     sem_post(&s->ready);
     run_guest(&t->cpu);
     return NULL;
@@ -58,6 +62,25 @@ long sys_clone(a32_cpu *c, uint32_t flags, uint32_t stack, uint32_t ptid, uint32
         if (flags & CLONE_SETTLS) t->cpu.tpidruro = tls;
         t->cpu.excl_valid = 0;
         t->sigmask = self->sigmask;
+        a32_adopt *ad = g_clone_adopt;
+        if (ad) {
+            /* hand the new guest thread to the host thread waiting in thread_adopt */
+            g_clone_adopt = NULL;
+            __atomic_add_fetch(&live_threads, 1, __ATOMIC_SEQ_CST);
+            pthread_mutex_lock(&list_lock);
+            t->next = main_thread.next;
+            main_thread.next = t;
+            pthread_mutex_unlock(&list_lock);
+            ad->t = t;
+            ad->flags = flags;
+            ad->ptid = ptid;
+            ad->ctid = ctid;
+            __atomic_store_n(&ad->state, 1, __ATOMIC_SEQ_CST);
+            syscall(__NR_futex, &ad->state, FUTEX_WAKE, 1, NULL, NULL, 0);
+            while (__atomic_load_n(&ad->state, __ATOMIC_SEQ_CST) != 2)
+                syscall(__NR_futex, &ad->state, FUTEX_WAIT, 1, NULL, NULL, 0);
+            return ad->tid;
+        }
         struct start s = {t, flags, ptid, ctid};
         sem_init(&s.ready, 0, 0);
         pthread_attr_t attr;
@@ -103,6 +126,21 @@ long sys_clone(a32_cpu *c, uint32_t flags, uint32_t stack, uint32_t ptid, uint32
     return pid;
 }
 
+void thread_adopt(a32_adopt *a)
+{
+    while (__atomic_load_n(&a->state, __ATOMIC_SEQ_CST) == 0)
+        syscall(__NR_futex, &a->state, FUTEX_WAIT, 0, NULL, NULL, 0);
+    a32_thread *t = a->t;
+    g_self = t;
+    t->tid = (int)syscall(__NR_gettid);
+    if (a->flags & CLONE_CHILD_SETTID) st32(a->ctid, (uint32_t)t->tid);
+    if (a->flags & CLONE_PARENT_SETTID) st32(a->ptid, (uint32_t)t->tid);
+    if (a->flags & CLONE_CHILD_CLEARTID) t->clear_tid = a->ctid;
+    a->tid = t->tid;
+    __atomic_store_n(&a->state, 2, __ATOMIC_SEQ_CST);
+    syscall(__NR_futex, &a->state, FUTEX_WAKE, 1, NULL, NULL, 0);
+}
+
 void threads_interrupt_all(void)
 {
     pthread_mutex_lock(&list_lock);
@@ -127,6 +165,7 @@ _Noreturn void thread_exit(a32_cpu *c, int status)
         __atomic_store_n((uint32_t *)g2h(t->clear_tid), 0, __ATOMIC_SEQ_CST);
         syscall(__NR_futex, g2h(t->clear_tid), FUTEX_WAKE, 1, NULL, NULL, 0);
     }
+    if (opt_bridge) a32_report("guest thread %d exits (%d)", t->tid, status);
     if (__atomic_sub_fetch(&live_threads, 1, __ATOMIC_SEQ_CST) == 0) guest_exit(status);
     if (g_self == &main_thread) {
         syscall(__NR_exit, status);
@@ -136,9 +175,13 @@ _Noreturn void thread_exit(a32_cpu *c, int status)
 }
 
 __attribute__((weak)) void jit_report(void) {}
+__attribute__((weak)) void a32_report(const char *fmt, ...) { (void)fmt; }
 
 _Noreturn void guest_exit(int status)
 {
+    if (opt_bridge && g_self)
+        a32_report("guest exit_group(%d) on tid %d at pc %08x lr %08x", status, g_self->tid, g_self->cpu.r[15],
+                   g_self->cpu.r[14]);
     jit_report();
     fflush(stderr);
     syscall(__NR_exit_group, status);

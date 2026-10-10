@@ -46,9 +46,20 @@ extern int opt_interp;     /* interpreter only */
 extern int opt_strace;     /* log syscalls */
 extern int opt_trace;      /* log every executed instruction / block */
 extern int opt_verbose;
+extern int opt_bridge;     /* sharing the process with a host program (Android bridge): see mem.c, threads.c */
+/* Runs guest code on the calling thread. Returns when a hypercall sets g_self->stop (bridge mode); a32run's
+ * threads never return. Calls nest: a hypercall handler may run guest code again. */
 int run_guest(a32_cpu *c);
+
+/* Hypercalls: SVC with r7 = A32_HYPERCALL | n. The handler sets the guest's result registers itself. */
+#define A32_HYPERCALL 0x0a320000u
+void a32_hypercall(a32_cpu *c, uint32_t n);
+#define A32_HC_RETURN 1                   /* end of a host-to-guest call */
+#define A32_RETURN_TRAMPOLINE 0xffff0510u /* ARM code in the kuser page: hypercall A32_HC_RETURN */
 void code_invalidate(uint32_t addr, uint32_t len);
 _Noreturn void fatal(const char *fmt, ...);
+/* bridge mode: a message for the system log, written synchronously (weak no-op in a32run) */
+void a32_report(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void a32_dump_state(FILE *f, const a32_cpu *c);
 
 /* kuser helpers (0xffff0fa0..0xffff0fff): executes the helper at r[15], returns 1 if it was one */

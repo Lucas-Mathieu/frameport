@@ -45,7 +45,7 @@
      if (!s.instance || !s.vk.Device) return false;
      VkPhysicalDevice expected = VK_NULL_HANDLE;
      if (!xrOk(s.xr.xrGetVulkanGraphicsDeviceKHR(s.instance, s.system, s.vk.Instance, &expected), "xrGetVulkanGraphicsDeviceKHR") || expected != s.vk.PhysicalDevice) {
-@@ -246,12 +281,16 @@
+@@ -246,12 +281,24 @@
          // OpenXR LOCAL need not be eye-level. Establish VrApi's initial yaw/position
          // origin from a tracked, visible head before exposing it to the application.
          XrSpaceLocation head{XR_TYPE_SPACE_LOCATION};
@@ -64,11 +64,19 @@
 +        if (visible && logged++ % 90 == 0)
 +            OVP_LOG("initial recenter: head flags=0x%llx pos=%.3f,%.3f,%.3f", (unsigned long long)head.locationFlags,
 +                    head.pose.position.x, head.pose.position.y, head.pose.position.z);
-+        if (!located || (head.locationFlags & tracked) != tracked) {
++        // OVP_HEADLESS_TEST=1: automated tests without a worn headset (the session never becomes visible) start from
++        // an untracked origin instead of waiting for a tracked head
++        static const bool headlessTest = getenv("OVP_HEADLESS_TEST") != nullptr;
++        if (headlessTest && (!located || (head.locationFlags & tracked) != tracked)) {
++            head.pose.orientation = {0, 0, 0, 1};
++            head.pose.position = {0, 0, 0};
++            head.locationFlags = tracked;
++            OVP_LOG("initial recenter: OVP_HEADLESS_TEST, no tracked head needed");
++        } else if (!located || (head.locationFlags & tracked) != tracked) {
              endFrame(nullptr, 0);
              return false;
          }
-@@ -409,11 +448,14 @@
+@@ -409,11 +456,14 @@
  VRAPI int vrapi_Initialize(const ovrInitParms* parms) {
      LOCK_STATE;
      if (s.instance) return -3;
@@ -85,7 +93,7 @@
      s.activity = parms->Java.Env->NewGlobalRef(parms->Java.ActivityObject);
      if (!s.activity) { shutdown(); return -1; }
      s.loader = dlopen("libopenxr_loader.so", RTLD_NOW | RTLD_LOCAL);
-@@ -435,10 +477,13 @@
+@@ -435,10 +485,13 @@
      if (!xrOk(s.xr.xrEnumerateInstanceExtensionProperties(nullptr, count, &count, supported.data()), "enumerate extensions")) { shutdown(); return -4; }
      auto has = [&](const char* name) { return std::any_of(supported.begin(), supported.end(), [&](const auto& e) { return std::strcmp(e.extensionName, name) == 0; }); };
      std::vector<const char*> extensions;
@@ -103,7 +111,7 @@
      s.viewConfigurationFovExtension = has(XR_EPIC_VIEW_CONFIGURATION_FOV_EXTENSION_NAME);
      if (s.viewConfigurationFovExtension) extensions.push_back(XR_EPIC_VIEW_CONFIGURATION_FOV_EXTENSION_NAME);
      s.systemDisplayRefreshRateExtension = has(SystemDisplayRefreshRateExtension);
-@@ -482,7 +527,9 @@
+@@ -482,7 +535,9 @@
      if (s.threadExtension) load("xrSetAndroidApplicationThreadKHR", reinterpret_cast<PFN_xrVoidFunction*>(&s.setThread));
      if (s.systemDisplayRefreshRateExtension) load("xrGetSystemDisplayRefreshRateAXRB", reinterpret_cast<PFN_xrVoidFunction*>(&s.getSystemDisplayRefreshRate));
      if (s.displayRefreshRateExtension) load("xrGetDisplayRefreshRateFB", reinterpret_cast<PFN_xrVoidFunction*>(&s.getDisplayRefreshRate));
@@ -114,7 +122,7 @@
      return 0;
  }
  VRAPI void vrapi_Shutdown() { LOCK_STATE; shutdown(); }
-@@ -518,18 +565,36 @@
+@@ -518,18 +573,36 @@
  }
  VRAPI ovrMobile* vrapi_EnterVrMode(const ovrModeParms* parms) {
      LOCK_STATE;
@@ -157,7 +165,7 @@
          std::this_thread::sleep_for(std::chrono::milliseconds(5));
      }
      ++s.mobile.generation;
-@@ -665,3 +730,41 @@
+@@ -665,3 +738,41 @@
      if (!s.setColorSpace) return color->ColorSpace == 0 ? Success : Unsupported;
      return xrOk(s.setColorSpace(s.session, static_cast<XrColorSpaceFB>(color->ColorSpace)), "xrSetColorSpaceFB") ? Success : InvalidParameter;
  }

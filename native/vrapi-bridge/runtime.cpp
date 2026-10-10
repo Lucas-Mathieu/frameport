@@ -362,7 +362,15 @@ bool beginFrame(int64_t index) {
         if (visible && logged++ % 90 == 0)
             OVP_LOG("initial recenter: head flags=0x%llx pos=%.3f,%.3f,%.3f", (unsigned long long)head.locationFlags,
                     head.pose.position.x, head.pose.position.y, head.pose.position.z);
-        if (!located || (head.locationFlags & tracked) != tracked) {
+        // OVP_HEADLESS_TEST=1: automated tests without a worn headset (the session never becomes visible) start from
+        // an untracked origin instead of waiting for a tracked head
+        static const bool headlessTest = getenv("OVP_HEADLESS_TEST") != nullptr;
+        if (headlessTest && (!located || (head.locationFlags & tracked) != tracked)) {
+            head.pose.orientation = {0, 0, 0, 1};
+            head.pose.position = {0, 0, 0};
+            head.locationFlags = tracked;
+            OVP_LOG("initial recenter: OVP_HEADLESS_TEST, no tracked head needed");
+        } else if (!located || (head.locationFlags & tracked) != tracked) {
             endFrame(nullptr, 0);
             return false;
         }

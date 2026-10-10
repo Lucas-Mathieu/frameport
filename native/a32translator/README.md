@@ -6,8 +6,9 @@ AArch64 host without AArch32 support, such as the Steam Frame's SteamOS. It is a
 system calls to the host kernel.
 
 Status: proof of concept. It runs static bionic (Android NDK) programs, including C++ with exceptions, pthreads,
-signals, fork, self-modifying code and NEON. It is **not** yet an Android native bridge: running 32-bit-only Quest
-APKs inside Lepton additionally needs `libnativebridge` integration and JNI/GL/OpenXR thunks (see "Next steps").
+signals, fork, self-modifying code and NEON. The Android bridge (below) runs 32-bit JNI and NativeActivity
+libraries inside a 64-bit app, verified in a Lepton container on the Frame; games additionally need GLES/EGL,
+OpenSL/AAudio, libandroid and VrApi thunks (see "Next steps").
 
 ```
 python native/a32translator/build.py          # -> native/a32translator/out/a32run (static AArch64, NDK clang)
@@ -89,6 +90,81 @@ Not supported: big-endian data (SETEND BE), ARMv8.1+ AArch32 extensions (FP16 ar
 product), VFP short vectors (Len/Stride, absent on ARMv8 anyway), robust futex lists, and the iWMMXt/ThumbEE
 relics. FPSCR exception *traps* are not emulated (flags are).
 
+## Android bridge
+
+A converted APK runs its 32-bit libraries in its own 64-bit process, without Android's native-bridge mechanism
+(Lepton would need `ro.dalvik.vm.native.bridge` and 32-bit ABI lists for that). Every 32-bit library `libX.so`
+moves to `lib/arm64-v8a/libX.a32.so`; `libX.so` becomes a copy of the stub, next to the bridge and the guest
+runtime:
+
+```
+python native/a32translator/bridge/build.py [--test]
+  out/bridge/liba32stub.so    arm64 stub (copied as libX.so): JNI_OnLoad, ANativeActivity_onCreate -> bridge
+  out/bridge/liba32bridge.so  arm64: the translator + bridge/host (exports a32b_*, bridge/host/a32bridge.h)
+  out/bridge/liba32rt.so      32-bit ARM static PIE: the guest runtime and the guest's "system libraries"
+```
+
+- **Guest runtime** (`bridge/guest`): bionic's static libc/libm/libz/libstdc++/libunwind, linked whole and
+  exported through a table (`gen/exports.S`), plus a loader for the game's libraries (bionic's lookup order, packed
+  relocations, RELR, `dlopen`/`dlsym`/`dladdr`/`dl_iterate_phdr`, ARM EHABI unwinding through
+  `dl_unwind_find_exidx`). Symbols nothing defines become stubs that log their name and return 0. Libraries the
+  guest knows as system libraries (`libGLESv2.so`, ...) resolve against the export table.
+- **Hypercalls** (`bridge/abi.h`): guest code calls the host with `SVC 0` and `r7 = 0x0a32xxxx`; host-to-guest
+  calls return through a trampoline in the kuser page. The thread that starts the bridge becomes the guest's main
+  thread; any other host thread gets its own guest thread on its first call (the runtime's service thread creates
+  it, and the clone is handed to the waiting host thread). Calls nest: Java -> guest -> JNI -> Java -> guest.
+- **JNI** (`bridge/host`): the guest gets 32-bit `JNIEnv`/`JavaVM` tables whose entries are hypercalls.
+  `gen_stubs.py` generates the simple functions from `jni.h`; `jni.c` has the rest (variadic/`va_list`/`jvalue[]`
+  calls read with the method's shorty, strings and arrays: shared when the data lies below 4 GiB, as ART's heap
+  does, else copied and written back). Objects, method and field IDs are 32-bit handles (`handles.c`). Native
+  methods (RegisterNatives, and exported `Java_*` functions, matched to their Java declarations by reflection) get a
+  trampoline slot (`tramp.S`, `natives.c`) that converts AAPCS64 arguments to AAPCS32.
+- **NativeActivity** (`native_activity.c`): a 32-bit `ANativeActivity` mirrors the host's; the host callbacks
+  forward to the guest's. Windows, input queues and asset managers are handles. libandroid functions are listed in
+  `bridge/imports.txt` (generated host side).
+- The bridge shares the low 4 GiB with the host process: `mem.c` reads `/proc/self/maps` and never hands out host
+  mappings; host faults go to the host's own handlers (ART's); translator reports on stderr go to logcat (tag
+  `a32`).
+
+- **GLES/EGL** (`gen_gl.py`, `host/gl.c`): every function of the NDK's GLES 3.2 + extension and EGL headers is a
+  hypercall stub (Unity fetches most through `dlsym`/`eglGetProcAddress`); EGL objects and GLsyncs are handles,
+  driver strings are copied, buffer mappings outside the guest's reach get a guest copy written back at flush/unmap.
+- **VrApi 1.x** (`host/vrapi.c`): Gear VR-era games call the old API (`vrapi_SubmitFrame` with `ovrFrameParms`,
+  `vrapi_GetPredictedTracking`). The runtime exports it itself (`libvrapi.so` is a system library; the game's copy is
+  Oculus' loader and is dropped) and translates it to FramePort's 64-bit VrApi -> OpenXR bridge (shipped as
+  `libfp_vrapi64.so`, with OVRPort's OpenXR dispatcher and the FrameBridge adapter). Layouts are VrApi 1.5's.
+- **OpenSL ES** (`guest/opensles.c`): engine, output mix and PCM players with an Android buffer queue, implemented in
+  the guest (OpenSL objects are function tables); a guest thread per player writes to AAudio on the host.
+- **Signals**: host handlers never use SA_RESTART; a blocking system call interrupted by a guest signal is
+  restarted after the guest's handler (as the kernel's -ERESTARTSYS), and a thread running host code (Java, a JNI or
+  GL call) runs the guest handler at once. Boehm GC (Unity's Mono) stops the world with signals and hung without it.
+- `bridge/convert.py IN.apk OUT.apk` (prototype of the FramePort patch): moves the 32-bit libraries, adds the stubs,
+  bridge, runtime and VR libraries, sets LAUNCHER and targetSdkVersion >= 23 (an older one gets Android's "built for
+  an older version" dialog, which takes the focus: Unity never starts), and points libunity's Oculus check at
+  "android" (like `frame.unity_oculus_check`). Unity games also need the flat window (`device.text_input_window`):
+  Unity only renders with window focus.
+- Debugging: `A32_WATCH=<s>` logs every guest thread's pc and the return addresses on its stack as `lib+offset`;
+  `A32B_TRACE=1` logs native registrations and calls; `A32_STRACE`, `A32_INTERP` as for a32run. Set them through the
+  recipe's `device.lepton_env` (`LEPTON_ENV_<NAME>`).
+
+Learned on the way: `-static-pie` links `crtbegin_dynamic.o`, which leaves `.init_array` to a dynamic linker (so
+none of libc's own constructors ran: bionic's systrace property crashed in an Android process); bionic's arm32
+static start-up code also reads `PT_TLS`/`PT_GNU_RELRO` as if the program sat at its link address, so the loader
+moves both by the load bias.
+
+Tests:
+- `python bridge/test/run.py [--interp]` (after `build.py --test`): the harness (`bridge/test/harness.c`) plays ART
+  with a fake JVM (`fakejni.c`) for three guest libraries: RegisterNatives and `Java_*` exports, 12-argument
+  natives (stack arguments on both sides), floats/doubles/bytes, strings, arrays below and above 4 GiB, every
+  Call*Method style, NewObject, nested calls, guest threads that attach, several host threads, exceptions, a
+  NativeActivity with a DT_NEEDED library, and C++ exceptions in a guest library. Runs under qemu-aarch64 or
+  natively (passes on the Frame with JIT and interpreter).
+- `uv run python bridge/test/make_apk.py`: `org.frameport.a32test`, a NativeActivity APK without Java code whose
+  library is 32-bit (`bridge/test/libapktest.c`). Installed with FramePort (`frameport scan`, then `frameport
+  install org.frameport.a32test --apk ...`, `frameport test`), it logs `A32TEST ok|FAIL` lines (tag `a32test`):
+  real ART calls (`Build.MODEL`, `String.format`, `Math.hypot`, arrays, exceptions), a guest thread, a dlopen'd C++
+  library, and the activity's callbacks with the real window. All pass in Lepton (2026-10-10).
+
 ## Testing
 
 All of these run on an x86-64 PC through `qemu-aarch64`, with `qemu-arm` as the reference, or natively on an
@@ -122,12 +198,14 @@ up to ±30 % between runs), against the same source built natively for AArch64:
 
 ## Next steps
 
-1. **Android native bridge.** Expose the translator through the `NativeBridgeCallbacks` interface (as
-   libhoudini and libndk_translation do) so ART can load 32-bit ARM libraries in a 64-bit process. This needs:
-   loading guest `.so` files with a 32-bit linker in the low 4 GiB, trampolines for JNI in both directions
-   (`JNIEnv` and every callback marshalled between the 32-bit and 64-bit ABIs), and guest-side stubs for the host
-   libraries a game calls (libc, libGLESv3/EGL, Vulkan, OpenXR, OpenSL/AAudio).
-2. Check that Lepton accepts `ro.dalvik.vm.native.bridge` and the 32-bit ABI lists; until then, PackageManager
-   rejects 32-bit-only APKs before any code runs.
-3. JIT: VLDn single-lane/all-lanes forms, flag liveness (skip unused C/V computations), keeping the VFP cache
+1. First game: AFFECTED The Manor (Gear VR, Unity 5.6.0f3 + Mono, OVRPlugin 1.12, 2017). Headless on the Frame
+   (2026-10-10): Unity and its C# scripts run, audio plays, the OpenXR session starts and submits frames at 72 fps.
+   Not yet seen in a headset. Open: Gear VR input (touchpad/back, controller API reports no devices), the rest of
+   libandroid (ALooper callbacks, AInputQueue, AAsset*), host-to-guest callbacks (GL debug output, sensor queues).
+2. A FramePort patch that converts an APK (libraries moved, stubs, bridge, runtime, `extractNativeLibs=true`) +
+   triage signature + PLAYBOOK row.
+3. Bridge gaps: guest threads of host threads that exit are never freed; `Java_*` functions of libraries the guest
+   dlopens itself aren't registered; `GetDirectBufferAddress` of buffers above 4 GiB returns 0; signals the guest
+   handles are only delivered to guest threads.
+4. JIT: VLDn single-lane/all-lanes forms, flag liveness (skip unused C/V computations), keeping the VFP cache
    across a loop's back edge, and VRECPS/VRSQRTS/VCVTR natively.

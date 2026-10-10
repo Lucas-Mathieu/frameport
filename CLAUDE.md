@@ -314,7 +314,12 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
   `-ffile-prefix-map` so no local paths get embedded; zip symlinks are restored as copies). Users never need the NDK.
   `native/a32translator/` (not an artifact, not shipped) = `a32run`, an AArch32 → AArch64 user-mode translator
   (interpreter + JIT, ARM/Thumb-2/VFP/NEON) for running 32-bit ARM Linux programs on the Frame; its README has the
-  design, the qemu-arm differential fuzzer and program tests, and the next steps towards an Android native bridge.
+  design, the qemu-arm differential fuzzer and program tests. `native/a32translator/bridge/` = the in-APK Android
+  bridge (32-bit JNI/NativeActivity libraries in a 64-bit app: stub + liba32bridge.so + guest runtime liba32rt.so;
+  harness with a fake JVM; test APK org.frameport.a32test passes in Lepton; GLES/EGL, OpenSL ES via AAudio, VrApi 1.x
+  -> the 64-bit VrApi bridge, controller input as Gear VR touchpad/back events; `bridge/convert.py` converts an APK).
+  First game: AFFECTED The Manor (Gear VR, Unity 5.6 + Mono) runs in the headset with picture and sound
+  (2026-10-10); next: controls, a FramePort patch from convert.py, more games.
 - `scripts/` — `package.py` (flet build/pack), `eval_heuristics.py` (score heuristics), `ui_smoke.py` (GUI screenshots).
 - `docs/` — PLAYBOOK, FRAME_RUNTIME, ARCHITECTURE, INSTALL (end users), parity reports (offline + device).
 

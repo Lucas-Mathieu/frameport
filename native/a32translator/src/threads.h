@@ -23,6 +23,10 @@ typedef struct a32_thread {
     uint32_t fault_pc;           /* guest pc of the instruction being executed (interpreter) */
     volatile siginfo_t fault_info;
     volatile int fault_sig;
+    volatile int stop;           /* bridge mode: leave run_guest after the current exit (set by hypercalls) */
+    void *bridge;                /* bridge mode: per-thread state of the host side */
+    volatile int in_host;        /* bridge mode: running host code (between guest calls, or in a hypercall) */
+    int in_proxy;                /* bridge mode: running a guest signal handler from host code (signals.c) */
     struct a32_thread *next;
 } a32_thread;
 
@@ -31,5 +35,17 @@ a32_thread *thread_main(void);
 long sys_clone(a32_cpu *c, uint32_t flags, uint32_t stack, uint32_t ptid, uint32_t tls, uint32_t ctid);
 _Noreturn void thread_exit(a32_cpu *c, int status);
 void threads_interrupt_all(void); /* make every thread leave translated code soon */
+
+/* Bridge mode: the next CLONE_THREAD clone on this thread hands the new guest thread to *g_clone_adopt (another
+ * host thread, which runs it with thread_adopt) instead of starting a host pthread for it. */
+typedef struct a32_adopt {
+    a32_thread *t;
+    int tid;                     /* host tid of the adopting thread (the clone's result) */
+    uint32_t flags, ptid, ctid;
+    volatile int state;          /* 0 waiting, 1 handed over, 2 adopted */
+} a32_adopt;
+extern __thread a32_adopt *g_clone_adopt;
+/* on the adopting thread: makes t its guest thread (g_self), applies the clone's TID flags */
+void thread_adopt(a32_adopt *a);
 
 #endif

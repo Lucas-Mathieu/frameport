@@ -54,6 +54,53 @@ static const char *sysroot_path(const char *sysroot, const char *p, char *buf, s
     return p;
 }
 
+static void relocate_static_pie(const Elf32_Phdr *ph, int phnum, uint32_t bias)
+{
+    uint32_t dyn = 0, rel = 0, relsz = 0, relr = 0, relrsz = 0;
+    for (int k = 0; k < phnum; k++)
+        if (ph[k].p_type == PT_DYNAMIC) dyn = bias + ph[k].p_vaddr;
+    if (!dyn) return;
+    for (uint32_t d = dyn; ld32(d) != DT_NULL; d += 8) {
+        uint32_t tag = ld32(d), val = ld32(d + 4);
+        if (tag == DT_REL) rel = bias + val;
+        else if (tag == DT_RELSZ) relsz = val;
+        else if (tag == 36 /* DT_RELR */) relr = bias + val;
+        else if (tag == 35 /* DT_RELRSZ */) relrsz = val;
+    }
+    for (uint32_t r = rel; r < rel + relsz; r += 8)
+        if ((ld32(r + 4) & 0xff) == 23 /* R_ARM_RELATIVE */) st32(bias + ld32(r), ld32(bias + ld32(r)) + bias);
+    uint32_t where = 0;
+    for (uint32_t r = relr; r < relr + relrsz; r += 4) {
+        uint32_t e = ld32(r);
+        if (!(e & 1)) {
+            where = bias + e;
+            st32(where, ld32(where) + bias);
+            where += 4;
+        } else {
+            for (uint32_t k = 0; (e >>= 1) != 0; k++)
+                if (e & 1) st32(where + 4 * k, ld32(where + 4 * k) + bias);
+            where += 31 * 4;
+        }
+    }
+}
+
+/* bionic's arm32 static start-up code also reads PT_TLS (the TLS initialisation image) and PT_GNU_RELRO from the
+ * program headers (AT_PHDR) as if the program were at its link address: move them by the load bias */
+static void move_static_pie_phdrs(uint32_t phdr, int phnum, uint32_t bias)
+{
+    uint32_t page = phdr & ~(GUEST_PAGE - 1), end = (phdr + (uint32_t)phnum * sizeof(Elf32_Phdr) + GUEST_PAGE - 1) & ~(GUEST_PAGE - 1);
+    mem_mprotect(page, end - page, PROT_READ | PROT_WRITE);
+    for (int k = 0; k < phnum; k++) {
+        uint32_t p = phdr + (uint32_t)k * sizeof(Elf32_Phdr);
+        uint32_t type = ld32(p);
+        if (type == PT_TLS || type == PT_GNU_RELRO) {
+            st32(p + 8, ld32(p + 8) + bias);   /* p_vaddr */
+            st32(p + 12, ld32(p + 12) + bias); /* p_paddr */
+        }
+    }
+    mem_mprotect(page, end - page, PROT_READ);
+}
+
 static int load_image(const char *path, uint32_t want_base, image *im, char *interp, size_t interp_len)
 {
     int fd = open(path, O_RDONLY | O_CLOEXEC);
@@ -134,6 +181,12 @@ static int load_image(const char *path, uint32_t want_base, image *im, char *int
         if (!phdr_vaddr && eh.e_phoff >= p->p_offset && eh.e_phoff < p->p_offset + p->p_filesz)
             phdr_vaddr = p->p_vaddr + (eh.e_phoff - p->p_offset);
     }
+    /* a static PIE (ET_DYN without an interpreter) moved from its link address: bionic's arm32 start-up code
+     * doesn't relocate itself, so apply its relative relocations here */
+    if (eh.e_type == ET_DYN && bias && !(interp && interp[0])) {
+        relocate_static_pie(ph, eh.e_phnum, bias);
+        if (phdr_vaddr) move_static_pie_phdrs(bias + phdr_vaddr, eh.e_phnum, bias);
+    }
     close(fd);
     im->bias = bias;
     im->entry = bias + eh.e_entry;
@@ -156,6 +209,10 @@ static void setup_kuser_page(void)
     st32(0xffff0504u, 0xef000000u);
     st32(0xffff0508u, 0xe3a070adu);
     st32(0xffff050cu, 0xef000000u);
+    /* bridge mode: guest functions called by the host return here (hypercall A32_HC_RETURN) */
+    st32(A32_RETURN_TRAMPOLINE, 0xe3007000u | A32_HC_RETURN); /* movw r7, #A32_HC_RETURN */
+    st32(A32_RETURN_TRAMPOLINE + 4, 0xe3407a32u);             /* movt r7, #0x0a32 */
+    st32(A32_RETURN_TRAMPOLINE + 8, 0xef000000u);             /* svc 0 */
     mem_mprotect(KUSER_PAGE, GUEST_PAGE, PROT_READ | PROT_EXEC);
 }
 
@@ -177,10 +234,11 @@ int load_program(const load_args *a, a32_cpu *c)
     mem_set_brk(main_im.hi);
     setup_kuser_page();
 
-    if (mem_mmap(GUEST_STACK_TOP - GUEST_STACK_SIZE, GUEST_STACK_SIZE, PROT_READ | PROT_WRITE,
-                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) < 0)
-        return -1;
-    uint32_t sp = GUEST_STACK_TOP;
+    /* bridge mode: wherever the host process left room */
+    int64_t stk = mem_mmap(GUEST_STACK_TOP - GUEST_STACK_SIZE, GUEST_STACK_SIZE, PROT_READ | PROT_WRITE,
+                           MAP_PRIVATE | MAP_ANONYMOUS | (opt_bridge ? 0 : MAP_FIXED), -1, 0);
+    if (stk < 0) return -1;
+    uint32_t sp = (uint32_t)stk + GUEST_STACK_SIZE;
 #define PUSH_BYTES(p, n) (sp -= (n), memcpy(g2h(sp), (p), (n)), sp)
     /* strings */
     uint32_t execfn = PUSH_BYTES(a->path, strlen(a->path) + 1);

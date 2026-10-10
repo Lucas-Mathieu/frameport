@@ -39,6 +39,9 @@
 struct g_sigaction { uint32_t handler, flags, restorer; uint64_t mask; } __attribute__((packed, aligned(4)));
 
 static struct { uint32_t handler, flags, restorer; uint64_t mask; } acts[65];
+/* bridge mode: the host process's own fault handlers (ART's, debuggerd's), which get faults outside guest code */
+static struct sigaction host_fault_act[65];
+static int host_fault_saved[65];
 static pthread_mutex_t act_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static inline uint64_t sigbit(int sig) { return 1ull << (sig - 1); }
@@ -49,6 +52,8 @@ static int is_fault_sig(int sig) { return sig == SIGSEGV || sig == SIGBUS || sig
 /* jit.c: rebuilds the guest state for a fault in translated code (weak: interpreter-only builds) */
 __attribute__((weak)) int jit_fault_state(a32_thread *t, void *uc) { (void)t, (void)uc; return 0; }
 __attribute__((weak)) int jit_owns_pc(uint64_t pc) { (void)pc; return 0; }
+
+static void deliver_in_host(a32_thread *t);
 
 static void host_handler(int sig, siginfo_t *si, void *ucv)
 {
@@ -64,6 +69,20 @@ static void host_handler(int sig, siginfo_t *si, void *ucv)
             t->in_guest = 0;
             siglongjmp(t->fault_jmp, 1);
         }
+        if (opt_bridge && host_fault_saved[sig]) {
+            /* not ours: the host process's code faulted */
+            struct sigaction *o = &host_fault_act[sig];
+            if ((o->sa_flags & SA_SIGINFO) && o->sa_sigaction) {
+                o->sa_sigaction(sig, si, ucv);
+                return;
+            }
+            if (o->sa_handler != SIG_DFL && o->sa_handler != SIG_IGN) {
+                o->sa_handler(sig);
+                return;
+            }
+            sigaction(sig, o, NULL);
+            return; /* re-executes the faulting instruction with the host's disposition */
+        }
         /* a fault in the translator itself */
         static const char msg[] = "a32: internal fault\n";
         write(2, msg, sizeof msg - 1);
@@ -75,6 +94,42 @@ static void host_handler(int sig, siginfo_t *si, void *ucv)
     t->pending_info[sig] = *si;
     __atomic_or_fetch(&t->pending, sigbit(sig), __ATOMIC_SEQ_CST);
     __atomic_store_n(&t->cpu.interrupt, 1, __ATOMIC_SEQ_CST); /* leave translated code at the next block */
+    if (t->in_host && !t->in_proxy && signal_pending(t)) deliver_in_host(t);
+}
+
+/* Bridge mode: the thread runs host code (Java, or a JNI/GL call made by guest code) and would only see the signal
+ * once it returns to guest code, maybe never: a guest that stops the world with signals (Boehm GC: Unity's Mono)
+ * waits for the handler. So the guest handler runs right here, as the kernel would run it on an ARM device: on the
+ * thread's guest stack, below whatever the guest was doing, returning through the hypercall trampoline. */
+static void deliver_in_host(a32_thread *t)
+{
+    a32_cpu *c = &t->cpu;
+    a32_cpu saved;
+    memcpy(&saved, c, sizeof saved);
+    t->in_proxy = 1;
+    c->r[15] = A32_RETURN_TRAMPOLINE; /* what the signal frame records as the interrupted pc */
+    c->thumb = 0;
+    c->itstate = 0;
+    c->last_exit = 0;
+    deliver_signals(c);
+    if (c->r[15] != A32_RETURN_TRAMPOLINE) {
+        t->in_host = 0;
+        run_guest(c);
+        t->in_host = 1;
+    }
+    uint32_t irq = c->interrupt;
+    memcpy(c, &saved, sizeof saved);
+    c->interrupt = irq;
+    c->last_exit = 0;
+    t->in_proxy = 0;
+}
+
+int signal_restarts(const a32_thread *t)
+{
+    uint64_t ready = t->pending & ~t->sigmask;
+    if (!ready) return 1;
+    int sig = __builtin_ctzll(ready) + 1;
+    return acts[sig].handler <= 1 || (acts[sig].flags & G_SA_RESTART);
 }
 
 static void install_host(int sig)
@@ -87,10 +142,17 @@ static void install_host(int sig)
         sa.sa_flags = acts[sig].flags & (SA_NOCLDSTOP | SA_NOCLDWAIT);
     } else {
         sa.sa_sigaction = host_handler;
-        sa.sa_flags = SA_SIGINFO | SA_ONSTACK | (acts[sig].flags & (G_SA_RESTART | SA_NOCLDSTOP | SA_NOCLDWAIT));
+        /* never SA_RESTART: an interrupted host system call must come back so the guest's handler can run;
+         * do_syscall restarts it afterwards if the guest asked for that */
+        sa.sa_flags = SA_SIGINFO | SA_ONSTACK | (acts[sig].flags & (SA_NOCLDSTOP | SA_NOCLDWAIT));
         if (is_fault_sig(sig)) sa.sa_flags |= SA_NODEFER;
     }
     sigfillset(&sa.sa_mask);
+    if (opt_bridge && is_fault_sig(sig) && !host_fault_saved[sig]) {
+        sigaction(sig, &sa, &host_fault_act[sig]);
+        host_fault_saved[sig] = 1;
+        return;
+    }
     sigaction(sig, &sa, NULL);
 }
 
@@ -102,10 +164,11 @@ void signals_init(void)
     }
     int faults[] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE};
     for (unsigned k = 0; k < sizeof faults / sizeof *faults; k++) install_host(faults[k]);
-    /* the guest starts with the inherited mask; the host thread receives everything and queues it */
+    /* the guest starts with the inherited mask; the host thread receives everything and queues it (bridge mode:
+     * the host's mask stays, the host process decides which signals its threads take) */
     sigset_t cur, none;
     sigemptyset(&none);
-    pthread_sigmask(SIG_SETMASK, &none, &cur);
+    pthread_sigmask(opt_bridge ? SIG_BLOCK : SIG_SETMASK, &none, &cur);
     uint64_t m = 0;
     for (int s = 1; s <= 64; s++)
         if (sigismember(&cur, s)) m |= sigbit(s);
@@ -355,6 +418,8 @@ static _Noreturn void default_action(a32_cpu *c, int sig, int report)
         fprintf(stderr, "a32: guest killed by signal %d at pc 0x%08x\n", sig, c->r[15]);
         a32_dump_state(stderr, c);
     }
+    fflush(stderr);
+    if (opt_bridge) usleep(300000); /* the bridge forwards stderr to the system log from another thread */
     struct sigaction sa;
     memset(&sa, 0, sizeof sa);
     sa.sa_handler = SIG_DFL;
@@ -405,6 +470,12 @@ void deliver_fault(a32_cpu *c, int sig, const siginfo_t *si)
                 sig == SIGSEGV ? "segmentation fault" : sig == SIGBUS ? "bus error" : sig == SIGILL ? "illegal instruction" : "fault",
                 c->r[15], c->thumb ? "Thumb" : "ARM", (uint32_t)(uintptr_t)si->si_addr);
         a32_dump_state(stderr, c);
+        /* the top of the stack, for finding return addresses by hand */
+        for (uint32_t a = c->r[13] & ~3u, k = 0; k < 64 && mem_readable(a, 4); k += 8, a += 32) {
+            fprintf(stderr, "  %08x:", a);
+            for (uint32_t j = 0; j < 8 && mem_readable(a + 4 * j, 4); j++) fprintf(stderr, " %08x", ld32(a + 4 * j));
+            fprintf(stderr, "\n");
+        }
         default_action(c, sig, 0);
     }
     setup_frame(c, sig, si, (uint32_t)(uintptr_t)si->si_addr);

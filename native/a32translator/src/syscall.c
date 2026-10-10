@@ -1009,9 +1009,52 @@ static const char *syscall_name(uint32_t nr)
     return "?";
 }
 
+/* system calls that can block: a pending signal is delivered before they start, and they are restarted after the
+ * guest's handler when a signal interrupted them (the kernel's -ERESTARTSYS) */
+static int blocking_syscall(uint32_t nr)
+{
+    switch (nr) {
+    case G_NR_futex: case G_NR_futex_time64: case G_NR_nanosleep: case G_NR_clock_nanosleep:
+    case G_NR_clock_nanosleep_time64: case G_NR_poll: case G_NR_ppoll: case G_NR_ppoll_time64:
+    case G_NR__newselect: case G_NR_pselect6: case G_NR_pselect6_time64: case G_NR_epoll_wait:
+    case G_NR_epoll_pwait: case G_NR_epoll_pwait2: case G_NR_read: case G_NR_readv: case G_NR_wait4:
+    case G_NR_waitid: case G_NR_accept: case G_NR_accept4: case G_NR_recvfrom: case G_NR_recvmsg:
+        return 1;
+    }
+    return 0;
+}
+
+/* after -EINTR: Linux restarts these only with SA_RESTART; sleeps, polls and waits for signals never; timed futex
+ * waits always (restart_block) */
+static int restart_after_signal(a32_cpu *c, uint32_t nr)
+{
+    switch (nr) {
+    case G_NR_nanosleep: case G_NR_clock_nanosleep: case G_NR_clock_nanosleep_time64: case G_NR_poll:
+    case G_NR_ppoll: case G_NR_ppoll_time64: case G_NR__newselect: case G_NR_pselect6: case G_NR_pselect6_time64:
+    case G_NR_epoll_wait: case G_NR_epoll_pwait: case G_NR_epoll_pwait2:
+        return 0;
+    case G_NR_futex: case G_NR_futex_time64: {
+        uint32_t op = c->r[1] & 127;
+        if ((op == 0 || op == 9) && c->r[3]) return 1; /* FUTEX_WAIT(_BITSET) with a timeout */
+        break;
+    }
+    }
+    return signal_restarts(g_self);
+}
+
+__attribute__((weak)) void a32_hypercall(a32_cpu *c, uint32_t n)
+{
+    (void)n;
+    c->r[0] = (uint32_t)-ENOSYS;
+}
+
 void do_syscall(a32_cpu *c)
 {
     uint32_t nr = c->r[7];
+    if ((nr & 0xffff0000u) == A32_HYPERCALL && !c->svc_imm) {
+        a32_hypercall(c, nr & 0xffff);
+        return;
+    }
     if (c->svc_imm != 0 && !c->thumb) {
         /* OABI: number in the SVC immediate (0x900000 + nr) */
         nr = c->svc_imm & 0xfffff;
@@ -1019,7 +1062,19 @@ void do_syscall(a32_cpu *c)
     if (opt_strace)
         fprintf(stderr, "[%d] %s(0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x)", (int)syscall(__NR_gettid), syscall_name(nr),
                 c->r[0], c->r[1], c->r[2], c->r[3], c->r[4], c->r[5]);
+    int blocking = blocking_syscall(nr);
+    if (blocking && signal_pending(g_self)) {
+        /* deliver first, then make the call (as if the signal came just before it) */
+        if (opt_strace) fprintf(stderr, " = (signal first)\n");
+        c->r[15] -= c->thumb ? 2 : 4;
+        return;
+    }
     long r = sys(c, nr);
+    if (r == -EINTR && blocking && signal_pending(g_self) && restart_after_signal(c, nr)) {
+        if (opt_strace) fprintf(stderr, " = (interrupted, restarted after the handler)\n");
+        c->r[15] -= c->thumb ? 2 : 4;
+        return;
+    }
     if (nr == G_NR_rt_sigreturn || nr == G_NR_sigreturn) {
         if (opt_strace) fprintf(stderr, " = (sigreturn to 0x%x)\n", c->r[15]);
         return;

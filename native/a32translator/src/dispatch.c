@@ -4,11 +4,12 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "interp.h"
 #include "runtime.h"
 #include "signals.h"
 
-int opt_interp, opt_strace, opt_trace, opt_verbose;
+int opt_interp, opt_strace, opt_trace, opt_verbose, opt_bridge;
 
 _Noreturn void fatal(const char *fmt, ...)
 {
@@ -18,6 +19,8 @@ _Noreturn void fatal(const char *fmt, ...)
     vfprintf(stderr, fmt, ap);
     fprintf(stderr, "\n");
     va_end(ap);
+    fflush(stderr);
+    if (opt_bridge) usleep(300000); /* see signals.c default_action */
     exit(127);
 }
 
@@ -117,7 +120,7 @@ static int handle_exit(a32_cpu *c, int r, const insn_t *in)
 static void interp_loop(a32_cpu *c, a32_thread *t)
 {
     insn_t in;
-    for (;;) {
+    while (!t->stop) {
         if (signal_pending(t)) deliver_signals(c);
         uint32_t pc = c->r[15];
         if (pc >= 0xffff0f60u && kuser_helper(c)) continue;
@@ -137,6 +140,9 @@ static void interp_loop(a32_cpu *c, a32_thread *t)
 int run_guest(a32_cpu *c)
 {
     a32_thread *t = g_self;
+    /* the fault recovery point of an outer run (this one is nested inside a hypercall) */
+    sigjmp_buf outer;
+    memcpy(&outer, &t->fault_jmp, sizeof outer);
     if (sigsetjmp(t->fault_jmp, 1)) {
         /* a guest memory access faulted; the faulting instruction has not completed */
         t->in_guest = 0;
@@ -146,14 +152,17 @@ int run_guest(a32_cpu *c)
         deliver_fault(c, t->fault_sig, &si);
     }
     if (!opt_interp) {
-        for (;;) {
+        while (!t->stop) {
             int r = jit_run(c);
             if (r < 0) break; /* no JIT: fall back to the interpreter */
             handle_exit(c, r, NULL);
+            if (t->stop) break;
             if (signal_pending(t)) deliver_signals(c);
         }
-        opt_interp = 1;
+        if (!t->stop) opt_interp = 1;
     }
-    interp_loop(c, t);
+    if (!t->stop) interp_loop(c, t);
+    t->stop = 0;
+    memcpy(&t->fault_jmp, &outer, sizeof outer);
     return 0;
 }
