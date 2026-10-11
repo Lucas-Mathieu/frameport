@@ -39,7 +39,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Patch Oculus detection for Unity](#patch_oculus_unity) | `patch_oculus_unity` | Patches from OVRPort | default |
 | [Patch Oculus detection for Unreal](#patch_oculus_unreal) | `patch_oculus_unreal` | Patches from OVRPort | default |
 | [Remove localized app names](#patch_remove_localized_names) | `patch_remove_localized_names` | Patches from OVRPort | default |
-| [Remove Unreal's ForceQuit](#patch_remove_unreal_force_quit) | `patch_remove_unreal_force_quit` | Patches from OVRPort | 29 |
+| [Remove Unreal's ForceQuit](#patch_remove_unreal_force_quit) | `patch_remove_unreal_force_quit` | Patches from OVRPort | 30 |
 | [Remove uses-library](#patch_remove_uses_library) | `patch_remove_uses_library` | Patches from OVRPort | default |
 | [Remove VrApi library](#patch_remove_vrapi) | `patch_remove_vrapi` | Patches from OVRPort |  |
 | [Replace application label and icon](#patch_replace_icon_label) | `patch_replace_icon_label` | Patches from OVRPort | default |
@@ -113,7 +113,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [GL shim: high-precision vertex shaders](#adapter-gl_highp_markers) | `adapter.gl_highp_markers` | Game settings | 1 |
 | [GL shim: integer vertex inputs](#adapter-gl_int_attribs) | `adapter.gl_int_attribs` | Game settings | 1 |
 | [Flat panel diagnostics (log)](#adapter-gl_mv_debug) | `adapter.gl_mv_debug` | Game settings |  |
-| [Fix freezes when controllers vibrate](#adapter-haptic_fix) | `adapter.haptic_fix` | Game settings | 39 |
+| [Fix freezes when controllers vibrate](#adapter-haptic_fix) | `adapter.haptic_fix` | Game settings | 40 |
 | [Vibration strength](#adapter-haptic_scale) | `adapter.haptic_scale` | Game settings |  |
 | [Turn off space warp](#adapter-hide_space_warp) | `adapter.hide_space_warp` | Game settings | 4 |
 | [Controller input diagnostics (log)](#adapter-input_diag) | `adapter.input_diag` | Game settings |  |
@@ -406,7 +406,7 @@ Stops some Unreal games from closing themselves right after starting.
 - `patch_remove_unreal_force_quit`
 - **Changes:** Changes the APK (during the OVRPort conversion).
 - **Offered (off):** Built as the alternate APK for Unreal games (use it if the game quits itself).
-- **Catalog games (29):** Asgard's Wrath 2, BARTENDER VR SIMULATOR, Carve Snowboarding, Creed, Espire 1: VR Operative (Quest Edition), Espire 2, ExploreVR, In Death: Unchained and 21 more.
+- **Catalog games (30):** Asgard's Wrath 2, BARTENDER VR SIMULATOR, Carve Snowboarding, Creed, Espire 1: VR Operative (Quest Edition), Espire 2, ExploreVR, In Death: Unchained and 22 more.
 - **Suggested by launch-test signatures:**
   - `force-quit` (error): The game quit itself right after starting.
 - **Source:** [patches/overport.py](../src/frameport/patches/overport.py)
@@ -1424,7 +1424,7 @@ For games that freeze the Frame when a controller vibrates (for example Lucky's 
 - **Options:**
   - Value: int, default `0`.
   - Game settings → Controllers → "Fix freezes when controllers vibrate" (advanced).
-- **Catalog games (39):** AgeOfJoy, Ancient_Dungeon, Audica, BattleSisters, Caves, Clockwork, cubism, Deep Cuts and 31 more.
+- **Catalog games (40):** AgeOfJoy, Ancient_Dungeon, Audica, BattleSisters, Caves, Clockwork, cubism, Deep Cuts and 32 more.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > Routes OVRPlugin through FramePort's extension shim, which turns Meta's amplitude-envelope vibrations into plain ones: OVRPort's loader reads their nanosecond duration as seconds and allocates gigabytes, freezing the Frame when the game vibrates a controller (for example Lucky's Tale's save slots, GitHub #9). Needs a rebuild.
