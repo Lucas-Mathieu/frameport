@@ -213,6 +213,7 @@ code, kbd, pre { font-family: var(--font-mono); }
 .click-ring { position: fixed; z-index: 95; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; pointer-events: none;
   border: 1px solid var(--secondary); opacity: 0; animation: click-ring .55s var(--ease-out) both; }
 .click-ring.o { border-color: var(--accent); }
+@media (hover: none) { .click-ring { display: none; } }
 @keyframes click-ring { 0% { opacity: .45; transform: scale(1); } 100% { opacity: 0; transform: scale(2.6); } }
 
 /* headings: words rise in, the pointer lights them in the portal's colours */

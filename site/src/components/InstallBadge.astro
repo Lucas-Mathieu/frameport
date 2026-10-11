@@ -26,7 +26,8 @@ const logo = readFileSync(join(process.cwd(), '..', 'src/frameport/ui/icons/logo
       b.style.setProperty('--mx', `${((e.clientX - r.left) / r.width) * 100}%`);
       b.style.setProperty('--my', `${((e.clientY - r.top) / r.height) * 100}%`);
     });
-    b.addEventListener('pointerdown', () => { b.classList.remove('pressed'); void b.offsetWidth; b.classList.add('pressed'); });
+    // the press ripple is for the mouse: on a touch screen it fired on every scroll that started on the badge
+    b.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; b.classList.remove('pressed'); void b.offsetWidth; b.classList.add('pressed'); });
   });
 </script>
 

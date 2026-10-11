@@ -25,10 +25,12 @@ function cursorLight() {
   document.addEventListener('pointerleave', () => light.classList.remove('on'));
 }
 
-/** Clicking empty space: the app's Play ripple, a blue ring then an orange one. */
+/** Clicking empty space: the app's Play ripple, a blue ring then an orange one. Mouse (and pen) only: on a touch
+ * screen every tap or scroll start would draw it. */
 function clickRipples() {
   if (reduce) return;
   addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') return;
     const t = e.target as Element;
     if (t.closest('a, button, input, select, textarea, label, summary, [data-mock], [data-crossing], canvas, [role="button"], .row, [tabindex]')) return;
     for (const [i, cls] of ['b', 'o'].entries()) {
@@ -129,17 +131,35 @@ export function countUp(root: ParentNode = document) {
   root.querySelectorAll<HTMLElement>('[data-count]').forEach((el) => io.observe(el));
 }
 
-/** Scrolling away from the top flies the hero toward its portal; the hero's own scene leans in. */
+/** Scrolling away flies the hero toward its portal; the hero's own scene leans in (--sp, 0..1, from the page's
+ * scroll over the hero's height). Stacked (phones, narrow windows) the scene sits below the text: measured that way it
+ * was already blurred and enlarged when it came into view and unreadable in the middle of the screen, so there it
+ * follows its own position: 0 until its middle rises above 40 % of the screen's height, 1 once it has left at the top. */
 function heroScroll() {
   const hero = document.querySelector<HTMLElement>('.hero');
-  if (!hero || reduce) return;
+  const copy = hero?.querySelector<HTMLElement>('.copy');
+  const scene = hero?.querySelector<HTMLElement>('.scene');
+  if (!hero || !copy || !scene || reduce) return;
+  const stacked = matchMedia('(max-width: 900px)'); // Hero.astro's one-column breakpoint
   let raf = 0;
   const update = () => {
     raf = 0;
-    const p = Math.min(1, Math.max(0, scrollY / Math.max(1, hero.offsetHeight)));
-    hero.style.setProperty('--sp', p.toFixed(3));
+    const page = Math.min(1, Math.max(0, scrollY / Math.max(1, hero.offsetHeight)));
+    copy.style.setProperty('--sp', page.toFixed(3));
+    let p = page;
+    if (stacked.matches) {
+      // the layout box, not the transformed one (the transform is what --sp drives)
+      const parent = (scene.offsetParent as HTMLElement | null) ?? document.body;
+      const centre = parent.getBoundingClientRect().top + scene.offsetTop + scene.offsetHeight / 2;
+      // counting starts a little above the middle of the screen (fully sharp around the middle), or where the scene
+      // sits at the top of the page if that's higher, so it never starts out blurred
+      const start = Math.min(innerHeight * 0.4, centre + scrollY);
+      p = Math.min(1, Math.max(0, (start - centre) / (start + scene.offsetHeight / 2)));
+    }
+    scene.style.setProperty('--sp', p.toFixed(3));
   };
   addEventListener('scroll', () => { if (!raf) raf = requestAnimationFrame(update); }, { passive: true });
+  addEventListener('resize', update);
   update();
 }
 
