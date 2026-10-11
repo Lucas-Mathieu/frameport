@@ -198,6 +198,20 @@ signatures:
     diagnosis: Meta's avatar library stopped the game because it needs Meta's Horizon app. A do-nothing stand-in lets the game run without Meta avatars (for example BlazeRush).
     suggest: [frame.avatar_stub]
     supersedes: [native-crash, java-crash]
+  - id: vrapi-fov-before-tracking
+    pattern: 'OVRPortVrApi: FOV properties: [0-9.]+ x [0-9.]+ degrees \(default, nothing known before tracking\)'
+    severity: info
+    diagnosis: The game read the field of view right after starting VrApi, before the Frame's runtime could tell it, and
+      got 90x90 degrees (a narrow, square view if it keeps that value, for example BlazeRush). The VrApi bridge saves the
+      headset's real FOV for the next start (framebridge-vrapi-fov.txt in the game's files); start the game once more.
+    suggest: []
+  - id: gl-integer-attribs
+    pattern: 'GLShim: int attribs: program \d+ location \d+: floats -> glVertexAttribIPointer'
+    severity: info
+    diagnosis: The game feeds integer shader inputs (for example bone indices) through glVertexAttribPointer; the GL shim
+      sets them up as integers (gl_int_attribs), else the Frame's GL driver converts them to floats and skinned models
+      vanish (for example BlazeRush's cars and controllers).
+    suggest: []
   - id: vrapi-symbol-missing
     pattern: 'cannot locate symbol "vrapi_\w+"'
     severity: fatal

@@ -41,6 +41,8 @@ class CatalogEntry:
     device: list[str] = field(default_factory=list)  # device.* toggles, e.g. device.text_input_window
     adapter: dict = field(default_factory=dict)
     device_files: dict = field(default_factory=dict)
+    # device.config_sync: settings file (relative to files/) -> {setting: w | h | expression of the eye-buffer size}
+    config_sync: dict = field(default_factory=dict)
     lepton_env: dict = field(default_factory=dict)
     foveation: str = ""  # device.foveation: fixed / off (Valve's eye-tracked foveation layer)
     pcvr_alternative: str | None = None
@@ -350,6 +352,7 @@ def entry_from_library(g: dict, status: str | None = None, notes: str | None = N
         device=[p for p in r.patches if p in TOGGLED_DEVICE],
         adapter={p.split(".", 1)[1]: v.get("value") for p, v in r.patches.items() if p.startswith("adapter.")},
         device_files=r.params("device.files").get("files", {}),
+        config_sync=r.params("device.config_sync").get("files", {}),
         foveation=r.params("device.foveation").get("mode") or "")
 
 

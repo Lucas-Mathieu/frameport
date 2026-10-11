@@ -806,6 +806,21 @@ table comes from dlsym on that handle; also first DT_NEEDED for its direct gl*/e
 built single-view twin (view 0, uniforms copied per draw); eglMakeCurrent resets the per-thread cache. Host-tested only
 (rewriter on all 19 Doom3Quest shaders + glmv.c against a stand-in GL, `tests/test_gl_multiview_fbo.py`); the host's
 Mesa 23.2 llvmpipe has no OVR_multiview. Headset-verified by Xandrix1987 (2026-10-09: HUD/PDA shown, no fps drop) -> in the Doom3Quest catalog recipe.
+**BlazeRush (GitHub #57, Klownicle's verified guide, 2026-10-10; FramePort's version headless-tested only):**
+`frame.blazerush` (1.0.349 only: exec-segment SHA + every word checked, offsets from PT_LOAD) NOPs the avatar-readiness
+wait (0x4b2dbc), RETs the avatar renderer (0x4b2adc), renames `cache/shader_cache` → `cache/br_shader_v1`. GL shim
+(now also exports glShaderSource/glLinkProgram/glProgramBinary/glDeleteProgram/glDraw*: pass-through unless a setting
+is on) `gl_int_attribs` (integer inputs fed via glVertexAttribPointer re-set with glVertexAttribIPointer per draw,
+reflection cached per EGL context + program, dropped on link/binary/delete) and `gl_highp_markers` (vertex shaders with
+every '|' marker: mediump→highp except on in/out/uniform lines); host test `tests/test_blazerush.py` with a stand-in
+GL. FOV: the game reads VrApi props 7/8 right after vrapi_Initialize (no session; the Frame has no
+XR_EPIC_view_configuration_fov) → the bridge saves the live FOV (also located before tracking, headless: 118.87×120.04
+on the dev Frame) in `files/framebridge-vrapi-fov.txt` and answers with it at the next start (log `FOV properties: …
+(saved by an earlier session)`). `device.config_sync` (catalog field `config_sync`, agent v78): user_config.xml
+r_3dwidth/height, r_width/height from the runtime eye size (FrameBridge logs `runtime recommended eye size`) × scale,
+written at finalize, set_settings and by launch.sh before Lepton starts (`_config_sync`). Headless runs at scale 1.7
+end in `zink: DEVICE LOST` right after the bridge's 30 s no-tracking deadline tears the session down (gpu fault at the
+teardown; not at scale 1.0): a headless-only artifact, the headset never hits that deadline.
 **Session triage (agent v70, 2026-10-09):** launch tests never reach FOCUSED, so real play sessions are triaged
 too. list_installed gives each game `last_play` {start, end, test} from `<anchor>/plays.log` (launch tests write a
 `test <unix>` line first → test sessions are only marked); `session_log` returns the newest session's launch.log

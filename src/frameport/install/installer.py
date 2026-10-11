@@ -113,11 +113,24 @@ def install(frame: Frame, plan: InstallPlan, reporter: Reporter) -> dict:
         apk_name=plan.apk.name, settings=ctx.adapter_settings,
         files={k: v.decode() if isinstance(v, bytes) else v for k, v in ctx.files.items()}, env=ctx.env,
         obb_manifest=manifest or None, flatscreen=show_window(ctx, _flatscreen(plan.package)),
+        config_sync=ctx.config_sync or None,
         recipe={"patches": sorted(plan.recipe.patches), "source": plan.recipe.source, "alt": plan.recipe.use_alt},
     )
     reporter.log(f"installed at {result['base']} (Steam shortcut id {result['appid']})")
     log_controller_models(result.get("controller_models"), reporter)
+    log_config_sync(result.get("config_sync"), reporter)
     return result
+
+
+def log_config_sync(report: dict | None, reporter: Reporter) -> None:
+    """What the agent did to the game's saved settings (device.config_sync)."""
+    if not report:
+        return
+    if report.get("changed"):
+        reporter.log("game settings kept in step with the eye buffers: " + ", ".join(
+            f"{k} {old} -> {new}" for k, (old, new) in sorted(report["changed"].items())))
+    elif report.get("skipped"):
+        reporter.log(f"game settings not changed: {report['skipped']}")
 
 
 def log_controller_models(models: dict | None, reporter: Reporter) -> None:

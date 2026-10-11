@@ -221,16 +221,29 @@ SETTINGS = [
     ("gl_hide_multiview", "int", 1, "GL shim: hide multiview",
      "GL shim only: hide GL_OVR_multiview so all passes use single-view shaders. For GLES games whose multiview "
      "shaders fail on single-view render targets (for example Path of the Warrior)."),
+    ("gl_int_attribs", "int", 0, "GL shim: integer vertex inputs",
+     "GL shim (frame.gl_shim): shader inputs declared as integers (int/uint, ivecN/uvecN) whose vertex data the game "
+     "set up with glVertexAttribPointer (as floats) are set up again with glVertexAttribIPointer before each draw. "
+     "Qualcomm's Quest driver read the raw integers anyway; the Frame's GL driver converts them to floats, so skinned "
+     "models using bone indices vanish (for example BlazeRush's car bodies and controllers; Klownicle's guide, GitHub "
+     "#57). Comes from a game's recipe."),
+    ("gl_highp_markers", "str", "", "GL shim: high-precision vertex shaders",
+     "GL shim (frame.gl_shim): vertex shaders whose source contains every '|'-separated text compute in highp: "
+     "whole-word mediump becomes highp on every line without the words in, out or uniform (the shader's interface "
+     "keeps its precision). For effects that draw streaks or flashes from mediump rounding on the Frame (for example "
+     "BlazeRush's particles: in uvec2 inBoneIndices;|uniform InstanceData|void main()). Pair it with a new shader "
+     "cache name if the game caches compiled programs. Comes from a game's recipe."),
 ]
 
 
 # settings that need a new build, not only new settings files: the Vulkan shim learned vk_shader_fix in 0.6.4 and
 # vk_query_slots and vk_spec_fixes in 0.10.0. haptic_fix stays at 2 although the shim also converts PCM vibrations
 # since 0.12.1: no game is known to need that, and a bump would mark every OVRPlugin game's build outdated
-REVISIONS = {"vk_shader_fix": 2, "vk_query_slots": 3, "vk_spec_fixes": 2, "haptic_fix": 2, "pose_consistency": 2}
+REVISIONS = {"vk_shader_fix": 2, "vk_query_slots": 3, "vk_spec_fixes": 2, "haptic_fix": 2, "pose_consistency": 2,
+             "gl_int_attribs": 2, "gl_highp_markers": 2}  # the GL shim learned these in 1.0.1
 
 # Settings a game's recipe sets that the Game settings dialog doesn't show (engine-specific, not user choices)
-HIDDEN = {"surface_native"}
+HIDDEN = {"surface_native", "gl_int_attribs"}
 
 # How the "Game settings" dialog shows each setting to non-technical users: group, level (common settings are always
 # shown; advanced ones only under "Show advanced settings"), a plain label and one-line help, the control, and the
@@ -489,6 +502,8 @@ class AdapterSetting(Patch):
             "swapchain_fix": ap.is_gles,
             "gl_hide_multiview": lambda a: a.direct_vrapi and ap.is_gles(a),
             "gl_hide_msrtt": ap.is_gles,
+            "gl_int_attribs": ap.is_gles,
+            "gl_highp_markers": ap.is_gles,
             "gl_mv_debug": lambda a: bool((a.extra or {}).get("gl_multiview_libs")) and ap.is_gles(a),
             "ovrp_begin_gate": lambda a: a.engine == "Unity" and "libOVRPlugin.so" in a.libs,
             "ovrp_hold_physics": lambda a: a.engine == "Unity" and "libOVRPlugin.so" in a.libs,
@@ -555,6 +570,31 @@ class DeviceFiles(Patch):
     def install(self, ctx: InstallContext) -> None:
         for rel, content in (ctx.params.get("files") or {}).items():
             ctx.files[rel] = content.encode() if isinstance(content, str) else content
+
+
+class ConfigSync(Patch):
+    id = "device.config_sync"
+    title = "Keep the game's saved resolution in step"
+    description = ("Some games save their render resolution in a settings file and load it after creating the "
+                   "headset's eye buffers; after a resolution scale change the saved size no longer matches and the "
+                   "picture is displaced or stretched, with black borders (for example BlazeRush's user_config.xml). "
+                   "FramePort writes the values its recipe names into the game's file while the game isn't running "
+                   "(after an install and after a Game settings change), from the Frame's own eye-buffer size times "
+                   "the resolution scale: w and h = the eye buffer's width and height, for example h*16/9. Only "
+                   "existing entries change; the previous file is kept as <file>.frameport-backup. The size is "
+                   "learned from the game's last start, so a file the game wrote before is corrected from the next "
+                   "install or settings change on.")
+    category = "device"
+    needs_vr = True
+    stage = "install"
+    params = [Param("files", "text", {}, "path relative to files/ -> {setting name: w | h | expression}")]
+
+    def install(self, ctx: InstallContext) -> None:
+        rules = {}
+        for rel, values in (ctx.params.get("files") or {}).items():
+            if isinstance(rel, str) and isinstance(values, dict) and values:
+                rules[rel] = {str(k): str(v) for k, v in values.items()}
+        ctx.config_sync.update(rules)
 
 
 class LeptonEnv(Patch):
@@ -689,6 +729,7 @@ class TextInputWindow(Patch):
 for _spec in SETTINGS:
     register(AdapterSetting(*_spec))
 register(DeviceFiles)
+register(ConfigSync)
 register(LeptonEnv)
 register(HideNavBar)
 register(SteamGamepad)

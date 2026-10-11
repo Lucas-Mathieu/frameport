@@ -91,6 +91,8 @@ SUMMARIES = {
     "frame.avatar_stub": "Lets games start that would stop at Meta's avatars (for example BlazeRush). No Meta "
                          "avatars.",
     "frame.vrapi_bridge": "Lets games built on Meta's oldest VR interface run on the Frame.",
+    "frame.blazerush": "Makes BlazeRush's menus and controllers work without Meta's avatars, and lets its shader "
+                       "fixes take effect.",
     "frame.gl_shim": "Corrects graphics code the Frame's drivers reject (black screen with sound).",
     "frame.metaxr_telemetry": "Skips a Quest-only reporting step in Meta's audio library that crashes some games.",
     "frame.oculusos": "Provides stand-ins for Quest system calls some games make at start.",
@@ -107,6 +109,8 @@ SUMMARIES = {
     # Files and environment on the Frame
     "device.files": "Puts settings files next to the game on the Frame, for example to turn off an unsupported "
                     "effect.",
+    "device.config_sync": "Keeps the resolution the game saves in step with the headset's picture size (else the "
+                          "picture is shifted, with black borders, after a sharpness change).",
     "device.hide_navbar": "Hides Android's back, home and recents buttons, which cover the app's own buttons.",
     "device.text_input_window": "Lets typing reach this app from Steam's on-screen keyboard or your PC's keyboard. VR "
                                 "keeps working.",
@@ -132,5 +136,9 @@ SUMMARIES = {
     "pcvr.steamvr_tuning": "Picks a refresh rate and motion smoothing that suit the game on this PC.",
     "pcvr.proton_env": "Extra settings for Proton (for testing).",
     # Game settings the Game settings dialog doesn't show (the others use their help line there)
+    "adapter.gl_int_attribs": "Shows models whose shapes come from bone data the Frame's graphics driver misreads "
+                              "(for example BlazeRush's cars). Comes from a game's recipe.",
+    "adapter.gl_highp_markers": "Computes some of the game's effects more precisely, so they don't draw streaks or "
+                                "flashes (for example BlazeRush's particles). Comes from a game's recipe.",
     "adapter.vk_shader_fix": "Corrects specific shaders that hang the game on the Frame. Comes from a game's recipe.",
 }
