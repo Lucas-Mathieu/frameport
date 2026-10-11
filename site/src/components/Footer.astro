@@ -3,8 +3,10 @@ import Wordmark from './Wordmark.astro';
 import Contributors from './Contributors.astro';
 import { REPO, REPORT_PROBLEM, url } from '../data/site';
 
-interface Props { credits?: boolean }
-const { credits = true } = Astro.props;
+// "all" = the "Built on" section with the projects and the contributors (the homepage), "contributors" = only the
+// contributors (What's new), none by default (docs, download, privacy, 404 and the other utility pages)
+interface Props { credits?: 'all' | 'contributors' | false }
+const { credits = false } = Astro.props;
 // each project named links to its own page (Lepton has none of its own: it links to Waydroid, which it is built on)
 type Part = [name: string, href?: string];
 const builtOn: { parts: Part[]; what: string }[] = [
@@ -23,7 +25,12 @@ const builtOn: { parts: Part[]; what: string }[] = [
 /** "a", "a and b", "a, b and c" */
 const joiner = (i: number, n: number) => (i === 0 ? '' : i === n - 1 ? ' and ' : ', ');
 ---
-{credits && (
+{credits === 'contributors' && (
+  <section class="section credits" id="contributors">
+    <div class="wrap"><Contributors /></div>
+  </section>
+)}
+{credits === 'all' && (
   <section class="section credits" id="credits">
     <div class="wrap">
       <div class="head reveal">
