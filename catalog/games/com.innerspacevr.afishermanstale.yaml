@@ -1,6 +1,6 @@
 package: com.innerspacevr.afishermanstale
 title: Fisherman
-status: works
+status: issues
 notes: Loading screens have corruption, but everything works otherwise.
 tested_version: '1.087'
 engine: Unreal
