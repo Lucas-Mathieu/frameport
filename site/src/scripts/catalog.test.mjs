@@ -32,3 +32,12 @@ test('rows escape what comes from GitHub', () => {
   assert.ok(html.includes('&#60;img'));
   assert.ok(html.includes('data-engine="&#34;x"'));
 });
+
+test('recipe chips link to the patch reference when a link is given', () => {
+  const g = toGame({ title: 'A', status: 'works', frame: ['frame.x', 'frame.unknown'] });
+  const link = (id) => (id === 'frame.x' ? '/docs/patches/#frame-x' : null);
+  const html = rowHtml(g, false, link);
+  assert.match(html, /<a href="\/docs\/patches\/#frame-x" [^>]*><code>frame\.x<\/code><\/a>/);
+  assert.match(html, /<code>frame\.unknown<\/code>/);
+  assert.doesNotMatch(rowHtml(g), /<a /);
+});

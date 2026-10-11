@@ -3,6 +3,7 @@
 // date in the browser from GitHub's main branch (scripts/catalog-live.ts), the way the app follows the catalog.
 import { loadSnapshot } from '../data/catalog';
 import { STATUS, counts, engines, latestCheck, rowsHtml, sortGames, type Game, type Status } from '../scripts/catalog';
+import { patchHref } from '../scripts/patchlinks';
 import { SHARE_CONFIG, REPORT_PROBLEM, blob } from '../data/site';
 
 const snapshot = loadSnapshot();
@@ -58,7 +59,7 @@ const latest = latestCheck(games);
           <span role="columnheader">Status</span>
           <span role="columnheader" class="c-date">Checked</span>
         </div>
-        <ul class="rows" role="rowgroup" data-rows set:html={rowsHtml(games)} />
+        <ul class="rows" role="rowgroup" data-rows set:html={rowsHtml(games, patchHref)} />
         <p class="empty" data-empty hidden>No tested game matches. It may still work: FramePort suggests patches.</p>
       </div>
       <div class="board-foot">
@@ -79,6 +80,7 @@ const latest = latestCheck(games);
 
 <script>
   import { counts, engines, latestCheck, rowsHtml, sortGames, type Snapshot } from '../scripts/catalog';
+  import { patchHref } from '../scripts/patchlinks';
   import { refreshCatalog } from '../scripts/catalog-live';
 
   const board = document.querySelector<HTMLElement>('[data-board]');
@@ -151,7 +153,7 @@ const latest = latestCheck(games);
       src.classList.add('live');
       if (!live.changed) return;
       const games = sortGames(live.games);
-      list.innerHTML = rowsHtml(games);
+      list.innerHTML = rowsHtml(games, patchHref);
       const n = counts(games);
       for (const s of ['works', 'issues', 'unsupported'] as const) set(`[data-n="${s}"]`, String(n[s]));
       set('[data-total]', String(games.length));
@@ -221,6 +223,9 @@ const latest = latestCheck(games);
   .rows :global(.pt) { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .rows :global(.pt span) { font: 600 10.5px/1 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--text-2); margin-right: 4px; }
   .rows :global(.pt code) { font-size: 12px; padding: 3px 8px; border-radius: 6px; background: rgba(58, 168, 255, .1); color: var(--secondary); }
+  .rows :global(.pt a) { text-decoration: none; border-radius: 6px; }
+  .rows :global(.pt a code) { transition: background 160ms; }
+  .rows :global(.pt a:hover code), .rows :global(.pt a:focus-visible code) { background: rgba(58, 168, 255, .22); text-decoration: underline; }
   .rows :global(.fx) { font: 400 12px/1.4 var(--font-mono); color: var(--text-3); }
   @keyframes open { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
   .rows :global(.row[hidden]) { display: none; }

@@ -4,6 +4,7 @@
 import Glyph from './Glyph.astro';
 import PcvrHow from './PcvrHow.astro';
 import { patchLabel, stageDetails, type LogGame } from '../scripts/logdetails';
+import { PATCH_DOC, patchHref, patchInfo } from '../scripts/patchlinks';
 
 interface Props { example: LogGame; others: LogGame[] }
 const { example, others } = Astro.props;
@@ -79,7 +80,10 @@ const frame: Stage[] = [
     <p class="foot muted reveal">
       <span class="recipe-box" aria-live="polite">
         <span class="rb-k">Recipe</span>
-        <span class="rb-p" data-lg-patches>{example.patches.length ? example.patches.map((x) => <code>{patchLabel(x)}</code>) : <code>Default patches</code>}</span>
+        <span class="rb-p" data-lg-patches>{example.patches.length
+          ? example.patches.map((x) => { const href = patchHref(x); return href
+            ? <a class="chip" href={href} title={patchInfo(x)!.title}><code>{patchLabel(x)}</code></a> : <code>{patchLabel(x)}</code>; })
+          : <a class="chip" href={PATCH_DOC} title="Every patch FramePort knows"><code>Default patches</code></a>}</span>
         <span class="rb-n" data-lg-note>{example.note}</span>
       </span>
       <span class="foot-t"><span data-lg="foot">{example.title}</span>'s recipe from the catalog. Untested games get suggested patches.</span>
@@ -93,6 +97,7 @@ const frame: Stage[] = [
 
 <script>
   import { patchLabel, stageDetails, type LogGame } from '../scripts/logdetails';
+  import { PATCH_DOC, patchHref, patchInfo } from '../scripts/patchlinks';
   // another tested game, its real engine, VR API and recipe; the log plays again
   const log = document.querySelector<HTMLElement>('[data-log]');
   const games = JSON.parse(document.querySelector('[data-log-games]')?.textContent || '[]') as
@@ -112,7 +117,15 @@ const frame: Stage[] = [
       chips.replaceChildren(...(g.patches.length ? g.patches : ['Default patches']).map((x) => {
         const c = document.createElement('code');
         c.textContent = g.patches.length ? patchLabel(x) : x;
-        return c;
+        // each chip links to its entry in the patch reference (the default chip to the whole reference)
+        const href = g.patches.length ? patchHref(x) : PATCH_DOC;
+        if (!href) return c;
+        const a = document.createElement('a');
+        a.className = 'chip';
+        a.href = href;
+        a.title = g.patches.length ? patchInfo(x)!.title : 'Every patch FramePort knows';
+        a.append(c);
+        return a;
       }));
     }
     const note = document.querySelector('[data-lg-note]');
@@ -178,7 +191,12 @@ const frame: Stage[] = [
     padding: 14px 16px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border); }
   .rb-k { font: 600 11px/1 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
   .rb-p { display: flex; flex-wrap: wrap; gap: 6px; }
-  .rb-p code { font-size: 12px; padding: 3px 8px; border-radius: 6px; background: rgba(58, 168, 255, .1); color: var(--secondary);
+  /* :global: "Try another game" builds the chips in the browser, without Astro's scoping attribute */
+  /* chips are links without the running-text underline (global.css .foot a): the chip's fill brightens instead */
+  .foot .rb-p :global(a.chip), .foot .rb-p :global(a.chip:hover) { text-decoration: none; background: none; padding: 0; border-radius: 6px; }
+  .rb-p :global(a code) { transition: background 160ms; }
+  .rb-p :global(a:hover code), .rb-p :global(a:focus-visible code) { background: rgba(58, 168, 255, .22); text-decoration: underline; }
+  .rb-p :global(code) { font-size: 12px; padding: 3px 8px; border-radius: 6px; background: rgba(58, 168, 255, .1); color: var(--secondary);
     animation: chip .35s var(--ease-out) both; }
   .rb-n { grid-column: 2; color: var(--text-2); font-size: 14px; }
   .rb-n:empty { display: none; }

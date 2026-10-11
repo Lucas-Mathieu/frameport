@@ -71,13 +71,21 @@ export function sortGames(games: Game[]): Game[] {
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-export function rowHtml(g: Game, showPackage = false): string {
+/** Where a recipe chip links to (its entry in the patch reference), or null for none. */
+export type PatchLink = (id: string) => string | null;
+
+const chip = (p: string, link?: PatchLink) => {
+  const href = link?.(p);
+  return href ? `<a href="${esc(href)}" title="What this patch does"><code>${esc(p)}</code></a>` : `<code>${esc(p)}</code>`;
+};
+
+export function rowHtml(g: Game, showPackage = false, link?: PatchLink): string {
   const s = STATUS[g.status];
   const facts = [g.version && `tested with version ${g.version}`, g.app && `checked with FramePort ${g.app}`, g.checked]
     .filter(Boolean).join(' · ');
   const more = `<div class="more" role="cell" hidden>`
     + (g.details ? `<p>${esc(g.details)}</p>` : '<p>Runs with the default patches; nothing special needed.</p>')
-    + (g.patches.length ? `<p class="pt"><span>Recipe</span>${g.patches.map((p) => `<code>${esc(p)}</code>`).join('')}</p>` : '')
+    + (g.patches.length ? `<p class="pt"><span>Recipe</span>${g.patches.map((p) => chip(p, link)).join('')}</p>` : '')
     + (facts ? `<p class="fx">${esc(facts)}</p>` : '') + '</div>';
   return `<li class="row" role="row" tabindex="0" aria-expanded="false" data-status="${g.status}" data-engine="${esc(g.engine)}" `
     + `data-text="${esc(`${g.title} ${g.engine} ${g.xr} ${g.platform} ${g.patches.join(' ')}`.toLowerCase())}">`
@@ -92,11 +100,11 @@ export function rowHtml(g: Game, showPackage = false): string {
 }
 
 /** All rows; games that share a title and platform (e.g. two builds) show their package to tell them apart. */
-export function rowsHtml(games: Game[]): string {
+export function rowsHtml(games: Game[], link?: PatchLink): string {
   const seen = new Map<string, number>();
   const key = (g: Game) => `${g.title.toLowerCase()}|${g.platform}`;
   for (const g of games) seen.set(key(g), (seen.get(key(g)) ?? 0) + 1);
-  return games.map((g) => rowHtml(g, seen.get(key(g))! > 1)).join('');
+  return games.map((g) => rowHtml(g, seen.get(key(g))! > 1, link)).join('');
 }
 
 export function counts(games: Game[]): Record<Status, number> {

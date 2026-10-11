@@ -45,6 +45,8 @@ const prev = DOCS[i - 1], next = DOCS[i + 1];
 </Layout>
 
 <style>
+  /* long paths and identifiers (the patch reference has many) wrap instead of widening the page on phones */
+  .prose :global(:is(p, li, blockquote)) { overflow-wrap: break-word; }
   .crumb { font-size: 13px; color: var(--text-2); margin-bottom: 10px; }
   .crumb a { color: var(--text-2); }
   .crumb span { margin: 0 4px; color: var(--text-3); }

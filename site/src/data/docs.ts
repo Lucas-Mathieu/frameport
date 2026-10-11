@@ -5,8 +5,13 @@ import { join } from 'node:path';
 import { Marked, type Tokens } from 'marked';
 import { REPO, url } from './site';
 import { fileTree } from '../scripts/filetree';
+import { patchHref } from '../scripts/patchlinks';
 
-export interface DocInfo { file: string; slug: string; name: string; group: string; blurb: string; summary: string }
+export interface DocInfo {
+  file: string; slug: string; name: string; group: string; blurb: string; summary: string;
+  /** deepest heading level in the page's table of contents (default 3) */
+  tocDepth?: number;
+}
 export const DOCS: DocInfo[] = [
   { file: 'INSTALL.md', slug: 'install', name: 'Install and first steps', group: 'Get started', blurb: 'Download, connect the Frame, install games.',
     summary: 'Install FramePort on Windows, macOS or Linux, connect your Steam Frame once, then install and play Quest and PC VR games.' },
@@ -22,6 +27,9 @@ export const DOCS: DocInfo[] = [
     summary: 'Add an Install with FramePort button to your download page or README, so one click installs your game on a Steam Frame.' },
   { file: 'DIAGNOSTICS.md', slug: 'diagnostics', name: 'Diagnostics and problem reports', group: 'For developers', blurb: 'What a problem report contains.',
     summary: "What FramePort's problem reports and shared recipes contain, how personal data is removed, and how recipes reach the catalog." },
+  { file: 'PATCHES.md', slug: 'patches', name: 'Patch reference', group: 'For developers', blurb: 'Every patch and game setting.',
+    summary: 'Every FramePort patch and game setting: what it does, whether it changes the APK, when it is suggested, its options and the games that use it.',
+    tocDepth: 2 },
   { file: 'ARCHITECTURE.md', slug: 'architecture', name: 'Architecture', group: 'For developers', blurb: 'How FramePort is built and what it adds.',
     summary: 'How FramePort is built: the projects it wraps, the pipeline from scan to launch test, and what it adds for the Steam Frame.' },
   { file: 'PLAYBOOK.md', slug: 'playbook', name: 'Porting playbook', group: 'For developers', blurb: 'Symptoms and fixes from real games.',
@@ -72,6 +80,8 @@ export function loadDoc(info: DocInfo): Doc {
   if (h1) md = md.replace(h1[0], '');
   const slug = slugger();
   const toc: Doc['toc'] = [];
+  const tocDepth = info.tocDepth ?? 3;
+  const linked = new WeakSet<object>();  // code spans inside a link: never a second link
   const marked = new Marked({
     gfm: true,
     walkTokens(token) {
@@ -84,6 +94,7 @@ export function loadDoc(info: DocInfo): Doc {
           link.tokens = [{ type: 'text', raw: named.name, text: named.name }];
         }
         link.href = rewrite(link.href);
+        for (const t of link.tokens ?? []) if (t.type === 'codespan') linked.add(t);
       }
       if (token.type === 'html') {
         (token as Tokens.HTML).text = (token as Tokens.HTML).text.replace(/(src|href)="([^"]+)"/g, (_, attr, v) => `${attr}="${rewrite(v)}"`);
@@ -101,10 +112,20 @@ export function loadDoc(info: DocInfo): Doc {
         return `<figure class="diagram"><div class="diagram-scroll"><img src="${href}" alt="${alt}" loading="lazy" /></div>`
           + '<figcaption>Scroll sideways or tap to enlarge.</figcaption></figure>';
       },
+      // a heading that starts with its own anchor (<a id="…"></a>, as in PATCHES.md) keeps that id, so GitHub and the
+      // site share one link target
       heading({ tokens, depth, text }) {
-        const id = slug(text);
-        if (depth <= 3) toc.push({ id, text: text.replace(/[`*_]/g, ''), depth });
-        return `<h${depth} id="${id}"><a class="anchor" href="#${id}" aria-label="Link to this section">#</a>${this.parser.parseInline(tokens)}</h${depth}>\n`;
+        const own = text.match(/^<a id="([^"]+)"><\/a>\s*/);
+        const label = own ? text.slice(own[0].length) : text;
+        const id = own ? own[1] : slug(text);
+        if (depth <= tocDepth) toc.push({ id, text: label.replace(/[`*_]/g, ''), depth });
+        const inner = this.parser.parseInline(tokens).replace(/^<a id="[^"]+"><\/a>\s*/, '');
+        return `<h${depth} id="${id}"><a class="anchor" href="#${id}" aria-label="Link to this section">#</a>${inner}</h${depth}>\n`;
+      },
+      // a patch id in a code span (`frame.unity_text_input`) links to its entry in the patch reference
+      codespan(token) {
+        const href = linked.has(token) || !/^[\w.]+$/.test(token.text) ? null : patchHref(token.text);
+        return href ? `<a class="patch-ref" href="${href}"><code>${token.text}</code></a>` : false;
       },
       table(token) {
         const head = token.header.map((c) => `<th>${this.parser.parseInline(c.tokens)}</th>`).join('');
