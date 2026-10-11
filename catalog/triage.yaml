@@ -74,7 +74,8 @@ signatures:
     diagnosis: Android's debug checks stopped the game. CheckJNI is on because the converted app is debuggable, and it aborts on sloppy JNI use.
     suggest: [frame.nodebug]
   - id: force-quit
-    pattern: 'System\.exit|ForceQuit|FAndroidMisc::RequestExit'
+    # not Android's own WebView helper, which calls System.exit at every container boot (GitHub #179)
+    pattern: '(?m)^(?!.*WebViewLoader).*System\.exit|ForceQuit|FAndroidMisc::RequestExit'
     severity: error
     diagnosis: The game quit itself right after starting. Usually Unreal's ForceQuit after a failed Quest platform check; the alternate build leaves it out.
     suggest: [patch_remove_unreal_force_quit]
@@ -340,6 +341,12 @@ signatures:
     severity: fatal
     diagnosis: 'Games can''t start until the Frame restarts: it ran out of kernel keys. Rootless podman leaks one session keyring per container start; the FramePort agent sets keyring=false in ~/.config/containers/containers.conf, and a reboot frees the leaked keys.'
     suggest: []
+  - id: app-not-started
+    pattern: 'Target app \(.*\) did not start'
+    severity: error
+    diagnosis: Lepton didn't start the game this time, which happens now and then on the first start after an install. Start it again; if it never starts, attach diagnostics.
+    suggest: []
+    supersedes: [force-quit]
   - id: container-not-started
     pattern: "is not a running context|OCI runtime error"
     unless: 'Boot complete!'  # Lepton 3.x prints the error while its container is still starting, then boots fine
@@ -482,7 +489,7 @@ milestones:  # progress markers, in order; the furthest one reached is reported
   - {id: pcvr-openxr, kind: pcvr, pattern: 'wineopenxr: .*[Ss]ession|LibReviveXR|Revive.*OpenXR|xrCreateSession', label: OpenXR reached}
   - {id: pcvr-session, kind: pcvr, pattern: 'xrCreateSession|XR_SESSION_STATE_(READY|SYNCHRONIZED)', label: OpenXR session created}
   - {id: container, pattern: 'Boot complete!', label: Lepton container started}
-  - {id: process, pattern: 'Start proc \d+:', label: App process started}
+  - {id: process, pattern: 'Start proc \d+:(?!WebViewLoader|com\.android\.|android\.)', label: App process started}
   - {id: adapter, pattern: 'FrameBridge: scale=', label: FrameBridge adapter loaded}
   - {id: instance, pattern: 'xrCreateInstance result=0', label: OpenXR instance created}
   - {id: session, pattern: 'xrCreateSession|session state=1|Created OpenXR session', label: OpenXR session created}

@@ -312,3 +312,21 @@ def test_unity_data_missing_fails_the_launch_test():
            "10-10 00:51:20.000  1  2 I FrameBridge: pacing: 72.0 fps\n")
     r = triage.triage(log, "RUNNING")
     assert "unity-data-missing" in [f.id for f in r.findings] and r.verdict == "fail"
+
+
+def test_webview_helper_exit_is_not_a_force_quit():
+    """GitHub #179: Android's WebView helper exits at every container boot; the game itself never started."""
+    log = """
+10-11 05:09:26.499   220   249 I ActivityManager: Start proc 367:WebViewLoader-arm64-v8a/1037
+10-11 05:09:26.546   220   249 I ActivityManager: Start proc 397:com.android.networkstack.process/1073 for service
+10-11 05:09:26.579   367   367 I WebViewLoader-: System.exit called, status: 0
+LeptonProcessObserver: Target app (com.example.game) did not start.
+"""
+    res = triage(log, "EXITED", package="com.example.game")
+    ids = [f.id for f in res.findings]
+    assert "force-quit" not in ids and "app-not-started" in ids
+    assert "App process started" not in res.milestones
+    # a real System.exit from the game still counts
+    real = "09-28 17:39:01.000  1000  1000 I ActivityManager: Start proc 1150:com.example.game/u0a55 for activity\n" \
+           "09-28 17:39:05.000  1150  1150 I GameActivity: System.exit called, status: 0\n"
+    assert "force-quit" in [f.id for f in triage(real, "EXITED", package="com.example.game").findings]
