@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 155 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 156 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -11,7 +11,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 ## Groups
 
 - [Patches from OVRPort](#group-overport) (25)
-- [Steam Frame patches](#group-frame) (44)
+- [Steam Frame patches](#group-frame) (45)
 - [Game settings](#group-adapter) (65)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
@@ -61,6 +61,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Clear android:debuggable](#frame-nodebug) | `frame.nodebug` | Steam Frame patches | 3 |
 | [Oculus OS telemetry class stubs](#frame-oculusos) | `frame.oculusos` | Steam Frame patches | 13 |
 | [Fix crash when the game prepares the microphone](#frame-ovr_microphone) | `frame.ovr_microphone` | Steam Frame patches |  |
+| [Keep the same Meta user between starts](#frame-ovr_stable_user) | `frame.ovr_stable_user` | Steam Frame patches | default |
 | [Trace Meta platform requests (diagnostics)](#frame-ovr_trace) | `frame.ovr_trace` | Steam Frame patches |  |
 | [Platform compat (ovrMessageType_ToString)](#frame-ovrplatformcompat) | `frame.ovrplatformcompat` | Steam Frame patches | default |
 | [Stub missing Meta platform functions](#frame-ovrstubs) | `frame.ovrstubs` | Steam Frame patches | default |
@@ -686,6 +687,17 @@ Stops a crash a few seconds after the logo in games with voice chat.
 - **Source:** [patches/frame/ovr_microphone.py](../src/frameport/patches/frame/ovr_microphone.py)
 
 > OVRPort's Meta platform library opens the microphone only when it's started, but answers a game's question about the microphone buffer size from that not-yet-opened stream: games that ask first (Unreal's Oculus voice chat, for example The Walking Dead: Saints & Sinners Ch. 2) crash a few seconds after the logo (SIGSEGV in libaaudio.so). Adds the missing check (size 0 until the microphone is started).
+
+### <a id="frame-ovr_stable_user"></a>Keep the same Meta user between starts
+
+Keeps your progress in games that file their saves under your Meta user.
+
+- `frame.ovr_stable_user` · on by default
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested (on):** The game uses Meta's platform library: OVRPort's version gives it a new user id at every start, which loses saves filed under that id.
+- **Source:** [patches/frame/ovr_stable_user.py](../src/frameport/patches/frame/ovr_stable_user.py)
+
+> Without a Meta account, OVRPort's platform library makes up a new user id at every start (ovr_GetLoggedInUserID). Games that file saves under the user id (for example Walkabout Mini Golf) then start with an empty profile each time and seem to lose all progress. Gives the game a fixed id instead, different for each game and each FramePort user.
 
 ### <a id="frame-ovr_trace"></a>Trace Meta platform requests (diagnostics)
 

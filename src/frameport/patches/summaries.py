@@ -88,6 +88,7 @@ SUMMARIES = {
     "frame.asset_files": "Lets the game find extra content it keeps next to its data (for example Star Wars Tales' "
                          "seasons).",
     "frame.ovr_microphone": "Stops a crash a few seconds after the logo in games with voice chat.",
+    "frame.ovr_stable_user": "Keeps your progress in games that file their saves under your Meta user.",
     "frame.avatar_stub": "Lets games start that would stop at Meta's avatars (for example BlazeRush). No Meta "
                          "avatars.",
     "frame.vrapi_bridge": "Lets games built on Meta's oldest VR interface run on the Frame.",

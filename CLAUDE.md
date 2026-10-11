@@ -790,6 +790,13 @@ index lines; no index (fp_spirv) = the old newest-by-mtime 4 MB. One JSON line (
 is read whole by `Frame.agent` (fine at that size); `_Writer.fit` drops the least recently used modules last, after
 cutting logs, to stay under the 24 MB zip limit.
 **Unreal OBB check (GitHub #159, 2026-10-10):** Epic's DownloaderActivity checks OBB name+size (OBBData), then with `bVerifyOBBOnStartUp=true` CRCs the whole OBB; its screens are invisible in Lepton (stuck at `Displayed …/.DownloaderActivity`, triage `unreal-obb-check-stuck`) → `frame.unreal_skip_obb_check` (analysis `unreal_verify_obb`, ANALYSIS_VERSION 11) flips the manifest boolean (`axml.set_meta_data_bool`); skips only the CRC pass. Host-tested only.
+**Meta user id (GitHub #182, 2026-10-11):** OVRPort's platform loader (runtimes 3.4.3-23204ea and -aa54c3f) answers
+`ovr_GetLoggedInUserID` (and two other callers) without a Meta account with a made-up id from a helper (`stp; mov x29,
+sp; bl random; …; mov/movk x9 = 0x53444835ec580000 (6e18); add x0, x8, x9; ldp; ret`), kept only in memory → a new id
+every start; Walkabout Mini Golf files saves under `Profiles/Oculus/<id>/` and lost all progress. `frame.ovr_stable_user`
+(default_on, detect = the game has libovrplatformloader.so) rewrites the helper to `mov x0, <6e18 + 32 bits of
+sha256(package, keystore)>; ret`: stable per game and per user (keystores are personal), so online games never see two
+FramePort users as one. Found in every PATCHED build checked. Host-tested only; upstream candidate.
 **Vivox API 31 (GitHub #101, 2026-10-09):** newer Vivox builds (Green Hell VR) call Android 12 AudioManager
 communication-device methods from `com.vivox.sdk.AudioChangeListener` with no SDK check → NoSuchMethodError on Lepton's
 Android 11. `frame.vivox_audio_route` (analysis `vivox_api31`, ANALYSIS_VERSION 4) makes every such method return at

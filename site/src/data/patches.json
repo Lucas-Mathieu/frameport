@@ -444,6 +444,11 @@
   "title": "Fix crash when the game prepares the microphone",
   "group": "Steam Frame patches"
  },
+ "frame.ovr_stable_user": {
+  "anchor": "frame-ovr_stable_user",
+  "title": "Keep the same Meta user between starts",
+  "group": "Steam Frame patches"
+ },
  "frame.ovr_trace": {
   "anchor": "frame-ovr_trace",
   "title": "Trace Meta platform requests (diagnostics)",
