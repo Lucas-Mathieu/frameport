@@ -490,6 +490,13 @@ class FakePairingServer:
         self.asks: list = []  # the setup URL: the `frame_asks` step hook plays a Frame asking (Allow / Deny)
         self.running = False
 
+    def open_asks(self) -> list:
+        """Like PairingServer.open_asks (requests never expire on film)."""
+        return [a for a in self.asks if a.state == "open"]
+
+    def prune(self, now: float | None = None) -> list:
+        return []
+
     def decide(self, ask_id: str, allow: bool) -> None:
         for a in self.asks:
             if a.id == ask_id and a.state == "open":

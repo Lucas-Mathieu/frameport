@@ -355,3 +355,18 @@ def test_cards_escape_text():
     assert "Fast &lt;b&gt;" in html and "A &amp; B" in html
     card = postprod.card_html("FramePort", "line", "footer", "<svg/>", colors)
     assert ">Frame</span>" in card and ">Port</span>" in card and "<svg/>" in card
+
+
+
+def test_fake_pairing_server_has_what_the_gui_uses():
+    """The showcase's pretend setup server must offer every PairingServer attribute the GUI uses (the install video
+    broke when open_asks() was added to the real one)."""
+    from showcase import fakes
+
+    used = set()
+    for f in (REPO / "src/frameport/ui").rglob("*.py"):
+        used |= set(re.findall(r"\bpairing\.([a-z_]+)\b", f.read_text(encoding="utf-8")))
+    real = {n for n in dir(__import__("frameport.frame.pairing", fromlist=["x"]).PairingServer) if not n.startswith("_")}
+    fake = fakes.FakePairingServer()
+    missing = sorted(n for n in used & real if not hasattr(fake, n))
+    assert not missing, missing
