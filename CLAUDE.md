@@ -967,5 +967,7 @@ the unresolved eye distortion, and testing the release bundles on real Windows/m
   fallback (`core/cache.py`). Don't hardcode what can be discovered (e.g. Lepton path via appmanifests).
 - Keep APK edits minimal and byte-stable (parity depends on it). Every new fix: a patch module + a triage signature +
   a PLAYBOOK row + a unit test.
+- New or changed patch, game setting, catalog recipe or triage signature → run `python scripts/patch_docs.py`
+  (regenerates docs/PATCHES.md + site/src/data/patches.json, the site's id → anchor map; a test runs `--check`).
 - Known-good backups of every working APK and the signing keys: `PATCHED/_known-good-2026-09-28/` (don't delete).
 - Your development Frame: `frameport frame info` (remembered in `<user data>/frames.json`); SSH as `steamos@<frame>`.
