@@ -28,7 +28,7 @@ Frame, patches each game so it runs there, uploads it and adds it to your Steam 
 
 - **Easy setup:** one line in the Frame's terminal. No root, no password. [What it changes](docs/FRAME_SETUP.md).
 - **One click per game:** patch, upload, add to Steam with artwork and test that it starts.
-- **Recipes:** tested patches and settings for 90+ games; other games get suggested patches, each explained in
+- **Recipes:** tested patches and settings for 120+ games; other games get suggested patches, each explained in
   plain words.
 - **Game settings:** sharpness, refresh rate, controllers, 360° video and mixed reality as simple switches.
 - **More than Quest games:** Android apps in a window, Linux apps, PC VR games and Windows programs.
@@ -76,7 +76,7 @@ suggests patches. See the [list of tested games](docs/GAMES.md). Got a game work
 FrameDrop and Valve's own tools install an app as it is. FramePort differs in four ways:
 
 - **Free and open source** (GPL-3.0). FrameDrop is free (donationware) without published source.
-- **Quest games that don't run on the Frame as they are** get converted and patched, with a tested recipe for 90+
+- **Quest games that don't run on the Frame as they are** get converted and patched, with a tested recipe for 120+
   games. The others install the game unchanged.
 - **Windows, macOS and Linux.** FrameDrop is for Windows.
 - **Wi-Fi or a USB cable**, and no **Pair new host** step.
@@ -91,7 +91,7 @@ FrameDrop and Valve's own tools install an app as it is. FramePort differs in fo
 | First connection | One line in the Frame's terminal; it turns on Developer Mode itself. No password | Turn on Developer Mode, then **Pair new host** | Turn on Developer Mode and pair, or use Android's debug tool (adb) |
 | Wireless or cable | Wi-Fi, the Frame's hotspot or a USB cable | Same Wi-Fi network | Wi-Fi, or adb |
 | Quest games that don't run as they are | Converted and patched for the Frame | Installed as they are | Installed as they are |
-| Knows which patches a game needs | Tested recipes for 90+ games, updated without an app update | Not stated | No |
+| Knows which patches a game needs | Tested recipes for 120+ games, updated without an app update | Not stated | No |
 | In the Steam library | Yes, with artwork and tags | As a "Devkit Game" shortcut | As "Devkit Game: &lt;title&gt;"; not with adb |
 | Android apps, Linux apps, Windows programs | All three; Proton (runs Windows programs) is installed for you | All three; install Proton first | Yes; 2D Android apps need an extra file |
 | PC VR games | On your PC; some also on the Frame | Not supported | Not supported |
