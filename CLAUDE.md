@@ -841,7 +841,8 @@ on the dev Frame) in `files/framebridge-vrapi-fov.txt` and answers with it at th
 r_3dwidth/height, r_width/height from the runtime eye size (FrameBridge logs `runtime recommended eye size`) × scale,
 written at finalize, set_settings and by launch.sh before Lepton starts (`_config_sync`). Headless runs at scale 1.7
 end in `zink: DEVICE LOST` right after the bridge's 30 s no-tracking deadline tears the session down (gpu fault at the
-teardown; not at scale 1.0): a headless-only artifact, the headset never hits that deadline.
+teardown; not at scale 1.0): a headless-only artifact, the headset never hits that deadline. Launch tests count an exit/crash after
+such a line as a pass (triage.yaml `headless_end`, finding `headless-end`; GitHub #57 "Failed to launch" on install).
 **Session triage (agent v70, 2026-10-09):** launch tests never reach FOCUSED, so real play sessions are triaged
 too. list_installed gives each game `last_play` {start, end, test} from `<anchor>/plays.log` (launch tests write a
 `test <unix>` line first → test sessions are only marked); `session_log` returns the newest session's launch.log

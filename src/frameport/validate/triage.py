@@ -30,11 +30,12 @@ class TriageResult:
     milestones: list[str] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
     fps: float | None = None
+    headless_end: str | None = None  # launch test: the session ended for lack of a worn headset (label), see triage()
 
     @property
     def verdict(self) -> str:
         fatal = [f for f in self.findings if f.severity == "fatal"]
-        if self.state == "RUNNING" and not fatal:
+        if (self.state == "RUNNING" or self.headless_end) and not fatal:
             return "pass"
         return "fail" if fatal or self.state in ("EXITED", "NEVER_STARTED") else "unknown"
 
@@ -114,9 +115,10 @@ def split_suggestion(s: str) -> tuple[str, str | None]:
 
 
 def triage(log: str, state: str = "UNKNOWN", package: str | None = None, crash: str = "",
-           kernel: str = "") -> TriageResult:
+           kernel: str = "", headless: bool = False) -> TriageResult:
     """`crash` = the container's crash logcat (tombstones come from crash_dump's pid, so it isn't pid-filtered);
-    `kernel` = kernel log lines of a play session ("kernel: …", GPU hangs; agent session_log)."""
+    `kernel` = kernel log lines of a play session ("kernel: …", GPU hangs; agent session_log); `headless` = a launch
+    test (no headset worn): what happens after a `headless_end` line doesn't count against the game."""
     db = database()
     kind = "pcvr" if package and package.startswith("rift.") else "quest"  # Proton/Revive logs vs Lepton logcat
     lines = game_lines(log, package) if kind == "quest" else [ANSI.sub("", ln) for ln in log.splitlines()]
@@ -149,17 +151,54 @@ def triage(log: str, state: str = "UNKNOWN", package: str | None = None, crash: 
     hidden = {h for sig in db["signatures"] if any(f.id == sig["id"] for f in res.findings)
               for h in sig.get("supersedes") or []}
     res.findings = [f for f in res.findings if f.id not in hidden]
+    if headless:
+        _forgive_headless_end(res, lines, db.get("headless_end") or [])
     fps = re.findall(r"pacing: ([0-9.]+) fps", text)
     if fps:
         res.fps = float(fps[-1])
     stopped = frames_stopped(lines)
-    if stopped and state == "RUNNING" and not any(f.severity == "fatal" for f in res.findings):
+    if (stopped and state == "RUNNING" and not res.headless_end
+            and not any(f.severity == "fatal" for f in res.findings)):
         res.findings.append(Finding(
             "frames-stopped", "fatal",
             f"The game stopped sending frames {stopped:.0f} s before the test ended although its process kept "
             "running (a crashed or stuck render thread: a frozen picture in the headset).", [],
             "last FrameBridge pacing line"))
     return res
+
+
+def _forgive_headless_end(res: TriageResult, lines: list[str], markers: list[dict]) -> None:
+    """A launch test whose game sent paced frames until a `headless_end` line (the VR session ended because nobody
+    wears the headset, e.g. the VrApi bridge's tracking deadline): an exit or crash after it is an artifact of the
+    test (BlazeRush: zink DEVICE LOST + SIGSEGV in the GPU driver thread as the renderer tore down, GitHub #57).
+    Findings first seen after that line become one info finding; the verdict then passes (TriageResult.verdict)."""
+    hits = ((m, next((i for i, ln in enumerate(lines) if re.search(m["pattern"], ln)), None)) for m in markers)
+    marker, at = next(((m, i) for m, i in hits if i is not None), (None, None))
+    if at is None or not any("FrameBridge: pacing:" in ln for ln in lines[:at]):
+        return  # no such line, or no frames before it: the game never really ran
+    when = _secs(lines[at])
+
+    def after(f: Finding) -> bool:
+        i = next((i for i, ln in enumerate(lines) if f.evidence and f.evidence in ln.strip()), None)
+        if i is None:
+            return False
+        t = _secs(lines[i])
+        return t >= when if t is not None and when is not None else i > at
+
+    late = [f for f in res.findings if after(f)]
+    res.findings = [f for f in res.findings if f not in late]
+    res.headless_end = marker["label"]
+    what = ", ".join(f.id for f in late) or "the game ended"
+    res.findings.append(Finding(
+        "headless-end", "info",
+        f"The game ran (paced frames) until the VR session ended for lack of a worn headset ({marker['label']}). What "
+        f"came after ({what}) is a side effect of this headless test and doesn't happen in the headset.", [],
+        lines[at].strip()[:300]))
+
+
+def _secs(line: str) -> float | None:
+    m = LOGCAT_TIME.match(line)
+    return int(m[1]) * 3600 + int(m[2]) * 60 + int(m[3]) + int(m[4]) / 1000 if m else None
 
 
 MISSING_OBB = ("The game keeps its content in a data file (.obb) and none was installed: FramePort found no .obb "

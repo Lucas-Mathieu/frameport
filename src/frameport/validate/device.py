@@ -16,8 +16,10 @@ def launch_test(frame: Frame, package: str, reporter: Reporter, seconds: int = 4
         return TriageResult("UNKNOWN", None), ""
     log = frame.get_text(res["log"]) if res.get("log_size") else ""
     crash = frame.get_text(res["crash_log"]) if res.get("crash_log") else ""  # tombstones (backtraces), agent >= 23
-    result = triage(log, res["state"], package, crash=crash[-256 * 1024:])
-    reporter.check("Process", res["state"] == "RUNNING", f"{res['state']} after {res['elapsed']}s")
+    result = triage(log, res["state"], package, crash=crash[-256 * 1024:], headless=True)
+    reporter.check("Process", res["state"] == "RUNNING" or (None if result.headless_end else False),
+                   f"{res['state']} after {res['elapsed']}s"
+                   + (f" (after {result.headless_end}: expected without the headset)" if result.headless_end else ""))
     for m in result.milestones:
         reporter.check(m, True)
     if result.fps:
