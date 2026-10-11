@@ -6,3 +6,5 @@
   corners).
 
 For the "Install with FramePort" button, see [`docs/badges/`](../badges/) and [INSTALL_BUTTON.md](../INSTALL_BUTTON.md).
+- `frameport-social-preview.png`: GitHub's social preview (1280 × 640): repository Settings → General → Social
+  preview. Built from the logo and the docs' Library screenshot (`docs/images/library.png`).
