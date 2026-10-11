@@ -44,7 +44,7 @@ try:
 except ImportError:  # Windows: pc_revive loads this file for its VDF code only (GitHub #131)
     fcntl = None
 
-AGENT_VERSION = 79
+AGENT_VERSION = 80
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -6604,6 +6604,7 @@ MON_CRITICAL = ("steam", "steamwebhelper", "reaper", "vrserver", "vrcompositor",
 # processes whose command line can name a game (only these are read: cmdlines of ~500 processes cost too much)
 MON_ROOT_COMMS = ("conmon", "launch.sh", "reaper", "bash", "sh")
 MON_ROOT_PREFIXES = ("python", "proton", "pv-", "wine", "steam-runtime")
+AGENT_FILES = {os.path.abspath(__file__), os.path.realpath(__file__)}
 MON_GROUPS = (  # (group, comm prefixes), first match wins; games are found by their process tree
     ("steamvr", ("vr", "XRService", "V4L2Cam", "eyetracking", "proxmicmute", "systemlayer")),
     ("steam", ("steam", "reaper", "fossilize")),
@@ -7035,7 +7036,9 @@ class Monitor:
                     m = re.search(r"lepton-steamlaunch-(\d+)", cmd)
                     if m and m.group(1) in by_appid:
                         root = (by_appid[m.group(1)]["package"], "container")
-                else:
+                elif not any(a in cmd for a in AGENT_FILES):
+                    # the agent's own workers name a game's launch.sh too (uninstall's shortcut removal while Steam
+                    # restarts): they aren't the game (helpers launch.sh starts still count, as its children)
                     pkg = next((k for path, k in anchors if path in cmd), None) or \
                         next((k for base, k in bases if base in cmd), None)
                     root = (pkg, "launcher") if pkg else None

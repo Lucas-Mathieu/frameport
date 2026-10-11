@@ -946,7 +946,11 @@ class FramePortApp:
         from .views.library import display_title, twins
 
         g = library.game(pkg)
-        return display_title(g, twins(library.games())) if g else pkg
+        if g:
+            return display_title(g, twins(library.games()))
+        # a game on the Frame that isn't in this library (Frame page → Installed): the name it has there
+        on_frame = next((d for d in (self.frame_info or {}).get("installed", []) if d.get("package") == pkg), None)
+        return (on_frame or {}).get("title") or pkg
 
     def install_options(self, g: dict) -> list[tuple]:
         """[(label, icon, on_click, disabled, tooltip)] — the first is the primary action."""
@@ -1671,9 +1675,9 @@ class FramePortApp:
         delete_local, extra = self._delete_local_option(pkg)
         delete_data = None
         if to == "frame":  # GitHub #130: what the game stored (saves, mods, downloads) used to survive every uninstall
-            delete_data = ft.Checkbox(label=tr("Also delete its saves and everything it stored on the Frame (mods, "
-                                               "downloaded content)"), value=False, active_color=T.ERROR)
-            extra = delete_data if extra is None else ft.Column([delete_data, extra], spacing=T.px(8), tight=True)
+            delete_data, row = C.checkbox(tr("Also delete its saves and everything it stored on the Frame (mods, "
+                                             "downloaded content)"), value=False, active_color=T.ERROR)
+            extra = row if extra is None else ft.Column([row, extra], spacing=T.px(8), tight=True)
 
         def run(job: Job):
             self._target_for(to).uninstall(pkg, keep_data=not (delete_data and delete_data.value))
@@ -1696,12 +1700,12 @@ class FramePortApp:
             return None, None
         size = sum((sum(f.stat().st_size for f in p.rglob("*") if f.is_file()) if p.is_dir() else p.stat().st_size)
                    for p in files)
-        box = ft.Checkbox(label=tr("Also delete this game's files on this PC ({size})").format(size=fmt_size(size)),
-                          value=False, active_color=T.ERROR)
+        box, row = C.checkbox(tr("Also delete this game's files on this PC ({size})").format(size=fmt_size(size)),
+                              value=False, active_color=T.ERROR)
         from ..core import winhost
 
         shown = [winhost.to_windows(p) if winhost.is_wsl() else str(p) for p in files]
-        return box, ft.Column([box, *[C.body("• " + s, T.TEXT_3) for s in shown[:4]]], spacing=T.px(4), tight=True)
+        return box, ft.Column([row, *[C.body("• " + s, T.TEXT_3) for s in shown[:4]]], spacing=T.px(4), tight=True)
 
     def remove_from_library(self, pkg: str) -> None:
         title = self._title(pkg)
@@ -1904,7 +1908,7 @@ class FramePortApp:
                                                  else "works"))
         notes = C.field(label=tr("Notes (what you checked, known issues)"), multiline=True, min_lines=2,
                         max_lines=6, width=T.DIALOG_M)
-        played = ft.Checkbox(label=tr("I played it in the headset with this recipe"), value=False)
+        played, played_row = C.checkbox(tr("I played it in the headset with this recipe"), value=False)
         send = C.primary(tr("Open GitHub issue"), ft.Icons.OPEN_IN_NEW_ROUNDED, on_click=None)
 
         def sync(e=None):
@@ -1932,7 +1936,7 @@ class FramePortApp:
                               get=C.test_result(last.get("verdict"), last.get("milestone"))[0],
                               value=C.test_result(last.get("verdict"), last.get("milestone"))[1]),
                           T.TEXT_3)] if last else []),
-                ft.Row([status, C.help_icon("share_config")]), notes, played,
+                ft.Row([status, C.help_icon("share_config")]), notes, played_row,
                 C.body(tr("Launch tests can't check the picture or controls — only you can."),
                        T.TEXT_3),
             ], tight=True, spacing=T.S3),
@@ -2751,12 +2755,11 @@ class FramePortApp:
         shown_dir = winhost.to_windows(backup_dir) if winhost.is_wsl() else str(backup_dir)
         keys_label = tr("Back up the signing keys ({len}) to {shown_dir} first").format(len=len(pl.keys),
                                                                                          shown_dir=shown_dir)
-        cb_keys = ft.Checkbox(label=keys_label,
-                              value=bool(pl.keys), active_color=T.ACCENT)
-        cb_frame = ft.Checkbox(label=tr("Also remove FramePort's games and files from the Frame") +
-                               ("" if connected else tr(" (connect the Frame first)")), value=connected,
-                               disabled=not connected, active_color=T.ACCENT)
-        cb_saves = ft.Checkbox(label=tr("Keep game saves on the Frame"), value=True, active_color=T.ACCENT)
+        cb_keys, keys_row = C.checkbox(keys_label, value=bool(pl.keys), active_color=T.ACCENT)
+        cb_frame, frame_row = C.checkbox(tr("Also remove FramePort's games and files from the Frame") +
+                                         ("" if connected else tr(" (connect the Frame first)")), value=connected,
+                                         disabled=not connected, active_color=T.ACCENT)
+        cb_saves, saves_row = C.checkbox(tr("Keep game saves on the Frame"), value=True, active_color=T.ACCENT)
         frame_items = [i for i in pl.items if i.kind == "frame"]
         steam_items = [i for i in pl.items if i.kind == "steam"]
         other = [i for i in pl.items if i.kind == "pc"]
@@ -2792,7 +2795,7 @@ class FramePortApp:
         self.page.show_dialog(C.dialog(
             tr("Uninstall FramePort?"),
             ft.Column([C.body(tr("This removes:"), T.TEXT), *lines, ft.Container(height=T.S2),
-                       cb_keys, cb_frame, cb_saves,
+                       keys_row, frame_row, saves_row,
                        C.meta(tr("Keep the signing keys: without them, updating a game "
                                  "loses its saves."))],
                       spacing=T.S2, tight=True, scroll=ft.ScrollMode.AUTO),

@@ -149,6 +149,7 @@ def main() -> int:
                   ("transit-activity", lambda a: a.show_activity(True))]
         if args.fake_frame:  # GitHub #90: the Move to… dialog (drives load in the background)
             steps.append(("move-dialog", lambda a: (a.page.pop_dialog(), a.move_game(game))))
+            steps.append(("uninstall-dialog", lambda a: (a.page.pop_dialog(), a.uninstall(game))))
         # last: the right-click menu stays open over whatever comes next
         steps.append(("library-menu", lambda a: (a.show_activity(False), a.navigate(0), time.sleep(3),
                                                  a.library_view.open_menu(game))))

@@ -213,6 +213,23 @@ def h2(text: str) -> ft.Text:
     return ft.Text(text, size=T.T_H2, weight=ft.FontWeight.W_600, color=T.TEXT)
 
 
+def checkbox(label: str, **kw) -> tuple[ft.Checkbox, ft.Control]:
+    """(the checkbox, the control to show): a checkbox whose label wraps (Material's own label stays on one line and
+    runs past a dialog's edge); clicking the label toggles it too."""
+    box = ft.Checkbox(**kw)
+
+    def click_label(e):
+        if box.disabled:
+            return
+        box.value = not box.value
+        update(box)
+        if box.on_change:
+            box.on_change(SimpleNamespace(control=box))
+    return box, ft.Row([box, ft.Container(ft.Text(label, color=T.TEXT, size=T.px(14)), expand=True,
+                                          on_click=click_label, ink=True, border_radius=T.RADIUS_XS)],
+                       spacing=T.S1, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
+
 def switch(label: str = "", wrap: bool = True, **kw) -> ft.Control:
     """A labelled switch in the theme's text colour (Material's default label is dark text). The label wraps (a
     Switch's own label is cut off when it's longer than the window); clicking it toggles the switch too.
