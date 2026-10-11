@@ -1,9 +1,9 @@
 package: ru.targem.blazerush
 title: BlazeRush
 status: works
-notes: From Klownicle's guide (GitHub issue 57), verified in a Steam Frame headset with this build; FramePort's
-  version of the fixes still needs a headset check. Menus and racing controls, car bodies and controllers, particle
-  effects, the full field of view and a sharp, correctly placed picture.
+notes: From Klownicle's guide (GitHub issue 57); FramePort's version verified in a Steam Frame headset (2026-10-11).
+  Menus and racing controls, car bodies and controllers, particle effects, the full field of view and a sharp,
+  correctly placed picture.
 details: 'Seven fixes from the guide. frame.blazerush (this exact build only) skips the menus'' wait for a Meta avatar,
   which never comes on the Frame, so the game creates its own controllers, and gives its shader cache a new folder
   (cache/br_shader_v1) so programs compiled before the shader fixes aren''t reused. The GL shim feeds integer vertex
@@ -34,8 +34,8 @@ config_sync:
     r_width: h*16/9
     r_height: h
 verified:
-  date: '2026-10-10'
+  date: '2026-10-11'
   issue: 57
-updated: '2026-10-10'
+updated: '2026-10-11'
 min_app: 1.0.0
 source_hint: BlazeRush
