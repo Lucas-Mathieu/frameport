@@ -324,3 +324,11 @@ def test_agent_collect_diag(monkeypatch, tmp_path):
     assert f["launch.log"].startswith("[... first 4000 bytes cut") and "files" not in json.loads(f["deployment.json"])
     assert res["listing"]["roots"]
     assert a.cmd_collect_diag({"package": "com.not.installed"})["installed"] is False
+
+
+def test_updater_never_uses_page_launch_url():
+    """GitHub #194: Flet 1.0's Page has no launch_url ("All releases" raised AttributeError)."""
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "src" / "frameport"
+    assert not [p for p in src.rglob("*.py") if "page.launch_url(" in p.read_text(encoding="utf-8")]

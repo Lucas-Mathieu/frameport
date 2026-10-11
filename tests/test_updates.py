@@ -411,3 +411,13 @@ def test_pending_news_shows_once_and_waits_while_offline():
     library.set_setting("update.last_seen_version", None)
     library.set_setting("update.last_check", 1.0)                                 # updated from an older FramePort
     assert [e.version for e in updates.pending_news("0.9.2", entries)] == ["0.9.2"]
+
+
+def test_relaunch_environment_drops_the_running_apps_own_variables():
+    """GitHub #195: the relaunched app inherited the old app's Flet/embedded-Python variables and stayed black."""
+    from frameport import updates
+
+    env = updates.clean_env({"PATH": "/bin", "FLET_SERVER_UDS_PATH": "/tmp/old.sock", "flet_platform": "windows",
+                             "SERIOUS_PYTHON_SITE_PACKAGES": "x", "PYTHONHOME": "C:/Temp/serious_python_temp",
+                             "PYTHONPATH": "y", "USERPROFILE": "C:/Users/u", "PSModulePath": "z"})
+    assert env == {"PATH": "/bin", "USERPROFILE": "C:/Users/u", "PSModulePath": "z"}

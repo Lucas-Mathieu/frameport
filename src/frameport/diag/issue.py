@@ -178,8 +178,9 @@ def _problem_fields(g: dict | None, description: str, env: dict, bundle_name: st
         a = g.get("analysis") or {}
         game = f"{title} — {g['package']} (version {a.get('version') or '?'}, {a.get('engine') or '?'} / " \
                f"{a.get('xr') or '?'})"
-    logs = f"⬇ Drag and drop {bundle_name} (the diagnostics zip FramePort just saved) into this box." \
-        if bundle_name else ""
+    # some browsers don't let the prefilled box take a file (GitHub #196): the comment route always works
+    logs = f"⬇ Drag and drop {bundle_name} (the diagnostics zip FramePort just saved) into this box. If it won't " \
+        "take the file, submit the report and attach the zip in a comment." if bundle_name else ""
     return {
         # a game's report is about the game on the Frame, not a FramePort fault (titles read as a list of app bugs)
         "title": red.text(f"[Game report] {title}" if g else "[App] FramePort"),

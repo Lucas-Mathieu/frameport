@@ -38,6 +38,6 @@ body:
     id: logs
     attributes:
       label: Diagnostics
-      description: Drag the FramePort-diag-*.zip here (max 25 MB)
+      description: "Drag the FramePort-diag-*.zip here (max 25 MB). If the box won't take it, submit the report and attach the zip in a comment."
     validations:
       required: true

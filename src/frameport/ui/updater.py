@@ -143,7 +143,7 @@ class Updater:
             tr("FramePort {version} is available").format(version=up.version),
             _changes_column(page, changes, intro), size="l", height=_changes_height(changes, 100),
             actions=[C.ghost(tr("Skip this version"), on_click=skip),
-                     C.ghost(tr("Release page"), ft.Icons.OPEN_IN_NEW_ROUNDED, lambda e: page.launch_url(up.page)),
+                     C.ghost(tr("Release page"), ft.Icons.OPEN_IN_NEW_ROUNDED, lambda e: _open_url(page, up.page)),
                      C.primary(tr("Update now"), ft.Icons.SYSTEM_UPDATE_ROUNDED, go)]))
 
     def show_news(self) -> None:
@@ -161,7 +161,7 @@ class Updater:
             page = self.app.page
             if not entries:
                 self.app.toast(tr("Couldn't load the changelog — check the internet connection"), error=True,
-                               action=tr("Releases"), on_action=lambda e: page.launch_url(f"{REPO_URL}/releases"))
+                               action=tr("Releases"), on_action=lambda e: _open_url(page, f"{REPO_URL}/releases"))
                 return
             self.app.page.run_thread(lambda: page.show_dialog(_changes_dialog(page, tr("FramePort changelog"),
                                                                               entries, current=__version__)))
@@ -199,7 +199,7 @@ class Updater:
             tr("Install dev build {version}?").format(version=up.version),
             _changes_column(page, changes, warn), size="l", height=_changes_height(changes, 160),
             actions=[C.ghost(tr("Cancel"), on_click=lambda e: page.pop_dialog()),
-                     C.ghost(tr("Build page"), ft.Icons.OPEN_IN_NEW_ROUNDED, lambda e: page.launch_url(up.page)),
+                     C.ghost(tr("Build page"), ft.Icons.OPEN_IN_NEW_ROUNDED, lambda e: _open_url(page, up.page)),
                      C.primary(tr("Install dev build"), G.TEST, go)]))
 
     # ---------------------------------------------------------------- installing
@@ -214,7 +214,7 @@ class Updater:
             if not target or not updates.can_replace(target):
                 self.app.toast(tr("FramePort can't update itself in {value} (no permission) — opening the release "
                                   "page to download it").format(value=target or 'this folder'), error=True)
-                page.launch_url(up.page)
+                _open_url(page, up.page)
                 return
         if kind == "source" and updates.source_is_dirty():
             self.app.toast(tr("This source checkout has uncommitted changes — commit or stash them, then update"),
@@ -301,7 +301,7 @@ def _entry_section(page: ft.Page, entry: updates.ChangelogEntry, expanded: bool,
     notes = ft.Container(
         ft.Markdown(entry.body.strip() or tr("No release notes."), selectable=True,
                     extension_set=ft.MarkdownExtensionSet.GITHUB_WEB, md_style_sheet=_notes_style(),
-                    on_tap_link=lambda e: page.launch_url(e.data)),
+                    on_tap_link=lambda e: _open_url(page, e.data)),
         padding=ft.Padding(T.S4, 0, T.S4, T.S3), visible=expanded)
     chevron = ft.Icon(ft.Icons.EXPAND_MORE_ROUNDED if expanded else ft.Icons.CHEVRON_RIGHT_ROUNDED, size=T.px(18),
                       color=T.TEXT_3)
@@ -338,12 +338,25 @@ def _changes_height(entries: list[updates.ChangelogEntry], extra: int) -> float:
     return T.px(min(480, extra + 26 * lines + 50 * len(entries)))
 
 
+def _open_url(page: ft.Page, url: str) -> None:
+    """Open a link in the browser. Flet 1.0 has no Page.launch_url (GitHub #194: "All releases" raised
+    AttributeError); same path as FramePortApp.open_url."""
+    from ..core import winhost
+
+    if winhost.is_wsl() and winhost.open_url(url):  # the desktop client would open a Linux browser in WSL
+        return
+    try:
+        page.run_task(ft.UrlLauncher().launch_url, url)
+    except Exception:  # noqa: BLE001
+        winhost.open_url(url)
+
+
 def _changes_dialog(page: ft.Page, title: str, entries: list[updates.ChangelogEntry],
                     current: str | None = None) -> ft.AlertDialog:
     return C.dialog(title, _changes_column(page, entries, None, current), size="l",
                     height=_changes_height(entries, 20),
                     actions=[C.ghost(tr("All releases"), ft.Icons.OPEN_IN_NEW_ROUNDED,
-                                     lambda e: page.launch_url(f"{REPO_URL}/releases")),
+                                     lambda e: _open_url(page, f"{REPO_URL}/releases")),
                              C.primary(tr("Close"), on_click=lambda e: page.pop_dialog())])
 
 

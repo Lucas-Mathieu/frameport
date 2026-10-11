@@ -480,12 +480,27 @@ def _extract(archive: Path, dest: Path, platform: str) -> Path:
     return folder
 
 
+# set by the running app's Flutter host / embedded Python for *this* process (its server socket, its temporary
+# extraction folder, …): a relaunched FramePort that inherits them talks to the old, gone app and its window stays
+# black (GitHub #195)
+APP_ENV_PREFIXES = ("FLET_", "SERIOUS_PYTHON")
+APP_ENV_NAMES = ("PYTHONHOME", "PYTHONPATH", "PYTHONNOUSERSITE", "PYTHONINSPECT", "PYTHONDONTWRITEBYTECODE")
+
+
+def clean_env(env: dict | None = None) -> dict:
+    """The environment for the swap script and the FramePort it relaunches: without the running app's own Flet and
+    embedded-Python variables."""
+    env = dict(os.environ if env is None else env)
+    return {k: v for k, v in env.items()
+            if not k.upper().startswith(APP_ENV_PREFIXES) and k.upper() not in APP_ENV_NAMES}
+
+
 def _powershell() -> tuple[str, dict]:
     """Windows PowerShell 5.1 (always installed) and an environment it can load its own modules in: started from
     PowerShell 7 (pwsh), PSModulePath points at pwsh's modules and 5.1 fails to load Microsoft.PowerShell.Security /
     .Management (Get-AuthenticodeSignature, Copy-Item). Without PSModulePath it rebuilds its default."""
     exe = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
-    env = {k: v for k, v in os.environ.items() if k.upper() != "PSMODULEPATH"}
+    env = {k: v for k, v in clean_env().items() if k.upper() != "PSMODULEPATH"}
     return (str(exe) if exe.exists() else "powershell"), env
 
 
@@ -683,7 +698,8 @@ def apply(app: Path, target: Path | None = None, relaunch: bool = True, pid: int
                              "Hidden", "-File", str(script)], env=env)
     else:
         proc = subprocess.Popen(["/bin/sh", str(script)], start_new_session=not wait, close_fds=True,
-                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                env=clean_env())
     if not wait:  # make sure the script really runs before FramePort quits (it logs first thing)
         deadline = time.time() + START_TIMEOUT
         while time.time() < deadline:
