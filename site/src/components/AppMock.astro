@@ -556,6 +556,12 @@ const ICON: Record<string, string> = {
   @keyframes blink { 50% { opacity: 0; } }
   @keyframes halo { 50% { box-shadow: 0 0 0 2px var(--accent), 0 0 0 11px rgba(255, 138, 31, .12); } }
 
+  /* medium (tablets): the title keeps its own width; the buttons' "auto" column squeezed it to "Libr" and one word
+     per line. The buttons wrap in what's left */
+  @container (min-width: 701px) and (max-width: 960px) {
+    .view :global(.lib-h) { grid-template-columns: max-content minmax(0, 1fr); }
+  }
+
   /* narrow: the sidebar becomes an icon rail */
   @container (max-width: 700px) {
     .body { grid-template-columns: 56px minmax(0, 1fr); }
@@ -567,5 +573,12 @@ const ICON: Record<string, string> = {
     .view :global(.mon-game) { grid-template-columns: 56px minmax(0, 1fr); }
     .view :global(.mon-game .big-spark) { grid-column: 1 / -1; }
     .view :global(.grid) { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
+    /* Library header: title and count on their own line, the search full width, the buttons wrapping below */
+    .view :global(.lib-h) { grid-template-columns: minmax(0, 1fr); }
+    .view :global(.lib-h .vh-act) { justify-content: flex-start; }
+    .view :global(.lib-h .search-w) { flex: 1 1 100%; }
+    .view :global(.lib-h .search-w .search) { flex: 1; min-width: 0; width: auto; }
+    .view :global(.add-w) { grid-column: 1; justify-self: start; }
+    .view :global(.add-w .menu) { right: auto; left: 0; }
   }
 </style>
