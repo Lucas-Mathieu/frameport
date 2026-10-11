@@ -251,6 +251,7 @@ def build_bridge(tc: Path):
     inc = openxr_include("bridge")
     run([tc / "bin/clang++", "--target=aarch64-linux-android29", f"--sysroot={tc / 'sysroot'}", "-std=c++17", "-O2", "-g",
          "-fPIC", f"-ffile-prefix-map={src}=native/vrapi-bridge", f"-ffile-prefix-map={CACHE}=native/.cache",
+         f"-ffile-prefix-map={CACHE.resolve()}=native/.cache",  # a symlinked cache (worktrees)
          "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-Wall", "-Wextra",
          "-Wno-missing-field-initializers", "-Werror=return-type", "-DXR_NO_PROTOTYPES", "-DXR_USE_PLATFORM_ANDROID",
          "-DXR_USE_GRAPHICS_API_VULKAN", "-DXR_USE_GRAPHICS_API_OPENGL_ES", "-DXR_USE_TIMESPEC", f"-I{inc}", "-shared",
