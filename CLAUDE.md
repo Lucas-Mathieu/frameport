@@ -69,6 +69,10 @@ Read `docs/PLAYBOOK.md` (symptom → fix) before debugging a game, and `docs/FRA
     Live Frame data comes from one app-owned `app.monitor_hub` (`frame/monitor_hub.py`): subscribers name modules +
     interval, the hub runs one agent `_monitor` stream (union of modules, fastest interval; per-module collection
     needs agent v73), reconnects after a lost stream and stops it when nobody subscribes; `_poll` retries an "error".
+    Games in a sample (agent v81): FramePort's own (launch.sh / container / Proton folder), any other game Steam's
+    reaper runs (`steam:<appid>`, title from the appmanifest, e.g. Job Simulator from Steam's store; not SteamVR, not
+    devkit entries; End game = Steam's Exit game), overlay apps flagged `overlay` and listed last; newest first. The
+    UI takes `frame/monitor.main_game(sample)` (never an overlay app alone). The agent's own workers never count.
     Subscribers: "monitor" (the Monitor tab, everything, only while shown) and "card" = the sidebar's live Frame card
     (`ui/frame_card.py` helpers: battery ring, "now playing" row with fps + 2-min sparkline → click opens Monitor;
     games + battery every 5 s, paused while a job's stage is "Upload…", only while connected and setting

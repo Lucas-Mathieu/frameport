@@ -179,13 +179,19 @@ class History:
         self.series.clear()
 
 
+def main_game(sample: dict | None) -> dict | None:
+    """The game in front: the agent lists games newest first with SteamVR overlay apps (they run next to games, e.g.
+    a desktop overlay) last; an overlay alone isn't a game being played. Older agents: the first non-overlay."""
+    return next((g for g in (sample or {}).get("games") or [] if not g.get("overlay")), None)
+
+
 def series_of(sample: dict) -> dict[str, float | None]:
     """The values one sample adds to the History."""
     mem = sample.get("mem") or {}
     total = mem.get("total") or 0
     temps = sample.get("temps") or {}
     bat = sample.get("battery") or {}
-    game = (sample.get("games") or [None])[0] or {}
+    game = main_game(sample) or {}
     extra = {f"temp:{g}": v for g, v in temps.items()}
     if sample.get("fan") is not None:
         extra["fan"] = sample["fan"]

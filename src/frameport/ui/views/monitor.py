@@ -518,7 +518,7 @@ class MonitorView:
     def _apply_game(self, s: dict) -> list:
         games = s.get("games") or []
         self.last_games = games
-        game = games[0] if games else None
+        game = M.main_game(s)
         was = self.game_card.visible
         self.game_card.visible = game is not None
         self.no_game.visible = game is None and self.filter.data == "game"
@@ -534,7 +534,8 @@ class MonitorView:
             # once per game (not per tick): its artwork, by asset URL
             self.game_art.content = C.art_fill(meta["art"], radius=T.RADIUS_SM, width=T.px(96), height=T.px(96))
             self.page_btn.visible = meta["in_library"]
-        kind = {"pcvr": tr("PC VR via Proton"), "linux": tr("Linux app")}.get(game.get("kind"), tr("Quest game"))
+        kind = {"pcvr": tr("PC VR via Proton"), "linux": tr("Linux app"),
+                "steam": tr("Steam game")}.get(game.get("kind"), tr("Quest game"))
         self.game_title.value = game.get("title") or pkg
         self.game_sub.value = " · ".join(x for x in (kind, tr("running for {t}").format(
             t=M.fmt_duration(game.get("elapsed"))) if game.get("elapsed") is not None else "") if x)

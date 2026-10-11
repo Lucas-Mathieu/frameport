@@ -21,6 +21,7 @@ import flet as ft
 from .. import pipeline
 from ..core import applog, library
 from ..errors import explain
+from ..frame import monitor as M
 from ..frame.connection import NOT_IN_LIBRARY, AgentFailed
 from ..i18n import fmt_size, tr, tr_n
 from ..recommend import catalog
@@ -516,7 +517,7 @@ class FramePortApp:
     def _on_card_sample(self, s: dict) -> None:
         """A sample for the card (the stream's thread): remember it, keep the fps history, redraw at most once a
         second (with the Monitor open the stream runs faster than the card's 5 s)."""
-        game = (s.get("games") or [None])[0]
+        game = M.main_game(s)
         pkg = game.get("package") if game else None
         if pkg != self._card_pkg:
             self._card_pkg = pkg
@@ -530,7 +531,7 @@ class FramePortApp:
                 self._card_art[pkg] = thumbs.url(pkg, CARD_ART, width=160, wait=False) if library.game(pkg) else None
         was = self._card_sample
         self._card_sample, self._card_state = s, "live"
-        shown_game = bool(was and was.get("games"))
+        shown_game = M.main_game(was) is not None
         now = time.monotonic()
         if now - self._card_shown < 1.0 and shown_game == bool(game):
             return

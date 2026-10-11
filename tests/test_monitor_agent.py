@@ -363,3 +363,35 @@ def test_fast_ticks_scan_processes_every_2_s(fa):
         seen.append("procs" in m.sample(wall=2000.0 + clock["t"] - 100.0))
     assert seen == [False] * 7 + [True]
     assert 0.1 in fa.MON_INTERVALS and fa.MON_DEFAULT_INTERVAL == 0.5
+
+
+def test_steam_games_and_overlay_apps(fa):
+    """A Steam store game (Job Simulator in Lepton, started by Steam's reaper) counts as a game with its Steam name;
+    an overlay app (Temporal Reality) is flagged and listed after it, and isn't the game in front."""
+    from frameport.frame.monitor import main_game
+    from frameport.ui.frame_card import now_playing
+
+    root, home = fa.ROOT, fa.ROOT.parent / "home"
+    w(home / ".local/share/Steam/steamapps/appmanifest_448280.acf",
+      '"AppState"\n{\n\t"appid"\t\t"448280"\n\t"name"\t\t"Job Simulator"\n\t"installdir"\t\t"Job Simulator"\n}\n')
+    ov = home / "Applications/quest-frame/linux.overlay"
+    w(ov / "deployment.json", json.dumps({"package": "linux.overlay", "appid": 1234, "title": "Temporal Reality",
+                                          "kind": "linux", "overlay": {"registered": True}}))
+    proc(root, 600, "bash", 1, start=50, cmdline=["bash", str(ov / "launch.sh")])  # started long before the game
+    proc(root, 601, "TemporalReality", 600, start=50, cmdline=[str(ov / "app/TemporalReality")])
+    proc(root, 700, "reaper", 100, start=150, cmdline=["reaper", "SteamLaunch", "AppId=448280", "--", "lepton"])
+    proc(root, 701, "lepton", 700, start=150, cmdline=["/bin/bash", "lepton", "waitforexitandrun"])
+    proc(root, 702, "reaper", 100, start=150, cmdline=["reaper", "SteamLaunch", f"AppId={fa.STEAMVR_APPID}"])
+    m, _ = monitor(fa)
+    s = m.sample(wall=2000.0)
+    games = {g["package"]: g for g in s["games"]}
+    steam = games["steam:448280"]
+    assert steam["title"] == "Job Simulator" and steam["kind"] == "steam" and not steam["overlay"]
+    assert games["linux.overlay"]["overlay"] and f"steam:{fa.STEAMVR_APPID}" not in games
+    assert s["games"][-1]["package"] == "linux.overlay"  # overlay apps last
+    assert {p["pid"]: p["game"] for p in m.procs}[701] == "steam:448280"
+    # the newest game first (the fixture's game started at 100, Job Simulator at 150)
+    assert main_game(s)["package"] == "steam:448280" and now_playing(s)["title"] == "Job Simulator"
+    # an overlay alone is nobody's game
+    alone = {"games": [g for g in s["games"] if g["overlay"]]}
+    assert main_game(alone) is None and now_playing(alone) is None

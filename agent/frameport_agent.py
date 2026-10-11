@@ -44,7 +44,7 @@ try:
 except ImportError:  # Windows: pc_revive loads this file for its VDF code only (GitHub #131)
     fcntl = None
 
-AGENT_VERSION = 80
+AGENT_VERSION = 81
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -6605,6 +6605,9 @@ MON_CRITICAL = ("steam", "steamwebhelper", "reaper", "vrserver", "vrcompositor",
 MON_ROOT_COMMS = ("conmon", "launch.sh", "reaper", "bash", "sh")
 MON_ROOT_PREFIXES = ("python", "proton", "pv-", "wine", "steam-runtime")
 AGENT_FILES = {os.path.abspath(__file__), os.path.realpath(__file__)}
+STEAM_GAME = "steam:"  # monitor: a game Steam started that FramePort didn't install ("steam:<appid>", e.g. a Lepton
+# game from Steam's store); its title comes from the appmanifest
+REAPER_APPID = re.compile(r"\bAppId=(\d+)")
 MON_GROUPS = (  # (group, comm prefixes), first match wins; games are found by their process tree
     ("steamvr", ("vr", "XRService", "V4L2Cam", "eyetracking", "proxmicmute", "systemlayer")),
     ("steam", ("steam", "reaper", "fossilize")),
@@ -6936,6 +6939,7 @@ class Monitor:
         self.logs = {}      # launch.log path -> [offset, fps, avg ms, time of the line]
         self.deps = []
         self.deps_at = -1e9
+        self.steam_titles = {}
         self.tick = 0
         self.last = None    # time of the previous sample
         self.disk_at = -1e9
@@ -7042,6 +7046,10 @@ class Monitor:
                     pkg = next((k for path, k in anchors if path in cmd), None) or \
                         next((k for base, k in bases if base in cmd), None)
                     root = (pkg, "launcher") if pkg else None
+                    m = REAPER_APPID.search(cmd) if comm == "reaper" and not pkg else None
+                    # any other game Steam runs (its reaper); not SteamVR itself, not a devkit entry of ours
+                    if m and m.group(1) not in by_appid and m.group(1) != STEAMVR_APPID and "/devkit-game/" not in cmd:
+                        root = (STEAM_GAME + m.group(1), "steam")
                 self.root_cache[key] = root
             if self.root_cache[key]:
                 roots[pid] = self.root_cache[key]
@@ -7119,7 +7127,7 @@ class Monitor:
         deps = {d["package"]: d for d in self.deployments(now)}
         out = []
         for pkg in sorted({v[0] for v in self.roots.values()}):
-            d = deps.get(pkg) or {}
+            d = deps.get(pkg) or (self.steam_game(pkg[len(STEAM_GAME):]) if pkg.startswith(STEAM_GAME) else {})
             pids = [p["pid"] for p in self.procs if p["game"] == pkg]
             cpu = sum(p["cpu"] for p in self.procs if p["game"] == pkg)
             rss = sum(p["rss"] for p in self.procs if p["game"] == pkg)
@@ -7139,9 +7147,24 @@ class Monitor:
                         "appid": d.get("appid"), "elapsed": max(ages) if ages else None,
                         "cpu": round(max(cpu, 0.0), 1), "mem": mem if mem is not None else rss,
                         "gpu": round(sum(self.gpu_pct.get(p, 0.0) for p in pids), 1),
-                        "fps": fps, "frame_ms": ms, "processes": len(pids)})
+                        "fps": fps, "frame_ms": ms, "processes": len(pids), "overlay": is_overlay(d)})
+        # the game in front first: overlay apps (they run next to games) last, then the most recently started
+        out.sort(key=lambda g: (g["overlay"], g["elapsed"] is None, g["elapsed"] or 0))
         self.games = out
         return out
+
+    def steam_game(self, appid):
+        """{title, kind, appid} of a Steam game FramePort didn't install (cached: appmanifest/shortcuts reads)."""
+        if appid not in self.steam_titles:
+            app = find_app_id(appid)
+            name = (app or {}).get("name")
+            if not name:
+                for user in steam_users():
+                    name = shortcut_names(user).get(appid)
+                    if name:
+                        break
+            self.steam_titles[appid] = name or f"App {appid}"
+        return {"title": self.steam_titles[appid], "kind": "steam", "appid": appid}
 
     def filtered(self, now=None):
         procs = self.procs
@@ -7288,8 +7311,29 @@ class Monitor:
         return {"ended": False, "pid": pid, "name": comm}
 
 
+def steam_app_running(appid):
+    """A Steam reaper runs this app id (a Steam game FramePort didn't install)."""
+    for name in os.listdir(PROC):
+        if name.isdigit() and _rd(f"{PROC}/{name}/comm").strip() == "reaper" and \
+                re.search(rf"\bAppId={appid}\b", _rd(f"{PROC}/{name}/cmdline").replace("\0", " ")):
+            return True
+    return False
+
+
 def monitor_end_game(pkg, wait=6.0):
-    """Steam's Exit game for a FramePort game (so Steam's session ends cleanly), then cmd_stop if it still runs."""
+    """Steam's Exit game for a FramePort game (so Steam's session ends cleanly), then cmd_stop if it still runs.
+    A Steam game FramePort didn't install ("steam:<appid>"): Steam's Exit game only."""
+    if str(pkg).startswith(STEAM_GAME):
+        appid = str(pkg)[len(STEAM_GAME):]
+        if not appid.isdigit():
+            raise AgentError(f"bad Steam app id {appid!r}")
+        if not steam_app_running(appid):
+            return {"ended": True, "via": None, "package": pkg, "note": "not running"}
+        steam_js(f"SteamClient.Apps.TerminateApp('{appid}', false)")
+        end = time.monotonic() + wait
+        while time.monotonic() < end and steam_app_running(appid):
+            time.sleep(0.5)
+        return {"ended": not steam_app_running(appid), "via": "steam", "package": pkg}
     pkg = check_pkg(pkg)
     dep = deployment(pkg)
     if not dep:

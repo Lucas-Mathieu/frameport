@@ -24,10 +24,9 @@ def now_playing(sample: dict | None, fps_series: list | None = None) -> dict | N
     """Display values for the card's "now playing" row, or None when no game runs: package, title, line ("playing ·
     27 min"), fps text ("72" / "–"), level (ok | warn | error by the fps against its presumed refresh rate) and the
     fps target (refresh rate) for the sparkline's guide."""
-    games = (sample or {}).get("games") or []
-    if not games:
+    g = M.main_game(sample)
+    if g is None:
         return None
-    g = games[0]
     pkg = g.get("package") or ""
     elapsed = g.get("elapsed")
     line = tr("playing · {t}").format(t=M.fmt_duration(elapsed)) if elapsed is not None else tr("playing")
