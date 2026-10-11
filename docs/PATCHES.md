@@ -146,7 +146,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Native video surfaces (Batman renderer)](#adapter-surface_native) | `adapter.surface_native` | Game settings | 1 |
 | [Swap eyes](#adapter-swap_eyes) | `adapter.swap_eyes` | Game settings |  |
 | [Retry refused picture formats](#adapter-swapchain_fix) | `adapter.swapchain_fix` | Game settings |  |
-| [Steady controller input after focus](#adapter-sync_guard) | `adapter.sync_guard` | Game settings | 2 |
+| [Steady controller input after focus](#adapter-sync_guard) | `adapter.sync_guard` | Game settings | 3 |
 | [Hide Vulkan foveation](#adapter-vk_hide_fdm) | `adapter.vk_hide_fdm` | Game settings | 1 |
 | [Stop objects popping in and out](#adapter-vk_query_slots) | `adapter.vk_query_slots` | Game settings |  |
 | [Vulkan shader dump (diagnostics)](#adapter-vk_shader_dump) | `adapter.vk_shader_dump` | Game settings |  |
@@ -1905,7 +1905,7 @@ For games that crash right after you return to them (for example after the Steam
 - **Options:**
   - Value: int, default `0`.
   - Game settings → Troubleshooting → "Steady controller input after focus" (advanced).
-- **Catalog games (2):** Batman: Arkham Shadow, Myst.
+- **Catalog games (3):** Batman: Arkham Shadow, Myst, Robo Recall.
 - **Suggested by launch-test signatures:**
   - `runtime-input-crash` (fatal): The Frame's runtime crashed in its controller code, usually right after the game got focus. sync_guard runs input syncs (xrSyncActions) one at a time and pauses them briefly after focus returns.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
