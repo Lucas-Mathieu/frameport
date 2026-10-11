@@ -334,8 +334,15 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
   controller (stick = touchpad touch, sideways > 0.6 or press = click). Gunjack (CCP, UE 4.10 NativeActivity, Gear VR,
   2026-10-10): needed the native_app_glue imports (ALooper/AInputQueue/AConfiguration/AAsset*, imports.txt), an arm64
   libvrapi.so for Java's System.loadLibrary("vrapi") and MOUNTED under OVP_HEADLESS_TEST; it then loads its map and
-  quits on purpose: AndroidMain compares AndroidThunkCpp_GetSignature() (the APK signing certificate) with an
-  obfuscated copy - a tamper check FramePort's re-signing always fails and that FramePort doesn't defeat (unsupported).
+  quit on purpose: AndroidMain compares AndroidThunkCpp_GetSignature() with an obfuscated copy. **Works since
+  2026-10-11 (owner-verified in the headset):** GameActivity.AndroidThunkJava_GetSignature() = Base64.DEFAULT(SHA-1(
+  signing certificate DER)) (jadx); `a32_bridge.original_signature` computes it from the original APK's
+  META-INF/*.RSA|DSA|EC, `convert()` stores it as `assets/fp_a32_signature.txt` for libUE4.so games, the bridge loads
+  it at activity creation (native_activity.c) and jni.c answers Call*Method on the method ID of
+  `AndroidThunkJava_GetSignature()Ljava/lang/String;` with it. After loading, Unreal leaves VR mode and enters it again on
+  the same GL context; a second OpenXR session there aborted in vrclient (CSharedSemaphoreLinux::WaitFromGPU from the GL
+  binding's PreBeginFrame, also with OVP_HEADLESS_TEST) → the VrApi bridge keeps a running GLES session across
+  LeaveVrMode and reuses it for an EnterVrMode with the same context (upstream-patches/runtime.cpp.patch).
   Debugging aids added: A32_BREAK=<guest addr>[,..] (stack of the first hits; guest libs load at fixed addresses, e.g.
   libUE4 0xf25d5000), A32_STRACE in bridge mode = path/exit calls to logcat, activity lifecycle + LeaveVrMode caller
   logs. Lepton's logcat mirror often dies for these games: read `podman exec <container> logcat` instead. Next: the three 32-bit catalog games

@@ -672,10 +672,20 @@ VRAPI ovrMobile* vrapi_EnterVrMode(const ovrModeParms* parms) {
     } else {
         // GLES application: ovrModeParms carries its EGLDisplay and context.
         s.gles = true;
-        s.eglDisplay = reinterpret_cast<EGLDisplay>(parms->Display);
-        s.eglContext = reinterpret_cast<EGLContext>(parms->ShareContext);
-        if (s.eglDisplay == EGL_NO_DISPLAY) s.eglDisplay = eglGetCurrentDisplay();
-        if (s.eglContext == EGL_NO_CONTEXT) s.eglContext = eglGetCurrentContext();
+        EGLDisplay display = reinterpret_cast<EGLDisplay>(parms->Display);
+        EGLContext context = reinterpret_cast<EGLContext>(parms->ShareContext);
+        if (display == EGL_NO_DISPLAY) display = eglGetCurrentDisplay();
+        if (context == EGL_NO_CONTEXT) context = eglGetCurrentContext();
+        if (s.session && s.running && display == s.eglDisplay && context == s.eglContext) {
+            // re-entry with the context of the session vrapi_LeaveVrMode kept (see there)
+            ++s.mobile.generation;
+            s.inVr = true;
+            OVP_LOG("Entered VR mode again (kept GLES session)");
+            return &s.mobile;
+        }
+        if (s.session) destroySession();  // another context: a new session
+        s.eglDisplay = display;
+        s.eglContext = context;
         EGLint configId = 0, count = 0;
         eglQueryContext(s.eglDisplay, s.eglContext, EGL_CONFIG_ID, &configId);
         // EGL_KHR_no_config_context (Unity 2019): the context has no config (id 0); use the window's, else RGBA8 ES3
@@ -709,7 +719,19 @@ VRAPI ovrMobile* vrapi_EnterVrMode(const ovrModeParms* parms) {
 }
 VRAPI void vrapi_LeaveVrMode(ovrMobile* mobile) {
     LOCK_STATE;
-    if (validMobile(mobile)) { destroySession(); OVP_LOG("Left VR mode"); }
+    if (!validMobile(mobile)) return;
+    if (s.gles && s.running) {
+        // GLES: the Frame's runtime aborts (CSharedSemaphoreLinux::WaitFromGPU in the GL binding's PreBeginFrame)
+        // on the first frame of a second session created on the same GL context, which Unreal's Gear VR code does
+        // when it leaves VR mode after loading and enters again (Gunjack). Keep the session; the next
+        // vrapi_EnterVrMode with the same context reuses it, another context replaces it.
+        if (s.frameBegun) endFrame(nullptr, 0);
+        s.inVr = false;
+        OVP_LOG("Left VR mode (GLES session kept for re-entry)");
+        return;
+    }
+    destroySession();
+    OVP_LOG("Left VR mode");
 }
 VRAPI double vrapi_GetPredictedDisplayTime(ovrMobile* mobile, int64_t index) {
     LOCK_STATE;

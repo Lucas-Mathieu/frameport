@@ -5,25 +5,15 @@
 #include <stdlib.h>
 #include "imports_internal.h"
 
+/* ---------------------------------------------------------------- original APK signature */
+
+/* UE4's GameActivity.AndroidThunkJava_GetSignature() hashes the APK's signing certificate, which AndroidMain compares
+ * with the original one (a tamper check): with the original value from the conversion (native_activity.c) the
+ * guest's call gets it instead of the re-signed APK's */
+extern char *g_orig_signature;
+static uint32_t signature_mid; /* method handle of AndroidThunkJava_GetSignature()Ljava/lang/String; */
+
 /* ---------------------------------------------------------------- shorties */
-// Maak verbinding met de globale variabelen uit native_activity.c
-extern unsigned char* g_orig_cert_bytes;
-extern int g_orig_cert_len;
-
-// De JNI-handler die de bytes teruggeeft aan Unreal Engine
-jbyteArray handle_signature_to_byte_array(JNIEnv* env, jobject obj) {
-    // Als de asset om wat voor reden dan ook niet geladen is, geef een lege array
-    if (!g_orig_cert_bytes || g_orig_cert_len == 0) {
-        return (*env)->NewByteArray(env, 0);
-    }
-
-    // Bouw de 32-bits compatibele array (binnen het bereik van de onderste 4 GiB)
-    jbyteArray array = (*env)->NewByteArray(env, g_orig_cert_len);
-    if (array != NULL) {
-        (*env)->SetByteArrayRegion(env, array, 0, g_orig_cert_len, (jbyte*)g_orig_cert_bytes);
-    }
-    return array;
-}
 
 /* "(I[Ljava/lang/String;J)V" -> "ILJ)V" */
 void make_shorty(const char *sig, char *out, size_t n)
@@ -248,6 +238,12 @@ static void call_method(a32_cpu *c, JNIEnv *env, int index, argreader *R)
     if (!m || !shorty) {
         bridge_log(ANDROID_LOG_ERROR, "%s: unknown method ID 0x%x", jni_names[index], mh);
         c->r[0] = c->r[1] = 0;
+        return;
+    }
+    if (mh == signature_mid && g_orig_signature && fn[index].type == 'L' && kind != K_NEW) {
+        static int logged;
+        if (!logged++) bridge_log(ANDROID_LOG_INFO, "AndroidThunkJava_GetSignature: original signature returned");
+        ret32(c, o2h_local((*env)->NewStringUTF(env, g_orig_signature)));
         return;
     }
     jvalue a[256];
@@ -478,6 +474,8 @@ int jni_dispatch(a32_cpu *c, int index)
             char shorty[260];
             make_shorty(sig, shorty, sizeof shorty);
             mid_set_shorty(h, shorty);
+            if (!strcmp(name, "AndroidThunkJava_GetSignature") && !strcmp(sig, "()Ljava/lang/String;"))
+                signature_mid = h;
         }
         ret32(c, h);
         return 1;

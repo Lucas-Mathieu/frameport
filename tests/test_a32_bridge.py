@@ -62,6 +62,48 @@ def _ovrport(name, abi):
     return f"OVRPORT {abi} {name}".encode()
 
 
+def _signed_cert_pkcs7():
+    """A PKCS#7 signature block (like META-INF/CERT.RSA) with a self-signed certificate; returns (block, cert DER)."""
+    import datetime
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import pkcs7
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Game Studio")])
+    now = datetime.datetime(2016, 1, 1, tzinfo=datetime.UTC)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+            .serial_number(1).not_valid_before(now).not_valid_after(now + datetime.timedelta(days=9000))
+            .sign(key, hashes.SHA256()))
+    block = (pkcs7.PKCS7SignatureBuilder().set_data(b"SF").add_signer(cert, key, hashes.SHA256())
+             .sign(serialization.Encoding.DER, [pkcs7.PKCS7Options.DetachedSignature]))
+    return block, cert.public_bytes(serialization.Encoding.DER)
+
+
+def test_original_signature_for_unreal(tmp_path):
+    """UE4's AndroidThunkJava_GetSignature = Base64.DEFAULT(SHA-1(signing certificate DER)); a re-signed APK has
+    another, so the conversion keeps the original's for the bridge to answer with (Gunjack quits otherwise)."""
+    import base64
+    import hashlib
+
+    block, der = _signed_cert_pkcs7()
+    p = tmp_path / "ue4.apk"
+    with zipfile.ZipFile(p, "w") as z:
+        z.writestr("AndroidManifest.xml", _manifest())
+        z.writestr("META-INF/MANIFEST.MF", b"Manifest-Version: 1.0\n")
+        z.writestr("META-INF/CERT.RSA", block)
+        z.writestr("lib/armeabi-v7a/libUE4.so", b"\x7fELF-ue4")
+    with ApkWorkspace(p) as ws:
+        a32_bridge.convert(ws, _prebuilt, _ovrport)
+        assert ws.read(a32_bridge.SIGNATURE_ASSET) == base64.b64encode(hashlib.sha1(der).digest()) + b"\n"
+    with ApkWorkspace(_apk(tmp_path)) as ws:  # not Unreal (and an unreadable signature block): nothing added
+        a32_bridge.convert(ws, _prebuilt, _ovrport)
+        assert not ws.has(a32_bridge.SIGNATURE_ASSET)
+
+
 def test_convert_layout(tmp_path):
     with ApkWorkspace(_apk(tmp_path)) as ws:
         converted = a32_bridge.convert(ws, _prebuilt, _ovrport)

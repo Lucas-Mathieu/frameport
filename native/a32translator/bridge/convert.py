@@ -16,7 +16,6 @@ import argparse
 import os
 import sys
 import tempfile
-import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -27,15 +26,6 @@ REPO = HERE.parents[2]
 VRAPI_BRIDGE = Path(os.environ.get("A32_VRAPI_BRIDGE") or REPO / "artifacts/arm64-v8a/libvrapi.so")
 FRAME_SETTINGS = (b"scale=1.0\nfoveation_fix=1\ncontroller_fix=1\n"
                   + os.environ.get("A32_FRAME_SETTINGS", "").replace(";", "\n").encode())
-
-def extract_original_cert(apk_path: Path) -> bytes:
-    """Trekt de binaire inhoud van het originele RSA/DSA/EC certificaat uit de APK."""
-    with zipfile.ZipFile(apk_path, 'r') as z:
-        cert_files = [f for f in z.namelist() if f.startswith('META-INF/') and f.endswith(('.RSA', '.DSA', '.EC'))]
-        if cert_files:
-            # Neem het eerste certificaatbestand dat we tegenkomen
-            return z.read(cert_files[0])
-    return b""
 
 def main():
     ap = argparse.ArgumentParser()
@@ -64,16 +54,9 @@ def main():
         return overport.ensure_runtime_lib(name, abi, Reporter()).read_bytes()
 
     with ApkWorkspace(Path(a.apk)) as ws, tempfile.TemporaryDirectory() as td:
-        # ---- DYNAMISCH CERTIFICAAT EXTRAHEREN ----
-        orig_cert_bytes = extract_original_cert(Path(a.apk))
-        if orig_cert_bytes:
-            ws.put("assets/orig_cert.bin", orig_cert_bytes)
-            print(f"[FramePort] Dynamisch origineel certificaat toegevoegd aan assets ({len(orig_cert_bytes)} bytes)")
-        else:
-            print("[FramePort] WAARSCHUWING: Geen origineel certificaat gevonden in META-INF!")
-        # ------------------------------------------
-
         libs = a32_bridge.convert(ws, prebuilt, ovrport, replace)
+        if ws.has(a32_bridge.SIGNATURE_ASSET):
+            print("original APK signature for the UE4 check:", ws.read(a32_bridge.SIGNATURE_ASSET).decode().strip())
         manifest = ws.read("AndroidManifest.xml")
         ws.put("AndroidManifest.xml", axml.fix_launcher(manifest) or manifest)  # Lepton starts the LAUNCHER activity
         if ws.has(ws.lib("libopenxr_loader_generic.so")):  # FrameBridge's settings (frame.adapter in a build)

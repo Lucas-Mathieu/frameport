@@ -174,7 +174,7 @@
      return 0;
  }
  VRAPI void vrapi_Shutdown() { LOCK_STATE; shutdown(); }
-@@ -518,18 +591,41 @@
+@@ -518,18 +591,51 @@
  }
  VRAPI ovrMobile* vrapi_EnterVrMode(const ovrModeParms* parms) {
      LOCK_STATE;
@@ -188,10 +188,20 @@
 +    } else {
 +        // GLES application: ovrModeParms carries its EGLDisplay and context.
 +        s.gles = true;
-+        s.eglDisplay = reinterpret_cast<EGLDisplay>(parms->Display);
-+        s.eglContext = reinterpret_cast<EGLContext>(parms->ShareContext);
-+        if (s.eglDisplay == EGL_NO_DISPLAY) s.eglDisplay = eglGetCurrentDisplay();
-+        if (s.eglContext == EGL_NO_CONTEXT) s.eglContext = eglGetCurrentContext();
++        EGLDisplay display = reinterpret_cast<EGLDisplay>(parms->Display);
++        EGLContext context = reinterpret_cast<EGLContext>(parms->ShareContext);
++        if (display == EGL_NO_DISPLAY) display = eglGetCurrentDisplay();
++        if (context == EGL_NO_CONTEXT) context = eglGetCurrentContext();
++        if (s.session && s.running && display == s.eglDisplay && context == s.eglContext) {
++            // re-entry with the context of the session vrapi_LeaveVrMode kept (see there)
++            ++s.mobile.generation;
++            s.inVr = true;
++            OVP_LOG("Entered VR mode again (kept GLES session)");
++            return &s.mobile;
++        }
++        if (s.session) destroySession();  // another context: a new session
++        s.eglDisplay = display;
++        s.eglContext = context;
 +        EGLint configId = 0, count = 0;
 +        eglQueryContext(s.eglDisplay, s.eglContext, EGL_CONFIG_ID, &configId);
 +        // EGL_KHR_no_config_context (Unity 2019): the context has no config (id 0); use the window's, else RGBA8 ES3
@@ -222,7 +232,28 @@
          std::this_thread::sleep_for(std::chrono::milliseconds(5));
      }
      ++s.mobile.generation;
-@@ -607,7 +703,12 @@
+@@ -539,7 +645,19 @@
+ }
+ VRAPI void vrapi_LeaveVrMode(ovrMobile* mobile) {
+     LOCK_STATE;
+-    if (validMobile(mobile)) { destroySession(); OVP_LOG("Left VR mode"); }
++    if (!validMobile(mobile)) return;
++    if (s.gles && s.running) {
++        // GLES: the Frame's runtime aborts (CSharedSemaphoreLinux::WaitFromGPU in the GL binding's PreBeginFrame)
++        // on the first frame of a second session created on the same GL context, which Unreal's Gear VR code does
++        // when it leaves VR mode after loading and enters again (Gunjack). Keep the session; the next
++        // vrapi_EnterVrMode with the same context reuses it, another context replaces it.
++        if (s.frameBegun) endFrame(nullptr, 0);
++        s.inVr = false;
++        OVP_LOG("Left VR mode (GLES session kept for re-entry)");
++        return;
++    }
++    destroySession();
++    OVP_LOG("Left VR mode");
+ }
+ VRAPI double vrapi_GetPredictedDisplayTime(ovrMobile* mobile, int64_t index) {
+     LOCK_STATE;
+@@ -607,7 +725,12 @@
          case 128: return 1; // Stereo array texture path.
          case 129: return 1; // sRGB VkFormats retain their color encoding.
          case 130: return 0; // No foveation image implementation is advertised.
@@ -236,7 +267,7 @@
      }
  }
  VRAPI float vrapi_GetSystemPropertyFloat(const ovrJava*, int property) {
-@@ -626,7 +727,9 @@
+@@ -626,7 +749,9 @@
  VRAPI int vrapi_GetSystemStatusInt(const ovrJava*, int status) {
      LOCK_STATE;
      if (status == 0) return s.instance != XR_NULL_HANDLE;
@@ -247,7 +278,7 @@
      if (status == 13) return static_cast<int>(s.recenterCount);
      if (status == 14) return s.running && s.sessionState != XR_SESSION_STATE_FOCUSED;
      if (status == 130) return 1;
-@@ -665,3 +768,48 @@
+@@ -665,3 +790,48 @@
      if (!s.setColorSpace) return color->ColorSpace == 0 ? Success : Unsupported;
      return xrOk(s.setColorSpace(s.session, static_cast<XrColorSpaceFB>(color->ColorSpace)), "xrSetColorSpaceFB") ? Success : InvalidParameter;
  }

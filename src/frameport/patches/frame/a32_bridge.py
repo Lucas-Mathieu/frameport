@@ -26,6 +26,35 @@ OVERPORT_CONFIG = (b'{"version":1,"database":[{"app_id":"__current__","products"
                    b'"patched":{"by":"FramePort a32 bridge","patches":[]}}')
 
 
+SIGNATURE_ASSET = "assets/fp_a32_signature.txt"  # read by the bridge (native_activity.c), answered in jni.c
+
+
+def original_signature(ws) -> bytes | None:
+    """What UE4's GameActivity.AndroidThunkJava_GetSignature() returns for the original APK: Base64 (Android's
+    Base64.DEFAULT, newline included) of the SHA-1 of the signing certificate (Signature.toByteArray() = the
+    certificate's DER). UE4 Gear VR games (Gunjack) compare it with a copy in their code and quit when it differs,
+    which every re-signed build does; the bridge returns this value instead."""
+    import base64
+    import hashlib
+
+    from cryptography.hazmat.primitives.serialization import Encoding, pkcs7
+
+    from ...apk.workspace import SIGNATURE_FILE
+
+    for name in sorted(ws.names()):
+        m = SIGNATURE_FILE.match(name)
+        if not m or (m.group(2) or "").upper() not in ("RSA", "DSA", "EC"):
+            continue
+        try:
+            certs = pkcs7.load_der_pkcs7_certificates(ws.read(name))
+        except ValueError:
+            continue
+        if certs:
+            der = certs[0].public_bytes(Encoding.DER)
+            return base64.b64encode(hashlib.sha1(der).digest()) + b"\n"
+    return None
+
+
 def unity_oculus_check(data: bytes) -> bytes:
     """Unity's built-in Oculus support starts VR only when com.oculus.systemactivities is installed: point the lookup
     at "android" (as frame.unity_oculus_check does for 64-bit Unity)."""
@@ -61,6 +90,9 @@ def convert(ws, prebuilt: Callable[[str], bytes], ovrport: Callable[[str, str], 
     if any(n.startswith(f"lib/{HOST}/") for n in names):
         raise RuntimeError("the APK has 64-bit libraries already")
     libs = sorted(n[len(f"lib/{abi}/"):] for n in names if n.startswith(f"lib/{abi}/") and n.endswith(".so"))
+    signature = original_signature(ws)
+    if signature and any(n.startswith(f"lib/{abi}/libUE4.so") for n in names):
+        ws.put(SIGNATURE_ASSET, signature)
     manifest = ws.read(MANIFEST)
     manifest = axml.set_bool_attr(manifest, "application", "extractNativeLibs", True) or manifest
     ws.put(MANIFEST, raise_target_sdk(manifest))

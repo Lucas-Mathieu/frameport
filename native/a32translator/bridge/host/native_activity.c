@@ -5,28 +5,6 @@
 #include <android/asset_manager_jni.h>
 #include <stdlib.h>
 #include "imports_internal.h"
-#include <openssl/sha.h> // Zorg dat openssl/crypto gelinkt is, of gebruik een simpele sha1 embedded functie
-
-// Deze functie overschrijft de complete Android/JNI thunk van Unreal Engine
-void handle_get_signature_override(char* out_buffer) {
-    extern unsigned char* g_orig_cert_bytes;
-    extern int g_orig_cert_len;
-
-    // Als we de originele bytes hebben, berekenen we de echte SHA-1
-    if (g_orig_cert_bytes && g_orig_cert_len > 0) {
-        unsigned char sha1_result[20];
-        SHA1(g_orig_cert_bytes, g_orig_cert_len, sha1_result);
-        
-        // Converteer naar Hex-string zoals keytool dat deed: "D2755317..."
-        for (int i = 0; i < 20; i++) {
-            sprintf(&out_buffer[i * 2], "%02X", sha1_result[i]);
-        }
-        out_buffer[40] = '\0'; // String afsluiten
-    } else {
-        // Fallback als er iets misgaat
-        strcpy(out_buffer, "D2755317D41027B4896D446864BBBC658185052F");
-    }
-}
 
 /* struct ANativeActivity, 32-bit */
 #define GA_CALLBACKS 0
@@ -56,27 +34,26 @@ typedef struct {
 static activity acts[8];
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
-unsigned char* g_orig_cert_bytes = NULL;
-int g_orig_cert_len = 0;
+/* What UE4's GameActivity.AndroidThunkJava_GetSignature() returned for the original APK (Base64 of the SHA-1 of its
+ * signing certificate, with Base64.DEFAULT's newline): the conversion stores it in assets/fp_a32_signature.txt (patch
+ * frame.a32_bridge), jni.c answers the guest's call with it, since the re-signed APK has another certificate. */
+char *g_orig_signature;
 
-void load_original_cert_from_assets(AAssetManager* mgr) {
-    if (g_orig_cert_bytes != NULL) return; // Al geladen, doe niks
-
-    if (!mgr) {
-        g_orig_cert_len = 0;
-        return;
+static void load_orig_signature(AAssetManager *mgr)
+{
+    if (g_orig_signature || !mgr) return;
+    AAsset *asset = AAssetManager_open(mgr, "fp_a32_signature.txt", AASSET_MODE_BUFFER);
+    if (!asset) return;
+    off_t n = AAsset_getLength(asset);
+    char *s = n > 0 && n < 256 ? malloc((size_t)n + 1) : NULL;
+    if (s && AAsset_read(asset, s, (size_t)n) == n) {
+        s[n] = 0;
+        g_orig_signature = s;
+        bridge_log(ANDROID_LOG_INFO, "original APK signature loaded (%d bytes)", (int)n);
+    } else {
+        free(s);
     }
-
-    // Open het bestand dat convert.py heeft ingebakken
-    AAsset* asset = AAssetManager_open(mgr, "orig_cert.bin", AASSET_MODE_BUFFER);
-    if (asset) {
-        g_orig_cert_len = AAsset_getLength(asset);
-        g_orig_cert_bytes = (unsigned char*)malloc(g_orig_cert_len);
-        if (g_orig_cert_bytes) {
-            AAsset_read(asset, g_orig_cert_bytes, g_orig_cert_len);
-        }
-        AAsset_close(asset);
-    }
+    AAsset_close(asset);
 }
 
 ANativeActivity *guest_activity(uint32_t g)
@@ -176,9 +153,7 @@ static void on_destroy(ANativeActivity *a)
 
 void activity_create(ANativeActivity *a, void *saved, size_t saved_size, uint32_t oncreate)
 {
-    if (a && a->assetManager) {
-        load_original_cert_from_assets(a->assetManager);
-    }
+    load_orig_signature(a->assetManager);
     uint32_t g = guest_malloc(GA_SIZE + 4 * NCALLBACKS);
     memset(g2p(g), 0, GA_SIZE + 4 * NCALLBACKS);
     st32(g + GA_CALLBACKS, g + GA_SIZE);
