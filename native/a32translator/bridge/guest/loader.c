@@ -492,6 +492,8 @@ static lib *load_lib(const char *name)
         l->refs++;
         return l;
     }
+    /* VrApi is always the runtime's: lib/ may hold a host libvrapi.so of that name (the app's Java side loads one) */
+    if (!strcmp(base, "libvrapi.so")) return &system_lib;
     char path[512];
     int fd = open_lib(name, path, sizeof path);
     if (fd < 0) {

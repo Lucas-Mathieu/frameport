@@ -1,8 +1,32 @@
 /* NativeActivity for guest libraries. The guest gets its own 32-bit ANativeActivity (and callback table) that
  * mirrors the host's; the host activity's callbacks forward to whatever the guest's ANativeActivity_onCreate put
  * in its table. Windows, input queues and the asset manager are host pointers: the guest sees handles (ptr2h). */
+#include <android/asset_manager.h>
+#include <android/asset_manager_jni.h>
 #include <stdlib.h>
 #include "imports_internal.h"
+#include <openssl/sha.h> // Zorg dat openssl/crypto gelinkt is, of gebruik een simpele sha1 embedded functie
+
+// Deze functie overschrijft de complete Android/JNI thunk van Unreal Engine
+void handle_get_signature_override(char* out_buffer) {
+    extern unsigned char* g_orig_cert_bytes;
+    extern int g_orig_cert_len;
+
+    // Als we de originele bytes hebben, berekenen we de echte SHA-1
+    if (g_orig_cert_bytes && g_orig_cert_len > 0) {
+        unsigned char sha1_result[20];
+        SHA1(g_orig_cert_bytes, g_orig_cert_len, sha1_result);
+        
+        // Converteer naar Hex-string zoals keytool dat deed: "D2755317..."
+        for (int i = 0; i < 20; i++) {
+            sprintf(&out_buffer[i * 2], "%02X", sha1_result[i]);
+        }
+        out_buffer[40] = '\0'; // String afsluiten
+    } else {
+        // Fallback als er iets misgaat
+        strcpy(out_buffer, "D2755317D41027B4896D446864BBBC658185052F");
+    }
+}
 
 /* struct ANativeActivity, 32-bit */
 #define GA_CALLBACKS 0
@@ -32,6 +56,29 @@ typedef struct {
 static activity acts[8];
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
+unsigned char* g_orig_cert_bytes = NULL;
+int g_orig_cert_len = 0;
+
+void load_original_cert_from_assets(AAssetManager* mgr) {
+    if (g_orig_cert_bytes != NULL) return; // Al geladen, doe niks
+
+    if (!mgr) {
+        g_orig_cert_len = 0;
+        return;
+    }
+
+    // Open het bestand dat convert.py heeft ingebakken
+    AAsset* asset = AAssetManager_open(mgr, "orig_cert.bin", AASSET_MODE_BUFFER);
+    if (asset) {
+        g_orig_cert_len = AAsset_getLength(asset);
+        g_orig_cert_bytes = (unsigned char*)malloc(g_orig_cert_len);
+        if (g_orig_cert_bytes) {
+            AAsset_read(asset, g_orig_cert_bytes, g_orig_cert_len);
+        }
+        AAsset_close(asset);
+    }
+}
+
 ANativeActivity *guest_activity(uint32_t g)
 {
     ANativeActivity *r = NULL;
@@ -53,10 +100,18 @@ static uint32_t guest_of(ANativeActivity *a)
 }
 
 /* calls the guest's callback cb (if it set one) with the guest activity and up to two more words */
+static const char *const CB_NAMES[NCALLBACKS] = {
+    "onStart", "onResume", "onSaveInstanceState", "onPause", "onStop", "onDestroy", "onWindowFocusChanged",
+    "onNativeWindowCreated", "onNativeWindowResized", "onNativeWindowRedrawNeeded", "onNativeWindowDestroyed",
+    "onInputQueueCreated", "onInputQueueDestroyed", "onContentRectChanged", "onConfigurationChanged", "onLowMemory",
+};
+
 static uint64_t forward(ANativeActivity *a, int cb, int n, uint32_t w1, uint32_t w2, int *called)
 {
     uint32_t g = guest_of(a);
     uint32_t fn = g ? ld32(ld32(g + GA_CALLBACKS) + 4u * (uint32_t)cb) : 0;
+    if (cb != CB_WINDOW_REDRAW && cb != CB_CONTENT_RECT) /* the lifecycle, for logs (rare) */
+        bridge_log(ANDROID_LOG_INFO, "activity %s(0x%x)%s", CB_NAMES[cb], w1, fn ? "" : " (no guest callback)");
     if (called) *called = fn != 0;
     if (!fn) return 0;
     uint32_t w[3] = {g, w1, w2};
@@ -121,6 +176,9 @@ static void on_destroy(ANativeActivity *a)
 
 void activity_create(ANativeActivity *a, void *saved, size_t saved_size, uint32_t oncreate)
 {
+    if (a && a->assetManager) {
+        load_original_cert_from_assets(a->assetManager);
+    }
     uint32_t g = guest_malloc(GA_SIZE + 4 * NCALLBACKS);
     memset(g2p(g), 0, GA_SIZE + 4 * NCALLBACKS);
     st32(g + GA_CALLBACKS, g + GA_SIZE);

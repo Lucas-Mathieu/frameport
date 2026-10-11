@@ -32,8 +32,8 @@ signatures:
   - id: no-arm64
     pattern: 'INSTALL_FAILED_NO_MATCHING_ABIS'
     severity: fatal
-    diagnosis: This game is 32-bit only and can't run on the Frame (no AArch32). Use the PC (Rift) version through Revive.
-    suggest: []
+    diagnosis: 32-bit-only APK (e.g. a Gear VR or Oculus Go game). The Steam Frame has no 32-bit ARM support; FramePort's 32-bit bridge translates the game (experimental).
+    suggest: [frame.a32_bridge]
   - id: android-too-new
     pattern: '(NoClassDefFoundError|ClassNotFoundException|NoSuchMethodError)\b.*(Landroid/window/|android\.window\.|(storeStoreFence|loadLoadFence)\(\)V in class Ljava/lang/invoke/VarHandle)'
     severity: fatal
@@ -251,6 +251,7 @@ signatures:
     supersedes: [direct-vrapi, native-crash]
   - id: direct-vrapi
     pattern: '(?<!called before )vrapi_Initialize|VrApi.*not supported|libvrapi\.so.*(not found|failed)'
+    unless: 'a32bridge: '  # a 32-bit game on the a32 bridge: it translates VrApi itself
     severity: warning
     diagnosis: The game uses Meta's VrApi directly and needs the VrApi bridge.
     suggest: [frame.vrapi_bridge]

@@ -114,3 +114,140 @@ void imp_a32_audio_close(a32_cpu *c, argreader *R)
     AAudioStream_close(o->stream);
     free(o);
 }
+
+/* ---------------------------------------------------------------- looper, input queue, assets (native_app_glue) */
+
+#include <android/asset_manager.h>
+#include <dlfcn.h>
+#include <android/input.h>
+#include <android/looper.h>
+
+#define W(f) extern __typeof__(f) f __attribute__((weak))
+W(ALooper_addFd); W(ALooper_pollOnce); W(AInputQueue_attachLooper); W(AInputQueue_getEvent);
+W(AAssetDir_getNextFileName); W(AAsset_openFileDescriptor); W(AAsset_openFileDescriptor64);
+#undef W
+
+/* a guest ALooper callback int (*)(int fd, int events, void *data), called on the polling (guest) thread */
+typedef struct {
+    uint32_t fn, data;
+} looper_cb;
+
+static int looper_call(int fd, int events, void *p)
+{
+    looper_cb *cb = p;
+    uint32_t w[3] = {(uint32_t)fd, (uint32_t)events, cb->data};
+    return (int)guest_call(cb->fn, w, 3);
+}
+
+/* host data for a guest (callback, data) pair: the callback's own record (kept: the looper may call it until the
+ * fd is removed), or the guest's data pointer itself when there is no callback */
+static void *looper_data(uint32_t fn, uint32_t data, ALooper_callbackFunc *host_fn)
+{
+    *host_fn = NULL;
+    if (!fn) return g2p(data);
+    looper_cb *cb = malloc(sizeof *cb);
+    if (!cb) return NULL;
+    cb->fn = fn, cb->data = data;
+    *host_fn = looper_call;
+    return cb;
+}
+
+void imp_ALooper_addFd(a32_cpu *c, argreader *R)
+{
+    ALooper *l = h2ptr(rd32(R));
+    int fd = (int)rd32(R), ident = (int)rd32(R), events = (int)rd32(R);
+    uint32_t fn = rd32(R), data = rd32(R);
+    ALooper_callbackFunc host_fn;
+    void *d = looper_data(fn, data, &host_fn);
+    ret32(c, ALooper_addFd ? (uint32_t)ALooper_addFd(l, fd, ident, events, host_fn, d) : (uint32_t)-1);
+}
+
+void imp_AInputQueue_attachLooper(a32_cpu *c, argreader *R)
+{
+    AInputQueue *q = h2ptr(rd32(R));
+    ALooper *l = h2ptr(rd32(R));
+    int ident = (int)rd32(R);
+    uint32_t fn = rd32(R), data = rd32(R);
+    ALooper_callbackFunc host_fn;
+    void *d = looper_data(fn, data, &host_fn);
+    if (AInputQueue_attachLooper) AInputQueue_attachLooper(q, l, ident, host_fn, d);
+}
+
+/* outData is a void ** (4 bytes on the guest side); data without a callback is the guest's own pointer */
+static void poll(a32_cpu *c, argreader *R, int all)
+{
+    int timeout = (int)rd32(R);
+    uint32_t out_fd = rd32(R), out_events = rd32(R), out_data = rd32(R);
+    int fd = 0, events = 0;
+    void *data = NULL;
+    /* ALooper_pollAll: removed from the NDK headers (it may miss wakes), still in libandroid for old apps */
+    static int (*poll_all)(int, int *, int *, void **);
+    if (all && !poll_all) poll_all = (int (*)(int, int *, int *, void **))dlsym(RTLD_DEFAULT, "ALooper_pollAll");
+    int (*f)(int, int *, int *, void **) = all ? poll_all : ALooper_pollOnce;
+    int r = f ? f(timeout, &fd, &events, &data) : ALOOPER_POLL_ERROR;
+    if (out_fd) st32(out_fd, (uint32_t)fd);
+    if (out_events) st32(out_events, (uint32_t)events);
+    if (out_data) st32(out_data, (uint32_t)(uintptr_t)data);
+    ret32(c, (uint32_t)r);
+}
+
+void imp_ALooper_pollAll(a32_cpu *c, argreader *R) { poll(c, R, 1); }
+void imp_ALooper_pollOnce(a32_cpu *c, argreader *R) { poll(c, R, 0); }
+
+void imp_AInputQueue_getEvent(a32_cpu *c, argreader *R)
+{
+    AInputQueue *q = h2ptr(rd32(R));
+    uint32_t out = rd32(R);
+    AInputEvent *e = NULL;
+    int r = AInputQueue_getEvent ? AInputQueue_getEvent(q, &e) : -1;
+    if (out) st32(out, r >= 0 ? ptr2h(e) : 0);
+    ret32(c, (uint32_t)r);
+}
+
+/* the name is valid until the next call: one guest buffer, refilled each time */
+void imp_AAssetDir_getNextFileName(a32_cpu *c, argreader *R)
+{
+    AAssetDir *d = h2ptr(rd32(R));
+    const char *name = AAssetDir_getNextFileName ? AAssetDir_getNextFileName(d) : NULL;
+    static uint32_t buf;
+    static size_t size;
+    size_t n = name ? strlen(name) + 1 : 0;
+    if (n > size) {
+        guest_free(buf);
+        size = n < 256 ? 256 : n;
+        buf = guest_malloc((uint32_t)size);
+        if (!buf) size = 0;
+    }
+    if (n && buf) memcpy(g2p(buf), name, n);
+    ret32(c, n && buf ? buf : 0);
+}
+
+/* off_t is 32-bit for the guest (AAsset_openFileDescriptor) and 64-bit in the 64 variant */
+static void open_fd(a32_cpu *c, argreader *R, int wide)
+{
+    AAsset *a = h2ptr(rd32(R));
+    uint32_t out_start = rd32(R), out_len = rd32(R);
+    off64_t start = 0, len = 0;
+    int fd = AAsset_openFileDescriptor64 ? AAsset_openFileDescriptor64(a, &start, &len) : -1;
+    if (wide) {
+        if (out_start) memcpy(g2p(out_start), &start, 8);
+        if (out_len) memcpy(g2p(out_len), &len, 8);
+    } else {
+        if (start > 0x7fffffff || len > 0x7fffffff)
+            bridge_log(ANDROID_LOG_WARN, "AAsset_openFileDescriptor: offset/length past 2 GiB for a 32-bit app");
+        if (out_start) st32(out_start, (uint32_t)start);
+        if (out_len) st32(out_len, (uint32_t)len);
+    }
+    ret32(c, (uint32_t)fd);
+}
+
+void imp_AAsset_openFileDescriptor(a32_cpu *c, argreader *R) { open_fd(c, R, 0); }
+void imp_AAsset_openFileDescriptor64(a32_cpu *c, argreader *R) { open_fd(c, R, 1); }
+
+/* logged: a game that quits by itself shows it here */
+void imp_ANativeActivity_finish(a32_cpu *c, argreader *R)
+{
+    ANativeActivity *a = guest_activity(rd32(R));
+    bridge_log(ANDROID_LOG_INFO, "guest called ANativeActivity_finish");
+    if (a) ANativeActivity_finish(a);
+}

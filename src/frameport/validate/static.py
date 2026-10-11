@@ -53,6 +53,9 @@ def check_apk(apk: Path, package: str | None = None, expect_adapter: bool = True
     except Exception as exc:  # noqa: BLE001
         add("Manifest parses", False, str(exc))
     if abi:
+        # 32-bit guest code of the a32 bridge (frame.a32_bridge): its libraries and VrApi come from the bridge's
+        # guest runtime, not from the APK or the system
+        libs = {n: d for n, d in libs.items() if not n.endswith(".a32.so")}
         unresolved = set()
         for data in libs.values():
             if elf.is_elf(data):

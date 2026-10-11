@@ -242,22 +242,25 @@ void gl_glDebugMessageCallbackKHR(a32_cpu *c, argreader *R, void *fn) { gl_glDeb
 /* ---------------------------------------------------------------- buffer mappings */
 
 /* A mapping the guest can't reach (driver memory above 4 GiB) gets a guest copy: filled when mapped for reading,
- * written back at flush/unmap when mapped for writing. One per (context, target). */
+ * written back at flush/unmap when mapped for writing. One per (context, buffer object): GL maps buffers, not
+ * targets, and an app may keep several buffers of one target mapped (Unity's dynamic vertex buffers); keyed by the
+ * target, a second map dropped the first one's copy (never freed, never written back: garbage vertices). */
 typedef struct {
     EGLContext ctx;
-    GLenum target;
+    GLuint buffer;
     uint8_t *host;
     uint32_t guest;
     uint32_t len;
     GLbitfield access;
 } mapping;
 
-static mapping maps[64];
+#define MAX_MAPS 256
+static mapping maps[MAX_MAPS];
 
-static mapping *find_map(EGLContext ctx, GLenum target)
+static mapping *find_map(EGLContext ctx, GLuint buffer)
 {
-    for (int k = 0; k < 64; k++)
-        if (maps[k].host && maps[k].ctx == ctx && maps[k].target == target) return &maps[k];
+    for (int k = 0; k < MAX_MAPS; k++)
+        if (maps[k].host && maps[k].ctx == ctx && maps[k].buffer == buffer) return &maps[k];
     return NULL;
 }
 
@@ -268,6 +271,31 @@ static EGLContext current_context(void)
     return f ? f() : NULL;
 }
 
+/* the buffer object bound to a buffer target */
+static GLuint bound_buffer(GLenum target)
+{
+    GLenum binding;
+    switch (target) {
+    case 0x8892: binding = 0x8894; break; /* ARRAY_BUFFER */
+    case 0x8893: binding = 0x8895; break; /* ELEMENT_ARRAY_BUFFER */
+    case 0x8A11: binding = 0x8A28; break; /* UNIFORM_BUFFER */
+    case 0x88EB: binding = 0x88ED; break; /* PIXEL_PACK_BUFFER */
+    case 0x88EC: binding = 0x88EF; break; /* PIXEL_UNPACK_BUFFER */
+    case 0x8C8E: binding = 0x8C8F; break; /* TRANSFORM_FEEDBACK_BUFFER */
+    case 0x90D2: binding = 0x90D3; break; /* SHADER_STORAGE_BUFFER */
+    case 0x8F3F: binding = 0x8F43; break; /* DRAW_INDIRECT_BUFFER */
+    case 0x90EE: binding = 0x90EF; break; /* DISPATCH_INDIRECT_BUFFER */
+    case 0x92C0: binding = 0x92C1; break; /* ATOMIC_COUNTER_BUFFER */
+    case 0x8C2A: binding = 0x8C2C; break; /* TEXTURE_BUFFER */
+    default: binding = target; break;     /* COPY_READ/WRITE_BUFFER: the binding has the target's value */
+    }
+    static __typeof__(&glGetIntegerv) gi;
+    if (!gi) gi = (__typeof__(gi))host_fn("glGetIntegerv");
+    GLint name = 0;
+    if (gi) gi(binding, &name);
+    return (GLuint)name;
+}
+
 static uint32_t map_result(GLenum target, void *p, uint32_t len, GLbitfield access)
 {
     if (!p) return 0;
@@ -275,14 +303,24 @@ static uint32_t map_result(GLenum target, void *p, uint32_t len, GLbitfield acce
     uint32_t g = guest_malloc(len ? len : 1);
     if (!g) return 0;
     if (access & GL_MAP_READ_BIT) memcpy(g2p(g), p, len);
+    GLuint buffer = bound_buffer(target);
+    uint32_t stale = 0;
     pthread_mutex_lock(&lock);
     EGLContext ctx = current_context();
-    mapping *m = find_map(ctx, target);
+    mapping *m = find_map(ctx, buffer);
+    if (m) stale = m->guest; /* mapped again without an unmap (the GL error case): the old copy goes */
     if (!m)
-        for (int k = 0; k < 64 && !m; k++)
+        for (int k = 0; k < MAX_MAPS && !m; k++)
             if (!maps[k].host) m = &maps[k];
-    if (m) *m = (mapping){ctx, target, p, g, len, access};
+    if (m) *m = (mapping){ctx, buffer, p, g, len, access};
     pthread_mutex_unlock(&lock);
+    if (stale) guest_free(stale);
+    if (!m) {
+        static int full;
+        if (!full++) bridge_log(ANDROID_LOG_ERROR, "glMapBuffer: more than %d buffers mapped at once", MAX_MAPS);
+        guest_free(g);
+        return 0;
+    }
     return g;
 }
 
@@ -312,8 +350,9 @@ void gl_glMapBufferOES(a32_cpu *c, argreader *R, void *fn)
 /* copies a mapping's guest data back (whole range, or [off, off+len) for an explicit flush) */
 static void write_back(GLenum target, uint32_t off, uint32_t len, int unmap)
 {
+    GLuint buffer = bound_buffer(target);
     pthread_mutex_lock(&lock);
-    mapping *m = find_map(current_context(), target);
+    mapping *m = find_map(current_context(), buffer);
     mapping copy;
     if (m) {
         copy = *m;

@@ -176,6 +176,9 @@ _Noreturn void thread_exit(a32_cpu *c, int status)
 
 __attribute__((weak)) void jit_report(void) {}
 __attribute__((weak)) void a32_report(const char *fmt, ...) { (void)fmt; }
+uint32_t a32_break_pc[4];
+int a32_break_hits[4];
+__attribute__((weak)) void a32_break_hit(a32_cpu *c) { a32_report("A32_BREAK at %08x, lr %08x", c->r[15], c->r[14]); }
 
 _Noreturn void guest_exit(int status)
 {

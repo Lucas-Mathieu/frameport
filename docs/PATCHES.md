@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 163 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 164 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -11,7 +11,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 ## Groups
 
 - [Patches from OVRPort](#group-overport) (25)
-- [Steam Frame patches](#group-frame) (51)
+- [Steam Frame patches](#group-frame) (52)
 - [Game settings](#group-adapter) (66)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
@@ -45,6 +45,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Replace application label and icon](#patch_replace_icon_label) | `patch_replace_icon_label` | Patches from OVRPort | default |
 | [Pico/YVR/Quest metadata](#patch_vr_metadata) | `patch_vr_metadata` | Patches from OVRPort | default |
 | [VrApi → OpenXR adapter (OVRPort)](#patch_vrapi_openxr) | `patch_vrapi_openxr` | Patches from OVRPort |  |
+| [32-bit ARM bridge (Gear VR / Go games)](#frame-a32_bridge) | `frame.a32_bridge` | Steam Frame patches | 2 |
 | [FrameBridge OpenXR adapter](#frame-adapter) | `frame.adapter` | Steam Frame patches | default |
 | [Content files from the game's data](#frame-asset_files) | `frame.asset_files` | Steam Frame patches | 1 |
 | [Skip Meta avatars](#frame-avatar_stub) | `frame.avatar_stub` | Steam Frame patches | 1 |
@@ -169,7 +170,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Hide Android's navigation bar](#device-hide_navbar) | `device.hide_navbar` | Files and settings on the Frame |  |
 | [Extra Lepton settings](#device-lepton_env) | `device.lepton_env` | Files and settings on the Frame | 3 |
 | [Controllers as a gamepad (Steam Input)](#device-steam_gamepad) | `device.steam_gamepad` | Files and settings on the Frame |  |
-| [Show the app's Android window (for typing)](#device-text_input_window) | `device.text_input_window` | Files and settings on the Frame | 69 |
+| [Show the app's Android window (for typing)](#device-text_input_window) | `device.text_input_window` | Files and settings on the Frame | 71 |
 | [Launch options (SteamVR or OpenXR)](#pcvr-launch_args) | `pcvr.launch_args` | PC VR (Proton and Revive) | 2 |
 | [Provide the Oculus runtime from Revive (Frame)](#pcvr-libovr_redirect) | `pcvr.libovr_redirect` | PC VR (Proton and Revive) |  |
 | [No Unreal crash reporter](#pcvr-no_crash_reporter) | `pcvr.no_crash_reporter` | PC VR (Proton and Revive) |  |
@@ -481,6 +482,20 @@ OVRPort's own converter for games that use Meta's oldest VR interface (experimen
 ## <a id="group-frame"></a>Steam Frame patches
 
 FramePort's own changes to a converted Quest game, for what the Steam Frame lacks or does differently.
+
+### <a id="frame-a32_bridge"></a>32-bit ARM bridge (Gear VR / Go games)
+
+Runs a 32-bit game (Gear VR, Oculus Go, early Quest) on the Frame, which only runs 64-bit code. Experimental.
+
+- `frame.a32_bridge` · experimental
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested (on):** 32-bit-only game: the Frame can't run 32-bit ARM code, the bridge translates it.
+- **Catalog games (2):** AFFECTED: The Manor, Spunky Dungeon.
+- **Suggested by launch-test signatures:**
+  - `no-arm64` (fatal): 32-bit-only APK (e.g. a Gear VR or Oculus Go game).
+- **Source:** [patches/frame/a32_bridge.py](../src/frameport/patches/frame/a32_bridge.py)
+
+> Runs a 32-bit-only game (armeabi-v7a: Gear VR, Oculus Go and early Quest games) on the Frame, which has no 32-bit ARM support: an AArch32 → AArch64 translator inside the app runs the game's own libraries, with GLES/EGL, OpenSL ES and VrApi translated to the Frame's 64-bit ones (VrApi through the VrApi → OpenXR bridge). The Gear VR / Go controller: left stick = touchpad (walk, strafe), right stick sideways = turn (a click at the touchpad's edge), stick press or A = click, right trigger, B = back. Experimental: games run slower than native ones.
 
 ### <a id="frame-adapter"></a>FrameBridge OpenXR adapter
 
@@ -2241,7 +2256,7 @@ Lets typing reach this app from Steam's on-screen keyboard or your PC's keyboard
 - `device.text_input_window`
 - **Changes:** Install only: written on the Frame when the game is installed; the APK isn't changed.
 - **Suggested (on):** App with text fields: key presses only reach a shown Android window.
-- **Catalog games (69):** AgeOfJoy, AllInOneSports, Ancient_Dungeon, Audica, Beat Saber, Beat Saber (co-existence build), Blade & Sorcery: Nomad, BodyCombat and 61 more.
+- **Catalog games (71):** AFFECTED: The Manor, AgeOfJoy, AllInOneSports, Ancient_Dungeon, Audica, Beat Saber, Beat Saber (co-existence build), Blade & Sorcery: Nomad and 63 more.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > Lepton runs VR apps headless: their Android window is never shown, so it never gets keyboard focus and no key press (Steam's on-screen keyboard, a USB/Bluetooth keyboard, Type on Frame) reaches the app's text fields. With Lepton's lepton-show-flatscreen marker the window is shown (behind the VR view, which keeps working) and Steam's keyboard opens for a selected text field. Steam lists the shown window as "Gamescope" (the Frame's compositor). Pairs with "Make Unity text fields work without a system keyboard".

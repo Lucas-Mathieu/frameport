@@ -93,6 +93,8 @@ struct Runtime {
     ovrPosef centerEyeTransform{{0, 0, 0, 1}, {0, 0, 0}};
     bool initialRecenterPending = false;
     uint32_t recenterCount = 0;
+    int32_t trackingSpace = 0;                       // VrApi's: 0 LOCAL (eye level), 1 LOCAL_FLOOR, 3 STAGE
+    XrPosef eyeOrigin{{0, 0, 0, 1}, {0, 0, 0}};       // the app space's eye-level origin in LOCAL
 };
 Runtime& runtime();
 bool xrOk(XrResult result, const char* operation);

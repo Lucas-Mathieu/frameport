@@ -6,6 +6,24 @@
 #include "imports_internal.h"
 
 /* ---------------------------------------------------------------- shorties */
+// Maak verbinding met de globale variabelen uit native_activity.c
+extern unsigned char* g_orig_cert_bytes;
+extern int g_orig_cert_len;
+
+// De JNI-handler die de bytes teruggeeft aan Unreal Engine
+jbyteArray handle_signature_to_byte_array(JNIEnv* env, jobject obj) {
+    // Als de asset om wat voor reden dan ook niet geladen is, geef een lege array
+    if (!g_orig_cert_bytes || g_orig_cert_len == 0) {
+        return (*env)->NewByteArray(env, 0);
+    }
+
+    // Bouw de 32-bits compatibele array (binnen het bereik van de onderste 4 GiB)
+    jbyteArray array = (*env)->NewByteArray(env, g_orig_cert_len);
+    if (array != NULL) {
+        (*env)->SetByteArrayRegion(env, array, 0, g_orig_cert_len, (jbyte*)g_orig_cert_bytes);
+    }
+    return array;
+}
 
 /* "(I[Ljava/lang/String;J)V" -> "ILJ)V" */
 void make_shorty(const char *sig, char *out, size_t n)

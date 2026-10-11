@@ -60,6 +60,11 @@ void code_invalidate(uint32_t addr, uint32_t len);
 _Noreturn void fatal(const char *fmt, ...);
 /* bridge mode: a message for the system log, written synchronously (weak no-op in a32run) */
 void a32_report(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+/* A32_BREAK=<guest address>[,...] (up to 4): the first times the dispatcher reaches one (a block's first run always
+ * does), the embedder's a32_break_hit logs where from */
+extern uint32_t a32_break_pc[4];
+extern int a32_break_hits[4];
+void a32_break_hit(a32_cpu *c);
 void a32_dump_state(FILE *f, const a32_cpu *c);
 
 /* kuser helpers (0xffff0fa0..0xffff0fff): executes the helper at r[15], returns 1 if it was one */

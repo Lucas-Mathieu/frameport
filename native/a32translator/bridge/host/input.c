@@ -72,6 +72,8 @@ typedef struct {
     int (*state)(void *, uint32_t, remote_state *);
 } input_api;
 
+extern int a32_remote_in_use; /* vrapi.c */
+
 static struct {
     void *mobile;
     input_api api;
@@ -259,6 +261,12 @@ static void *poll_thread(void *arg)
         for (size_t k = 0; k < sizeof map / sizeof *map; k++) {
             uint32_t now = buttons & map[k].bit, was = prev_buttons & map[k].bit;
             if (now != was) key(env, now ? KEY_DOWN : KEY_UP, map[k].code, SOURCE_GAMEPAD);
+        }
+        if (a32_remote_in_use) {
+            /* the game reads the right controller as its Gear VR Controller: only the left menu button stays (back) */
+            buttons &= B_ENTER | B_X | B_Y | B_LTHUMB;
+            trigger = rx = ry = 0;
+            if (prev_tap && !swipe_step) tap(env, ACTION_UP), prev_tap = 0;
         }
         uint32_t back = buttons & (B_ENTER | B_B);
         if (!!back != !!prev_back) key(env, back ? KEY_DOWN : KEY_UP, KEYCODE_BACK, SOURCE_KEYBOARD);

@@ -6,6 +6,9 @@
 #include <android/native_window.h>
 #include "jni_internal.h"
 
+/* bridge.c: logs the current guest call's caller (lib+offset) and the return addresses on its stack */
+void guest_backtrace(a32_cpu *c, const char *what);
+
 /* gen/imports.c (from imports.txt) */
 int import_dispatch(a32_cpu *c, int index, argreader *R);
 extern const char *const import_names[];

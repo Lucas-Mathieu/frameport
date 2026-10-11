@@ -1,0 +1,21 @@
+package: com.fallen.affected
+title: 'AFFECTED: The Manor'
+status: issues
+notes: 'Gear VR game (32-bit only), runs through FramePort''s 32-bit bridge (experimental). Controls:
+  left stick = walk and strafe (the touchpad), right stick sideways = turn, stick press or A = touchpad click, right
+  trigger = trigger, B = back.'
+details: 'Unity 5.6 + Mono, VrApi 1.0.4, GLES. The bridge translates its 32-bit libraries and VrApi to the 64-bit VrApi
+  bridge on OpenXR. Picture and sound confirmed in the headset by the owner (2026-10-10); the controller mapping was
+  reworked afterwards and is not yet confirmed.'
+tested_version: '1.52'
+engine: Unity
+xr: VrApi
+headset: gearvr
+frame:
+- frame.a32_bridge
+device:
+- device.text_input_window
+verified:
+  date: '2026-10-10'
+min_app: 0.12.1
+source_hint: AFFECTED The Manor (Gear VR)

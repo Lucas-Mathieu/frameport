@@ -21,7 +21,7 @@
      VkQueue queue = VK_NULL_HANDLE;
      uint32_t queueFamily = 0;
      double timeOffset = 0;
-@@ -73,6 +80,7 @@
+@@ -73,12 +80,15 @@
      PFN_xrSetAndroidApplicationThreadKHR setThread = nullptr;
      PFN_axrbGetSystemDisplayRefreshRate getSystemDisplayRefreshRate = nullptr;
      PFN_xrGetDisplayRefreshRateFB getDisplayRefreshRate = nullptr;
@@ -29,3 +29,11 @@
      DisplayRefreshRateSource loggedDisplayRefreshRateSource = DisplayRefreshRateSource::Unqueried;
      float loggedDisplayRefreshRate = 0;
      ovrPosef trackingTransform{{0, 0, 0, 1}, {0, 0, 0}};
+     ovrPosef centerEyeTransform{{0, 0, 0, 1}, {0, 0, 0}};
+     bool initialRecenterPending = false;
+     uint32_t recenterCount = 0;
++    int32_t trackingSpace = 0;                       // VrApi's: 0 LOCAL (eye level), 1 LOCAL_FLOOR, 3 STAGE
++    XrPosef eyeOrigin{{0, 0, 0, 1}, {0, 0, 0}};       // the app space's eye-level origin in LOCAL
+ };
+ Runtime& runtime();
+ bool xrOk(XrResult result, const char* operation);

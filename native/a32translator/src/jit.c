@@ -1566,6 +1566,12 @@ int jit_run(a32_cpu *c)
         uint32_t pc = c->r[15];
         if (pc >= 0xffff0f60u && kuser_helper(c)) continue;
         uint64_t key = make_key(pc, c->thumb, c->itstate);
+        if (a32_break_pc[0]) /* A32_BREAK (debugging aid) */
+            for (int b = 0; b < 4 && a32_break_pc[b]; b++)
+                if (pc == a32_break_pc[b] && a32_break_hits[b] < 3) {
+                    a32_break_hits[b]++;
+                    a32_break_hit(c);
+                }
         enter_jit();
         pthread_mutex_lock(&tlock);
         jit_block *blk = lookup(key);

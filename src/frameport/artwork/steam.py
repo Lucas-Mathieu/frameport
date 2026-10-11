@@ -306,6 +306,8 @@ def original_platform(entry: dict) -> str:
             return "Windows"
         return "Oculus Rift" if extra.get("needs_revive") else "PC VR"
     kind = extra.get("vr_kind") or "quest"
+    if kind == "quest" and extra.get("headset") in ("gearvr", "go"):
+        return {"gearvr": "Gear VR", "go": "Oculus Go"}[extra["headset"]]
     return {"quest": "Meta Quest", "none": "Android"}.get(kind, "Android VR")
 
 

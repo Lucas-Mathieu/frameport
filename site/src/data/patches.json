@@ -369,6 +369,11 @@
   "title": "Show the app's Android window (for typing)",
   "group": "Files and settings on the Frame"
  },
+ "frame.a32_bridge": {
+  "anchor": "frame-a32_bridge",
+  "title": "32-bit ARM bridge (Gear VR / Go games)",
+  "group": "Steam Frame patches"
+ },
  "frame.adapter": {
   "anchor": "frame-adapter",
   "title": "FrameBridge OpenXR adapter",

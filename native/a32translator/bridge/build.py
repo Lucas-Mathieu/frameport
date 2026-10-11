@@ -50,7 +50,7 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     subprocess.run([sys.executable, str(HERE / "gen_stubs.py"), "--ndk", a.ndk], check=True)
     opt = ["-O0", "-g"] if a.debug else ["-O2", "-g"]
-    prefix = [f"-ffile-prefix-map={ROOT}=a32translator"]
+    prefix = [f"-ffile-prefix-map={ROOT}=a32translator", f"-ffile-prefix-map={Path(a.ndk).resolve()}=ndk"]
 
     # guest runtime: everything a guest library may link against comes from the static archives (exports.S
     # references each symbol, so the linker keeps them)

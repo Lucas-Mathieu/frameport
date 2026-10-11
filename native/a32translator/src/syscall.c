@@ -1048,6 +1048,20 @@ __attribute__((weak)) void a32_hypercall(a32_cpu *c, uint32_t n)
     c->r[0] = (uint32_t)-ENOSYS;
 }
 
+/* A32_STRACE in bridge mode: calls with a path, and the ones that end threads or processes (logcat, through
+ * a32_report) */
+static void strace_report(unsigned nr, const uint32_t *a, long r)
+{
+    uint32_t path = nr == G_NR_open || nr == G_NR_access || nr == G_NR_stat64 ? a[0]
+                  : nr == G_NR_openat || nr == G_NR_faccessat ? a[1] : 0;
+    if (path)
+        a32_report("strace %s(\"%.200s\", 0x%x) = %ld", syscall_name(nr), (const char *)(uintptr_t)path,
+                   a[path == a[0] ? 1 : 2], r);
+    else if (nr == G_NR_kill || nr == G_NR_tgkill || nr == G_NR_exit || nr == G_NR_exit_group)
+        a32_report("strace %s(0x%x, 0x%x, 0x%x, 0x%x) = %ld", syscall_name(nr), a[0], a[1], a[2], a[3], r);
+    /* (the rest - futexes, clocks, reads - would flood the log) */
+}
+
 void do_syscall(a32_cpu *c)
 {
     uint32_t nr = c->r[7];
@@ -1059,9 +1073,10 @@ void do_syscall(a32_cpu *c)
         /* OABI: number in the SVC immediate (0x900000 + nr) */
         nr = c->svc_imm & 0xfffff;
     }
-    if (opt_strace)
+    uint32_t args[6] = {c->r[0], c->r[1], c->r[2], c->r[3], c->r[4], c->r[5]};
+    if (opt_strace && !opt_bridge)
         fprintf(stderr, "[%d] %s(0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x)", (int)syscall(__NR_gettid), syscall_name(nr),
-                c->r[0], c->r[1], c->r[2], c->r[3], c->r[4], c->r[5]);
+                args[0], args[1], args[2], args[3], args[4], args[5]);
     int blocking = blocking_syscall(nr);
     if (blocking && signal_pending(g_self)) {
         /* deliver first, then make the call (as if the signal came just before it) */
@@ -1079,6 +1094,7 @@ void do_syscall(a32_cpu *c)
         if (opt_strace) fprintf(stderr, " = (sigreturn to 0x%x)\n", c->r[15]);
         return;
     }
-    if (opt_strace) fprintf(stderr, " = %ld\n", r);
+    if (opt_strace && !opt_bridge) fprintf(stderr, " = %ld\n", r);
+    if (opt_strace && opt_bridge) strace_report(nr, args, r);
     c->r[0] = (uint32_t)r;
 }

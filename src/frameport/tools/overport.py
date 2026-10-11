@@ -73,6 +73,19 @@ def patch(apk: Path, outdir: Path, name: str, patches: list[str], reporter: Repo
     return target
 
 
+def ensure_runtime_lib(name: str, abi: str, reporter: Reporter) -> Path:
+    """runtime_lib, downloading OVRPort's newest runtime first when there is none yet (`install --version=latest`):
+    builds that don't run OVRPort itself (32-bit games through the a32 bridge) still ship its loaders."""
+    path = runtime_lib(name, abi)
+    if path is None:
+        reporter.log("Downloading OVRPort's runtime libraries")
+        p = toolchain.run_java(["-jar", _jar(), "install", f"--workspace={workspace()}", "--version=latest"])
+        path = runtime_lib(name, abi)
+        if path is None:
+            raise RuntimeError(f"OVRPort's runtime has no {abi}/{name} (install exit {p.returncode})")
+    return path
+
+
 def runtime_lib(name: str, abi: str = "arm64-v8a") -> Path | None:
     """A library of the newest OVRPort runtime in the workspace (what `patch --version=latest` ships, e.g.
     libOVRPlugin.so), or None before OVRPort downloaded one. Newest = first in the workspace's installed.json (the

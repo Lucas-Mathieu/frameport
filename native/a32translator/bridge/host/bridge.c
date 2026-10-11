@@ -134,6 +134,37 @@ static int describe(const xmap *m, int n, uint32_t a, char *out, size_t sz)
     return 0;
 }
 
+/* return addresses found on a guest stack (lib+offset), for logs */
+static size_t stack_scan(const xmap *maps, int nm, uint32_t sp, char *bt, size_t sz)
+{
+    size_t k = 0;
+    int found = 0;
+    for (uint32_t a = sp & ~3u, e = a + 4096; a < e && found < 10 && mem_readable(a, 4); a += 4) {
+        char d[64];
+        uint32_t w = ld32(a);
+        if ((w & 1) || ((w & 3) == 0)) /* Thumb return addresses are odd, ARM ones word-aligned */
+            if (describe(maps, nm, (w & ~1u) - 2, d, sizeof d) && k + 70 < sz) {
+                k += (size_t)snprintf(bt + k, sz - k, " %s", d);
+                found++;
+            }
+    }
+    return k;
+}
+
+/* logs where the current guest call came from: its return address and a scan of the stack */
+void guest_backtrace(a32_cpu *c, const char *what)
+{
+    static xmap maps[256];
+    static pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_lock(&m);
+    int nm = exec_maps(maps, 256);
+    char lr[64] = "?", bt[600] = "";
+    describe(maps, nm, c->r[14] & ~1u, lr, sizeof lr);
+    stack_scan(maps, nm, c->r[13], bt, sizeof bt);
+    pthread_mutex_unlock(&m);
+    bridge_log(ANDROID_LOG_INFO, "%s: called from %s |%s", what, lr, bt);
+}
+
 static void *watch(void *arg)
 {
     int secs = (int)(intptr_t)arg;
@@ -147,17 +178,7 @@ static void *watch(void *arg)
             char pc[64] = "?", lr[64] = "?", bt[600] = "";
             describe(maps, nm, t->cpu.r[15], pc, sizeof pc);
             describe(maps, nm, t->cpu.r[14] & ~1u, lr, sizeof lr);
-            size_t k = 0;
-            int found = 0;
-            for (uint32_t a = t->cpu.r[13] & ~3u, e = a + 4096; a < e && found < 10 && mem_readable(a, 4); a += 4) {
-                char d[64];
-                uint32_t w = ld32(a);
-                if ((w & 1) || ((w & 3) == 0)) /* Thumb return addresses are odd, ARM ones word-aligned */
-                    if (describe(maps, nm, (w & ~1u) - 2, d, sizeof d) && k + 70 < sizeof bt) {
-                        k += (size_t)snprintf(bt + k, sizeof bt - k, " %s", d);
-                        found++;
-                    }
-            }
+            stack_scan(maps, nm, t->cpu.r[13], bt, sizeof bt);
             char comm[32] = "", cp[64];
             snprintf(cp, sizeof cp, "/proc/self/task/%d/comm", t->tid);
             FILE *cf = fopen(cp, "re");
@@ -405,6 +426,13 @@ A32B_API int a32b_init(JavaVM *vm, const char *libdir)
 #endif
     if (getenv("A32_INTERP")) opt_interp = 1;
     if (getenv("A32_STRACE")) opt_strace = 1;
+    if (getenv("A32_BREAK")) {
+        char *p = getenv("A32_BREAK");
+        for (int b = 0; b < 4 && *p; b++) {
+            a32_break_pc[b] = (uint32_t)strtoul(p, &p, 0);
+            if (*p == ',') p++;
+        }
+    }
     if (getenv("A32_VERBOSE")) opt_verbose = 1;
     a32_thread *t = thread_main();
     g_self = t;
@@ -514,4 +542,12 @@ A32B_API void a32b_native_activity_oncreate(struct ANativeActivity *activity, vo
         abort();
     }
     activity_create(activity, saved, saved_size, fn);
+}
+
+/* A32_BREAK: where the guest came from */
+void a32_break_hit(a32_cpu *c)
+{
+    char what[40];
+    snprintf(what, sizeof what, "A32_BREAK %08x", c->r[15]);
+    guest_backtrace(c, what);
 }

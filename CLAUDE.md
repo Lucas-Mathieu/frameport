@@ -319,7 +319,28 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
   harness with a fake JVM; test APK org.frameport.a32test passes in Lepton; GLES/EGL, OpenSL ES via AAudio, VrApi 1.x
   -> the 64-bit VrApi bridge, controller input as Gear VR touchpad/back events; `bridge/convert.py` converts an APK).
   First game: AFFECTED The Manor (Gear VR, Unity 5.6 + Mono) runs in the headset with picture and sound
-  (2026-10-10); next: controls, a FramePort patch from convert.py, more games.
+  (2026-10-10); Spunky Dungeon (Unity 2019.2, OVRPlugin 1.46 on VrApi 1.31, Platform SDK) plays at 72 fps.
+  In FramePort: patch `frame.a32_bridge` (`patches/frame/a32_bridge.py`: `convert()` is shared with the dev script
+  `bridge/convert.py`; artifacts `liba32bridge.so`/`liba32rt.so`/`liba32stub.so` from `native/build.py --only a32`)
+  is suggested for every 32-bit-only APK; the recipe then has `overport: False` (OVRPort is 64-bit only; the patch
+  ships OVRPort's loader chain + its 32-bit platform dispatcher itself, `overport.ensure_runtime_lib`), only
+  frame.a32_bridge/adapter/launcher of the frame patches, and `device.text_input_window` for Unity (`engine._a32`).
+  Analysis `extra.headset` (ANALYSIS_VERSION 9): gearvr / go / quest → "Gear VR" / "Oculus Go" platform + Steam tag.
+  Catalog: `headset:` field; com.fallen.affected, net.mobilemischief.spunkydungeon. Learned: Unity 2019 contexts
+  have no EGLConfig (EGL_KHR_no_config_context: the VrApi bridge takes the window's or an RGBA8 ES3 config); Unity's
+  floor origin = vrapi_SetTrackingSpace(1) (the VrApi bridge now honours LOCAL_FLOOR/STAGE); mapped GL buffers are
+  per buffer object (a per-target guest copy leaked ~10 MB/s and garbled vertices); the guest runtime's own scudo
+  names its maps `[anon:scudo:*]` below 4 GiB (watch them for guest leaks). The Go controller = the right Frame
+  controller (stick = touchpad touch, sideways > 0.6 or press = click). Gunjack (CCP, UE 4.10 NativeActivity, Gear VR,
+  2026-10-10): needed the native_app_glue imports (ALooper/AInputQueue/AConfiguration/AAsset*, imports.txt), an arm64
+  libvrapi.so for Java's System.loadLibrary("vrapi") and MOUNTED under OVP_HEADLESS_TEST; it then loads its map and
+  quits on purpose: AndroidMain compares AndroidThunkCpp_GetSignature() (the APK signing certificate) with an
+  obfuscated copy - a tamper check FramePort's re-signing always fails and that FramePort doesn't defeat (unsupported).
+  Debugging aids added: A32_BREAK=<guest addr>[,..] (stack of the first hits; guest libs load at fixed addresses, e.g.
+  libUE4 0xf25d5000), A32_STRACE in bridge mode = path/exit calls to logcat, activity lifecycle + LeaveVrMode caller
+  logs. Lepton's logcat mirror often dies for these games: read `podman exec <container> logcat` instead. Next: the three 32-bit catalog games
+  (Journey of the Gods, Shadow Point, Sports Scramble: still "unsupported" until tested), translator speed (~40 % of
+  the main thread is block exits / FPCR switches).
 - `scripts/` — `package.py` (flet build/pack), `eval_heuristics.py` (score heuristics), `ui_smoke.py` (GUI screenshots).
 - `docs/` — PLAYBOOK, FRAME_RUNTIME, ARCHITECTURE, INSTALL (end users), parity reports (offline + device).
 
@@ -401,7 +422,7 @@ Repo is on an NTFS drive (`core.fileMode=false`); line endings are LF (`.gitattr
 
 ## Hard-won facts (don't re-learn these)
 **Frame runtime (SteamOS 0.3.0, build 20260922):**
-- No AArch32: 32-bit-only APKs fail with `INSTALL_FAILED_NO_MATCHING_ABIS`. Unfixable; point to Rift + Revive.
+- No AArch32: 32-bit-only APKs fail with `INSTALL_FAILED_NO_MATCHING_ABIS` → `frame.a32_bridge` (the a32 translator inside the app, see native/a32translator below).
 - GLES swapchains: only `GL_SRGB8_ALPHA8`/`GL_SRGB8` (35907/35905), no MSAA. Vulkan: format 43 (sRGB) but not 37 (UNORM).
 - Missing: XR_FB_passthrough (emulate via ALPHA_BLEND), XR_FB_scene/spatial entities (emulated room from STAGE bounds),
   XR_KHR_composition_layer_equirect2/cylinder, XR_FB_composition_layer_image_layout (flip emulated by Vulkan blit).

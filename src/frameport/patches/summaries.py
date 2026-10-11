@@ -102,6 +102,8 @@ SUMMARIES = {
     "frame.vrapi_bridge": "Lets games built on Meta's oldest VR interface run on the Frame.",
     "frame.blazerush": "Makes BlazeRush's menus and controllers work without Meta's avatars, and lets its shader "
                        "fixes take effect.",
+    "frame.a32_bridge": "Runs a 32-bit game (Gear VR, Oculus Go, early Quest) on the Frame, which only runs "
+                        "64-bit code. Experimental.",
     "frame.gl_shim": "Corrects graphics code the Frame's drivers reject (black screen with sound).",
     "frame.metaxr_telemetry": "Skips a Quest-only reporting step in Meta's audio library that crashes some games.",
     "frame.oculusos": "Provides stand-ins for Quest system calls some games make at start.",

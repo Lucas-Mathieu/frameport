@@ -3,6 +3,7 @@
 #include "fov_cache.h"
 #include <algorithm>
 #include <chrono>
+#include <utility>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -103,6 +104,27 @@ static bool referenceSpace(XrReferenceSpaceType type, const XrPosef& pose, XrSpa
     info.referenceSpaceType = type;
     info.poseInReferenceSpace = pose;
     return xrOk(s.xr.xrCreateReferenceSpace(s.session, &info, &space), "xrCreateReferenceSpace");
+}
+// The app space for the eye-level origin `eye` (LOCAL coordinates): VrApi's LOCAL_FLOOR and STAGE spaces put their
+// origin on the floor below it (the runtime's STAGE floor, else a standing eye height of 1.6 m)
+static bool appSpaceFor(const XrPosef& eye) {
+    auto& s = runtime();
+    XrPosef origin = eye;
+    if (s.trackingSpace == 1 || s.trackingSpace == 3) {
+        origin.position.y -= 1.6f;
+        XrSpaceLocation floor{XR_TYPE_SPACE_LOCATION};
+        if (s.stageSpace && s.frame.predictedDisplayTime &&
+            XR_SUCCEEDED(s.xr.xrLocateSpace(s.stageSpace, s.localSpace, s.frame.predictedDisplayTime, &floor)) &&
+            (floor.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT))
+            origin.position.y = floor.pose.position.y;
+    }
+    XrSpace next = XR_NULL_HANDLE;
+    if (!referenceSpace(XR_REFERENCE_SPACE_TYPE_LOCAL, origin, next)) return false;
+    if (s.appSpace) s.xr.xrDestroySpace(s.appSpace);
+    s.appSpace = next;
+    s.eyeOrigin = eye;
+    s.centerEyeTransform = s.trackingTransform = fromXrPose(origin);
+    return true;
 }
 static void destroySession() {
     auto& s = runtime();
@@ -382,14 +404,10 @@ bool beginFrame(int64_t index) {
             return false;
         }
         const XrPosef origin{{0, std::sin(yaw/2), 0, std::cos(yaw/2)}, p};
-        XrSpace next = XR_NULL_HANDLE;
-        if (!referenceSpace(XR_REFERENCE_SPACE_TYPE_LOCAL, origin, next)) {
+        if (!appSpaceFor(origin)) {
             endFrame(nullptr, 0);
             return false;
         }
-        s.xr.xrDestroySpace(s.appSpace);
-        s.appSpace = next;
-        s.centerEyeTransform = s.trackingTransform = fromXrPose(origin);
         s.initialRecenterPending = false;
         ++s.recenterCount;
     }
@@ -660,8 +678,13 @@ VRAPI ovrMobile* vrapi_EnterVrMode(const ovrModeParms* parms) {
         if (s.eglContext == EGL_NO_CONTEXT) s.eglContext = eglGetCurrentContext();
         EGLint configId = 0, count = 0;
         eglQueryContext(s.eglDisplay, s.eglContext, EGL_CONFIG_ID, &configId);
-        const EGLint attributes[] = {EGL_CONFIG_ID, configId, EGL_NONE};
-        if (!eglChooseConfig(s.eglDisplay, attributes, &s.eglConfig, 1, &count) || count != 1) {
+        // EGL_KHR_no_config_context (Unity 2019): the context has no config (id 0); use the window's, else RGBA8 ES3
+        EGLSurface drawn = eglGetCurrentContext() == s.eglContext ? eglGetCurrentSurface(EGL_DRAW) : EGL_NO_SURFACE;
+        if (!configId && drawn != EGL_NO_SURFACE) eglQuerySurface(s.eglDisplay, drawn, EGL_CONFIG_ID, &configId);
+        const EGLint byId[] = {EGL_CONFIG_ID, configId, EGL_NONE};
+        const EGLint rgba8[] = {EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
+                                EGL_RENDERABLE_TYPE, 0x40 /* EGL_OPENGL_ES3_BIT */, EGL_NONE};
+        if (!eglChooseConfig(s.eglDisplay, configId ? byId : rgba8, &s.eglConfig, 1, &count) || count != 1) {
             OVP_ERROR("EnterVrMode(GLES): could not resolve the context's EGLConfig");
             return nullptr;
         }
@@ -754,7 +777,12 @@ VRAPI int vrapi_GetSystemPropertyInt(const ovrJava*, int property) {
         case 128: return 1; // Stereo array texture path.
         case 129: return 1; // sRGB VkFormats retain their color encoding.
         case 130: return 0; // No foveation image implementation is advertised.
-        default: OVP_LOG("Unsupported integer system property %d", property); return 0;
+        default: {
+            static bool seen[256]; // once per property: some games ask every frame
+            if (property < 0 || property >= 256 || !std::exchange(seen[property], true))
+                OVP_LOG("Unsupported integer system property %d", property);
+            return 0;
+        }
     }
 }
 VRAPI float vrapi_GetSystemPropertyFloat(const ovrJava*, int property) {
@@ -783,7 +811,9 @@ VRAPI float vrapi_GetSystemPropertyFloat(const ovrJava*, int property) {
 VRAPI int vrapi_GetSystemStatusInt(const ovrJava*, int status) {
     LOCK_STATE;
     if (status == 0) return s.instance != XR_NULL_HANDLE;
-    if (status == 1) return s.sessionState == XR_SESSION_STATE_FOCUSED;
+    // MOUNTED; OVP_HEADLESS_TEST: also without a worn headset (Unreal's Gear VR code leaves VR mode when unmounted)
+    static const bool headlessTest = getenv("OVP_HEADLESS_TEST") != nullptr;
+    if (status == 1) return s.sessionState == XR_SESSION_STATE_FOCUSED || (headlessTest && s.running);
     if (status == 13) return static_cast<int>(s.recenterCount);
     if (status == 14) return s.running && s.sessionState != XR_SESSION_STATE_FOCUSED;
     if (status == 130) return 1;
@@ -824,10 +854,17 @@ VRAPI ovrResult vrapi_SetClientColorDesc(ovrMobile* mobile, const ovrHmdColorDes
 }
 
 VRAPI ovrResult vrapi_SetTrackingSpace(ovrMobile* mobile, int32_t space) {
-    // Tracking-space changes (eye/floor level) are handled by the app's own poses; accept and ignore. VrApi returns an
-    // ovrResult here: a void function left the caller reading whatever was in w0.
-    (void)mobile;
-    OVP_LOG("vrapi_SetTrackingSpace(%d) ignored", space);
+    // LOCAL (0, eye level) and LOCAL_FLOOR/STAGE (1/3, origin on the floor: e.g. Unity's floor-level tracking origin,
+    // else the player stands in the ground); other spaces stay eye level. VrApi returns an ovrResult here: a void
+    // function left the caller reading whatever was in w0.
+    LOCK_STATE;
+    if (!validMobile(mobile)) return NotInitialized;
+    const int32_t wanted = space == 1 || space == 3 ? space : 0;
+    OVP_LOG("vrapi_SetTrackingSpace(%d)%s", space, wanted == space ? "" : ": eye level");
+    if (wanted == s.trackingSpace) return Success;
+    s.trackingSpace = wanted;
+    // before the first recenter, that recenter applies it
+    if (!s.initialRecenterPending && !appSpaceFor(s.eyeOrigin)) return InvalidOperation;
     return Success;
 }
 VRAPI bool vrapi_ShowSystemUI(const ovrJava* java, int32_t type) {

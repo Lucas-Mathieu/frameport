@@ -80,15 +80,16 @@ def suggest(analysis: Analysis, use_catalog: bool = True) -> Recipe:
         if analysis.engine == "Unreal":
             recipe.alt_patches = ["patch_remove_unreal_force_quit"]  # build a fallback in case it quits itself
         if analysis.only_32bit:
-            recipe.status = "unsupported"
-            recipe.notes = ("32-bit only: the Steam Frame has no AArch32 support. Consider the PC (Rift) version "
-                            "via Revive.")
+            recipe.notes = ("32-bit only (e.g. a Gear VR or Oculus Go game): the Steam Frame has no 32-bit ARM "
+                            "support, so the game runs through FramePort's 32-bit bridge (experimental).")
         elif analysis.no_arm64:
             recipe.status = "unsupported"
             recipe.notes = f"No 64-bit ARM code ({', '.join(analysis.abis)}): the Steam Frame can't run it."
         if not rift:
             _static_blockers(analysis, recipe)
             _non_quest(analysis, recipe)
+    if not rift:
+        _a32(analysis, recipe)
     if not rift and not entry and (analysis.extra or {}).get("frame_patched"):
         # already has FramePort's adapter (e.g. a PATCHED/ build): installing it unchanged is the safe default
         recipe.as_is = True
@@ -271,6 +272,30 @@ def _non_quest(analysis: Analysis, recipe: Recipe) -> None:
                                           "headset's own extensions and store/platform services aren't available.")
 
 
+A32_FRAME = ("frame.a32_bridge", "frame.adapter", "frame.launcher")
+A32_NOT_ADAPTER = ("adapter.haptic_fix", "adapter.controller_models", "adapter.surface_native")
+
+
+def _a32(analysis: Analysis, recipe: Recipe) -> None:
+    """A 32-bit-only game through the 32-bit bridge (frame.a32_bridge): OVRPort (64-bit apps only) doesn't run; the
+    bridge ships OVRPort's loaders itself. Unity needs its Android window focused (Lepton runs VR apps headless,
+    without a focused window, and Unity's built-in VR then never starts rendering)."""
+    if not analysis.only_32bit or "frame.a32_bridge" not in recipe.patches:
+        return
+    recipe.overport = False
+    recipe.alt_patches = []
+    # the 64-bit library fixes don't apply to translated code (the bridge does its own: Unity's Oculus check,
+    # Meta's platform loader); adapter settings that need OVRPlugin's own arm64 lookups (xrshim) neither
+    for pid in [p for p in recipe.patches if base.get(p).category == "overport"
+                or base.get(p).category == "frame" and p not in A32_FRAME or p in A32_NOT_ADAPTER]:
+        recipe.patches.pop(pid)
+        recipe.reasons.pop(pid, None)
+    if analysis.engine == "Unity" and "device.text_input_window" not in recipe.patches:
+        recipe.patches["device.text_input_window"] = {}
+        recipe.reasons["device.text_input_window"] = ("Unity on the 32-bit bridge starts rendering only with its "
+                                                      "Android window focused.")
+
+
 def _add(notes: str, text: str) -> str:
     return f"{notes} {text}".strip() if text not in (notes or "") else notes
 
@@ -284,6 +309,10 @@ def visible_patches(analysis: Analysis, recipe: Recipe | None = None) -> tuple[l
         on = recipe is not None and p.id in recipe.patches
         if p.needs_vr and analysis.vr_kind == "none" and not on:
             hidden.append(p)  # an Android app without VR: VR patches can't take effect
+            continue
+        if analysis.only_32bit and not on and (p.category == "overport" or p.category == "frame"
+                                                and p.id not in A32_FRAME):
+            hidden.append(p)  # a 32-bit game through the bridge: no OVRPort run, the 64-bit library fixes can't apply
             continue
         (shown if on and not p.default_on or p.applies(analysis) else hidden).append(p)
     return shown, hidden
