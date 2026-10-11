@@ -538,6 +538,10 @@
  "FramePort isn't sure which program starts this game. Open the game and use … → Change program… to pick it.": "",
  "FramePort keeps its own copies; nothing is installed system-wide": "",
  "FramePort live view": "",
+ "FramePort looked at your last session of {n} game and has something to try.": [
+  "",
+  ""
+ ],
  "FramePort looked at your last session of {title} and has something to try.": "",
  "FramePort picked {value} to start this game, but isn't sure. Check it before installing.": "",
  "FramePort saves a diagnostics zip (no game files or personal data) and opens a GitHub issue. Drag the zip into it and submit.": "",
@@ -990,6 +994,7 @@
  "Open in browser": "",
  "Open the Monitor": "",
  "Open {scheme}:// links with FramePort?": "",
+ "Open {title}": "",
  "OpenGL ES games run through a translation to Vulkan that is stricter than Quest drivers. Vulkan games run directly.": "",
  "OpenGL ES shader dump (diagnostics)": "",
  "OpenGL ES shader fixes": "",

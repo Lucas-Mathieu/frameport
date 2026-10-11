@@ -352,6 +352,11 @@ Repo is on an NTFS drive (`core.fileMode=false`); line endings are LF (`.gitattr
   `T.px(n)`, Material defaults through the theme's text_theme; never hardcode a bare pixel number in ui/.
   `scripts/ui_smoke.py --scale 1.5 --viewport 2560x1440` renders it. Flet draws a grey box for invalid layouts (e.g.
   an `expand` child in a `wrap=True` Row).
+- One GUI per data folder (`core/instance.py`, 2026-10-11): `<data>/gui.lock` (flock/msvcrt, pid inside); a second
+  start asks the open window to come to the front (`gui.focus`, read by `_watch_links`) and exits; a lock held with no
+  window (no `gui.alive`) and older than 30 s is a leftover FramePort process and is ended. `main()` ends the process
+  (`os._exit`) once `ft.run` returns: background threads (re-analysis, session triage) used to keep a windowless
+  process running. Session triage shows one pop-up for all games of a burst (`_announce_sessions`).
 - Stopping the GUI: `pkill -f` patterns match your own shell — use `pgrep -f "[b]in/frameport-gui|[f]let-desktop-light"`.
 
 ## Round-2 polish (2026-10-02)

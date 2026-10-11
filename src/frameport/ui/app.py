@@ -53,12 +53,16 @@ def _stop_link_watch() -> None:
 
 
 def _watch_links() -> None:
-    """Heartbeat for the link handler scripts (FramePort runs) + hand queued install links to the window."""
+    """Heartbeat for the link handler scripts (FramePort runs) + hand queued install links to the window; a second
+    start of FramePort brings this window to the front (core/instance.py)."""
     from .. import urlhandler
+    from ..core import instance
 
     while not _link_state["closing"]:
         urlhandler.heartbeat()
         app = _link_state["owner"]
+        if app is not None and instance.take_focus_request():  # FramePort was started again: show this window
+            app.page.run_task(app.bring_to_front)
         if app is not None:
             for link in urlhandler.take_links():
                 applog.log.info("install link received")
@@ -182,6 +186,13 @@ class FramePortApp:
             _link_state["thread"].start()
             atexit.register(_stop_link_watch)
             self.run_bg(urlhandler.apply_setting)  # framedrop:// + frameport:// → FramePort (Settings → General)
+
+    async def bring_to_front(self) -> None:
+        win = self.page.window
+        if win.minimized:
+            win.minimized = False
+            C.update(self.page)
+        await win.to_front()
 
     # ================================================================== shell
     def _build_shell(self) -> None:
@@ -2356,6 +2367,8 @@ class FramePortApp:
         self._sessions_busy, target = True, self.target
 
         def work():
+            found = []  # games whose session has something to try: one pop-up for all of them (a burst at the
+            # first connection used to show one per game, and the Library flickered under them)
             try:
                 for pkg, lp, fetch in due:
                     if not fetch:
@@ -2368,22 +2381,36 @@ class FramePortApp:
                         if isinstance(exc, AgentFailed):  # the agent answered: asking again won't help
                             pipeline.mark_session_checked(pkg, lp["end"])
                         continue
-                    self._session_triaged(pkg, summary)
+                    if self._session_triaged(pkg, summary):
+                        found.append(pkg)
             finally:
                 self._sessions_busy = False
+            self._announce_sessions(found)
         threading.Thread(target=work, daemon=True).start()
 
-    def _session_triaged(self, pkg: str, summary: dict) -> None:
+    def _session_triaged(self, pkg: str, summary: dict) -> bool:
+        """True when the session has something to try (shown on the game's page; _announce_sessions tells the user)."""
         from ..validate.session import shown_findings
 
         if not summary or not shown_findings(summary):
-            return
+            return False
         if self.route[:2] == ("game", pkg):
             self.refresh_view()
-        else:
+        return True
+
+    def _announce_sessions(self, packages: list[str]) -> None:
+        """One pop-up for the play sessions that have something to try (not for the game page already shown)."""
+        packages = [p for p in packages if self.route[:2] != ("game", p)]
+        if len(packages) == 1:
+            pkg = packages[0]
             self.toast(tr("FramePort looked at your last session of {title} and has something to try.")
                        .format(title=self._title(pkg)), action=tr("Open game"),
                        on_action=lambda e: self.open_game(pkg))
+        elif packages:
+            self.toast(tr_n("FramePort looked at your last session of {n} game and has something to try.",
+                            "FramePort looked at the last sessions of {n} games and has something to try on their "
+                            "pages.", len(packages)), action=tr("Open {title}").format(title=self._title(packages[0])),
+                       on_action=lambda e: self.open_game(packages[0]))
 
     def apply_session_fix(self, pkg: str, suggestions: list[str], finding: str | None = None) -> None:
         """A fix from the game page's "Last session": FrameBridge settings are written on the Frame at once (no
@@ -2875,6 +2902,12 @@ def main(argv=None):
     if links and urlhandler.app_running():
         return  # the open window takes it
     applog.setup("gui")
+    from ..core import instance
+
+    if not instance.claim(urlhandler.app_running):
+        applog.log.info("FramePort is already running: brought its window to the front")
+        print("FramePort is already running.", file=sys.stderr)
+        return
     serialize_flet_updates()
     from ..core import library
     from .updater import apply_pending_at_start
@@ -2889,6 +2922,14 @@ def main(argv=None):
     if updates.install_kind() == "bundle":  # a packaged app finds artwork by file path, not by URL (GitHub #16)
         thumbs.use_file_paths(True)
     ft.run(lambda page: FramePortApp(page), assets_dir=assets_dir())
+    # the window is gone: end the process now. Background threads (re-analysis, session triage) would otherwise keep
+    # it running without a window, holding the GUI lock; library writes are atomic and installs resume.
+    _stop_link_watch()
+    import logging
+    import os
+
+    logging.shutdown()
+    os._exit(0)
 
 
 if __name__ == "__main__":
