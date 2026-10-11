@@ -323,8 +323,17 @@ Games tests: `pytest -m games` (FRAMEPORT_GAMES=<downloads dir>); on-device chec
 native layer test: `FRAMEPORT_NATIVE_TESTS=1 pytest -m native` (compiles with the NDK, ~2 min on NTFS).
 Repo is on an NTFS drive (`core.fileMode=false`); line endings are LF (`.gitattributes`).
 - `FRAMEPORT_HOME=<dir>` isolates all app data (tests use it); `FRAMEPORT_JAVA/_OVERPORT_JAR/_APKSIGNER_JAR` override
-  managed tools. Real app data (WSL): `~/.local/share/frameport` (tools, overport workspace + game keystores, library,
-  artwork, frames.json, the app's SSH key which the dev Frame authorizes).
+  managed tools. **The owner's real app data is the Windows copy's: `%LOCALAPPDATA%\FramePort`** (= `/mnt/c/Users/
+  <user>/AppData/Local/FramePort`; tools, overport workspace + game keystores, library, artwork, frames.json, the app's
+  SSH key which the dev Frame authorizes; moved from WSL's `~/.local/share/frameport` on 2026-10-11, which is now only
+  a stale backup). The desktop shortcut "FramePort (dev)" runs the source checkout natively on Windows
+  (`%LOCALAPPDATA%\FramePort-dev\launch-frameport-dev.vbs`: venv `FramePort-dev\venv` via `UV_PROJECT_ENVIRONMENT`,
+  `uv sync --frozen`, log `FramePort\logs\dev-gui.log`). **WSL runs on that data need `FRAMEPORT_WINDOWS_DATA=1`**
+  (set in `.claude/settings.local.json`; `paths.shares_windows_data`): the data folder becomes the Windows one, saved
+  paths from the other side are translated on load (`paths.localize`: /mnt/d/X <-> D:\X in library.json, tools.json,
+  PC deployment records), Java/Cpp2IL keep one copy per OS (tools.json `java-<os>-<arch>`), and the link handler isn't
+  registered (it would point the Windows copy's links at WSL). Don't run a WSL GUI and the Windows GUI at once
+  (the gui.lock flock/msvcrt locks don't see each other; only the gui.alive heartbeat does).
 - Device checks: `frameport test <pkg>` / `frameport parity-device --results <parity.json> --baseline <launch.txt>
   [--test-only]`; the pre-FramePort baseline is `PATCHED/_known-good-2026-09-28/_frame-state/baseline-launch.txt`.
 - Docs screenshots + videos (docs/SHOWCASE.md): never by hand. `uv run python scripts/showcase/render_docs.py`

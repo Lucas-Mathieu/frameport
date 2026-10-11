@@ -16,7 +16,7 @@ from pathlib import Path
 from ..core import winhost
 from ..core.events import Reporter
 from ..core.models import Recipe
-from ..core.paths import agent_file, user_data_dir
+from ..core.paths import agent_file, localize, user_data_dir
 from ..patches.pcvr import game_args
 from ..validate.triage import triage
 from .base import PC_LABEL, Target
@@ -77,7 +77,7 @@ def local_installs() -> dict[str, dict]:
     out = {}
     for f in sorted((user_data_dir() / "pc").glob("*/deployment.json")):
         try:
-            dep = json.loads(f.read_text(encoding="utf-8"))
+            dep = localize(json.loads(f.read_text(encoding="utf-8")))
             out[dep["package"]] = dep
         except (OSError, ValueError, KeyError):
             continue
@@ -113,7 +113,7 @@ class PcReviveTarget(Target):
         out = []
         for f in sorted(pc_dir().glob("*/deployment.json")):
             try:
-                dep = json.loads(f.read_text(encoding="utf-8"))
+                dep = localize(json.loads(f.read_text(encoding="utf-8")))
             except (OSError, ValueError):
                 continue
             dep["apk_present"] = Path(dep.get("exe_local", "")).exists()
@@ -122,7 +122,7 @@ class PcReviveTarget(Target):
 
     def _dep(self, package: str) -> dict:
         try:
-            return json.loads((pc_dir() / package / "deployment.json").read_text(encoding="utf-8"))
+            return localize(json.loads((pc_dir() / package / "deployment.json").read_text(encoding="utf-8")))
         except (OSError, ValueError):
             raise RuntimeError(f"{package} is not installed on this PC") from None
 
@@ -195,7 +195,7 @@ class PcReviveTarget(Target):
         exe_field, _, _ = shortcut_fields(dep)
         d = pc_dir() / package
         try:  # a reinstall keeps the shortcut's appid: Steam's entry is matched by its Exe, whatever its name now
-            old = json.loads((d / "deployment.json").read_text(encoding="utf-8"))
+            old = localize(json.loads((d / "deployment.json").read_text(encoding="utf-8")))
         except (OSError, ValueError):
             old = {}
         same_exe = bool(old.get("appid") and old.get("exe_win") and shortcut_fields(old)[0] == exe_field)
