@@ -45,6 +45,27 @@ def install(assets: Path) -> Path:
     return target
 
 
+APP_ICON = Path(__file__).resolve().parents[2] / "assets" / "icon.png"  # src/assets: the bundles' app icon
+
+
+def window_icon(assets: Path, source: Path = APP_ICON) -> Path | None:
+    """<assets>/ui-icons/app.ico made from the app icon, for the window and taskbar of source runs on Windows (they
+    run Flet's prebuilt client, which shows Flet's logo; `flet build` bundles have the icon built in). None when the
+    icon isn't there (bundles) or can't be converted."""
+    dest = assets / FOLDER / "app.ico"
+    try:
+        if dest.is_file() and dest.stat().st_mtime >= source.stat().st_mtime:
+            return dest
+        from PIL import Image
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with Image.open(source) as im:
+            im.convert("RGBA").save(dest, sizes=[(n, n) for n in (16, 20, 24, 32, 40, 48, 64, 128, 256)])
+        return dest
+    except Exception:  # noqa: BLE001 (Flet's icon then; never worth failing the start)
+        return None
+
+
 PORTAL_REV = 2
 
 

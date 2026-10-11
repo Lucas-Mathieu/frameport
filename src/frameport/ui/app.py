@@ -9,6 +9,7 @@ The UI only calls `frameport.pipeline`, the targets and the toolchain; long work
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 import traceback
@@ -160,6 +161,8 @@ class FramePortApp:
             for key, value in window_geometry(library.setting("ui.window"), T.SCALE).items():
                 setattr(page.window, key, value)
             page.window.on_event = self._on_window_event
+            if sys.platform == "win32" and (icon := G.window_icon(Path(assets_dir()))):
+                page.window.icon = str(icon)  # source runs: FramePort's icon instead of Flet's
         page.on_keyboard_event = self._on_key
         if page.web:  # the library's right-click menu; otherwise the browser shows its own
             try:
