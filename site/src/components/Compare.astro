@@ -166,6 +166,9 @@ const ICON = {
     .heads { grid-template-columns: minmax(0, 1fr); }
     .hcard.foss { grid-template-columns: minmax(0, 1fr); }
     .hcard.foss .hicon { grid-row: auto; }
+    /* one column: the title's "2 / -1" from the wide layout would add a second, implicit column and squeeze
+       FramePort's text into the first */
+    .hcard.foss h3 { grid-column: auto; }
     .hcard.foss .other { border-left: 0; padding-left: 0; border-top: 1px dashed var(--border-strong); padding-top: 8px; }
     th, td { padding: 10px 12px; }
     .rowh { width: 38%; }
