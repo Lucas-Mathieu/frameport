@@ -363,10 +363,12 @@ def test_fake_pairing_server_has_what_the_gui_uses():
     broke when open_asks() was added to the real one)."""
     from showcase import fakes
 
+    from frameport.frame.pairing import PairingServer
+
+    real = {n for n in dir(PairingServer) if not n.startswith("_")}
     used = set()
-    for f in (REPO / "src/frameport/ui").rglob("*.py"):
-        used |= set(re.findall(r"\bpairing\.([a-z_]+)\b", f.read_text(encoding="utf-8")))
-    real = {n for n in dir(__import__("frameport.frame.pairing", fromlist=["x"]).PairingServer) if not n.startswith("_")}
+    for f in (REPO / "src/frameport/ui").rglob("*.py"):  # any `.name` of a PairingServer method in the GUI
+        used |= set(re.findall(r"\.([a-z_]+)\b", f.read_text(encoding="utf-8"))) & real
     fake = fakes.FakePairingServer()
     missing = sorted(n for n in used & real if not hasattr(fake, n))
     assert not missing, missing
