@@ -345,7 +345,13 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
   LeaveVrMode and reuses it for an EnterVrMode with the same context (upstream-patches/runtime.cpp.patch).
   Debugging aids added: A32_BREAK=<guest addr>[,..] (stack of the first hits; guest libs load at fixed addresses, e.g.
   libUE4 0xf25d5000), A32_STRACE in bridge mode = path/exit calls to logcat, activity lifecycle + LeaveVrMode caller
-  logs. Lepton's logcat mirror often dies for these games: read `podman exec <container> logcat` instead. Next: the three 32-bit catalog games
+  logs. Lepton's logcat mirror often dies for these games: read `podman exec <container> logcat` instead. Gunjack input
+  (2026-10-11): it imports no vrapi input functions and reads the Gear VR touchpad/back as AInputEvents from its
+  AInputQueue (native_app_glue), so dispatchKeyEvent never reached it (no control at all) → input.c queues synthetic
+  events there (ALooper_poll* return the queue's ident while one waits; AInputQueue_getEvent/finishEvent and the
+  AInputEvent/AKeyEvent/AMotionEvent getters are hand-written "!" imports that know them; touch positions scaled to the
+  window size). Same mapping as AFFECTED: trigger = hold touchpad, A = tap, right stick = swipe, B = back. Not yet
+  headset-verified. Next: the three 32-bit catalog games
   (Journey of the Gods, Shadow Point, Sports Scramble: still "unsupported" until tested), translator speed (~40 % of
   the main thread is block exits / FPCR switches).
 - `scripts/` — `package.py` (flet build/pack), `eval_heuristics.py` (score heuristics), `ui_smoke.py` (GUI screenshots).

@@ -39,9 +39,15 @@ static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
  * frame.a32_bridge), jni.c answers the guest's call with it, since the re-signed APK has another certificate. */
 char *g_orig_signature;
 
+/* weak: the PC test harness has no libandroid */
+extern __typeof__(AAssetManager_open) AAssetManager_open __attribute__((weak));
+extern __typeof__(AAsset_getLength) AAsset_getLength __attribute__((weak));
+extern __typeof__(AAsset_read) AAsset_read __attribute__((weak));
+extern __typeof__(AAsset_close) AAsset_close __attribute__((weak));
+
 static void load_orig_signature(AAssetManager *mgr)
 {
-    if (g_orig_signature || !mgr) return;
+    if (g_orig_signature || !mgr || !AAssetManager_open) return;
     AAsset *asset = AAssetManager_open(mgr, "fp_a32_signature.txt", AASSET_MODE_BUFFER);
     if (!asset) return;
     off_t n = AAsset_getLength(asset);
@@ -102,12 +108,35 @@ static void on_stop(ANativeActivity *a) { forward(a, CB_STOP, 0, 0, 0, NULL); }
 static void on_low_memory(ANativeActivity *a) { forward(a, CB_LOW_MEMORY, 0, 0, 0, NULL); }
 static void on_config(ANativeActivity *a) { forward(a, CB_CONFIG, 0, 0, 0, NULL); }
 static void on_focus(ANativeActivity *a, int focused) { forward(a, CB_FOCUS, 1, (uint32_t)focused, 0, NULL); }
-static void on_window_created(ANativeActivity *a, ANativeWindow *w) { forward(a, CB_WINDOW_CREATED, 1, ptr2h(w), 0, NULL); }
-static void on_window_resized(ANativeActivity *a, ANativeWindow *w) { forward(a, CB_WINDOW_RESIZED, 1, ptr2h(w), 0, NULL); }
+volatile int g_window_w, g_window_h;
+extern __typeof__(ANativeWindow_getWidth) ANativeWindow_getWidth __attribute__((weak));
+extern __typeof__(ANativeWindow_getHeight) ANativeWindow_getHeight __attribute__((weak));
+
+static void note_window(ANativeWindow *w)
+{
+    if (!w || !ANativeWindow_getWidth || !ANativeWindow_getHeight) return;
+    int ww = ANativeWindow_getWidth(w), wh = ANativeWindow_getHeight(w);
+    if (ww > 0 && wh > 0) g_window_w = ww, g_window_h = wh;
+}
+
+static void on_window_created(ANativeActivity *a, ANativeWindow *w)
+{
+    note_window(w);
+    forward(a, CB_WINDOW_CREATED, 1, ptr2h(w), 0, NULL);
+}
+static void on_window_resized(ANativeActivity *a, ANativeWindow *w)
+{
+    note_window(w);
+    forward(a, CB_WINDOW_RESIZED, 1, ptr2h(w), 0, NULL);
+}
 static void on_window_redraw(ANativeActivity *a, ANativeWindow *w) { forward(a, CB_WINDOW_REDRAW, 1, ptr2h(w), 0, NULL); }
 static void on_window_destroyed(ANativeActivity *a, ANativeWindow *w) { forward(a, CB_WINDOW_DESTROYED, 1, ptr2h(w), 0, NULL); }
 static void on_queue_created(ANativeActivity *a, AInputQueue *q) { forward(a, CB_QUEUE_CREATED, 1, ptr2h(q), 0, NULL); }
-static void on_queue_destroyed(ANativeActivity *a, AInputQueue *q) { forward(a, CB_QUEUE_DESTROYED, 1, ptr2h(q), 0, NULL); }
+static void on_queue_destroyed(ANativeActivity *a, AInputQueue *q)
+{
+    forward(a, CB_QUEUE_DESTROYED, 1, ptr2h(q), 0, NULL);
+    input_queue_detached(q);
+}
 
 static void on_content_rect(ANativeActivity *a, const ARect *r)
 {

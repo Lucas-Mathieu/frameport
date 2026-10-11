@@ -123,7 +123,7 @@ void imp_a32_audio_close(a32_cpu *c, argreader *R)
 #include <android/looper.h>
 
 #define W(f) extern __typeof__(f) f __attribute__((weak))
-W(ALooper_addFd); W(ALooper_pollOnce); W(AInputQueue_attachLooper); W(AInputQueue_getEvent);
+W(ALooper_addFd); W(ALooper_pollOnce); W(AInputQueue_attachLooper); W(AInputQueue_getEvent); W(ALooper_forThread);
 W(AAssetDir_getNextFileName); W(AAsset_openFileDescriptor); W(AAsset_openFileDescriptor64);
 #undef W
 
@@ -171,6 +171,7 @@ void imp_AInputQueue_attachLooper(a32_cpu *c, argreader *R)
     ALooper_callbackFunc host_fn;
     void *d = looper_data(fn, data, &host_fn);
     if (AInputQueue_attachLooper) AInputQueue_attachLooper(q, l, ident, host_fn, d);
+    input_queue_attached(q, l, ident, data, fn != 0); /* the controllers' synthetic events go here (input.c) */
 }
 
 /* outData is a void ** (4 bytes on the guest side); data without a callback is the guest's own pointer */
@@ -180,6 +181,16 @@ static void poll(a32_cpu *c, argreader *R, int all)
     uint32_t out_fd = rd32(R), out_events = rd32(R), out_data = rd32(R);
     int fd = 0, events = 0;
     void *data = NULL;
+    /* a synthetic input event waits (input.c): the input queue's ident, like a readable queue fd */
+    int ident;
+    uint32_t gdata;
+    if (input_queue_pending(ALooper_forThread(), &ident, &gdata)) {
+        if (out_fd) st32(out_fd, (uint32_t)-1);
+        if (out_events) st32(out_events, ALOOPER_EVENT_INPUT);
+        if (out_data) st32(out_data, gdata);
+        ret32(c, (uint32_t)ident);
+        return;
+    }
     /* ALooper_pollAll: removed from the NDK headers (it may miss wakes), still in libandroid for old apps */
     static int (*poll_all)(int, int *, int *, void **);
     if (all && !poll_all) poll_all = (int (*)(int, int *, int *, void **))dlsym(RTLD_DEFAULT, "ALooper_pollAll");
@@ -198,8 +209,8 @@ void imp_AInputQueue_getEvent(a32_cpu *c, argreader *R)
 {
     AInputQueue *q = h2ptr(rd32(R));
     uint32_t out = rd32(R);
-    AInputEvent *e = NULL;
-    int r = AInputQueue_getEvent ? AInputQueue_getEvent(q, &e) : -1;
+    AInputEvent *e = input_queue_pop(q); /* synthetic controller events first */
+    int r = e ? 0 : AInputQueue_getEvent ? AInputQueue_getEvent(q, &e) : -1;
     if (out) st32(out, r >= 0 ? ptr2h(e) : 0);
     ret32(c, (uint32_t)r);
 }

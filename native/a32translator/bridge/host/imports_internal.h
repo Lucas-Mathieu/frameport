@@ -19,6 +19,14 @@ int gl_dispatch(a32_cpu *c, int index, argreader *R);
 /* native_activity.c */
 ANativeActivity *guest_activity(uint32_t g); /* the host activity behind a guest ANativeActivity * */
 void activity_create(ANativeActivity *a, void *saved, size_t saved_size, uint32_t oncreate);
+extern volatile int g_window_w, g_window_h; /* the activity's window size (0 before it exists) */
+
+/* input.c: synthetic input events for NativeActivity guests (Unreal: native_app_glue reads its AInputQueue) */
+void input_queue_attached(void *queue, void *looper, int ident, uint32_t data, int has_callback);
+void input_queue_detached(void *queue);
+/* a synthetic event is waiting for the queue attached to this looper: its ident and guest poll data */
+int input_queue_pending(void *looper, int *ident, uint32_t *data);
+void *input_queue_pop(void *queue); /* the next synthetic AInputEvent of this queue, or NULL */
 
 /* natives.c: registers the exported Java_* functions of a guest library with their classes */
 void natives_register_java(JNIEnv *env, uint32_t handle, const char *libname);
