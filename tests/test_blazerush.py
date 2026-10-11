@@ -184,7 +184,7 @@ def test_catalog_recipe():
     from frameport.recommend.engine import suggest
 
     entry = catalog.lookup(br.PACKAGE)
-    assert entry.status == "works" and "Klownicle" in entry.notes and entry.min_app == "1.0.1"
+    assert entry.status == "works" and "Klownicle" in entry.notes and entry.min_app == "1.0.0"
     recipe = suggest(_analysis())
     for pid in ("frame.vrapi_bridge", "frame.avatar_stub", "frame.gl_shim", "frame.blazerush", "device.config_sync"):
         assert pid in recipe.patches, pid
