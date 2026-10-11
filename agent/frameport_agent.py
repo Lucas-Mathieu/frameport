@@ -44,7 +44,7 @@ try:
 except ImportError:  # Windows: pc_revive loads this file for its VDF code only (GitHub #131)
     fcntl = None
 
-AGENT_VERSION = 78
+AGENT_VERSION = 79
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -5936,6 +5936,96 @@ def shader_dumps(files_dir, max_bytes=SHADER_DUMP_BYTES, session_bytes=SHADER_SE
     return out
 
 
+# arm64 syscall numbers seen in stuck threads (/proc/<tid>/syscall gives the number)
+ARM64_SYSCALLS = {22: "epoll_pwait", 29: "ioctl", 56: "openat", 63: "read", 64: "write", 73: "ppoll",
+                  98: "futex", 101: "nanosleep", 115: "clock_nanosleep", 203: "connect", 206: "sendto",
+                  207: "recvfrom", 212: "recvmsg", 260: "wait4"}
+TCP_STATES = {"01": "ESTABLISHED", "02": "SYN_SENT", "03": "SYN_RECV", "04": "FIN_WAIT1", "05": "FIN_WAIT2",
+              "06": "TIME_WAIT", "07": "CLOSE", "08": "CLOSE_WAIT", "09": "LAST_ACK", "0A": "LISTEN", "0B": "CLOSING"}
+
+
+def _remote_kind(hexaddr):
+    """/proc/net/tcp(6) remote address → loopback / local / internet (never the address itself: it would need
+    redacting, and what matters is whether the game waits on the internet)."""
+    import ipaddress
+    try:
+        raw = bytes.fromhex(hexaddr)
+        if len(raw) == 4:
+            ip = ipaddress.IPv4Address(raw[::-1])
+        else:  # four little-endian 32-bit words
+            ip = ipaddress.IPv6Address(b"".join(raw[i:i + 4][::-1] for i in range(0, 16, 4)))
+            ip = ip.ipv4_mapped or ip
+    except ValueError:
+        return "?"
+    if ip.is_unspecified:
+        return "none"
+    if ip.is_loopback:
+        return "loopback"
+    return "local" if ip.is_private or ip.is_link_local else "internet"
+
+
+def game_threads(pkg, proc=None, samples=3, gap=1.0, sleep=time.sleep):
+    """What a running (e.g. stuck) Android game's threads are doing (GitHub #157): for every process of `pkg` (its
+    main process and `pkg:<name>` ones), each thread's state, CPU time used over the sampled seconds, kernel wait
+    channel and current syscall, plus its TCP sockets. Readable as steamos: the container's user namespace belongs to
+    steamos. None when the game isn't running."""
+    proc = proc or PROC
+    pids = []
+    for d in os.listdir(proc):
+        if not d.isdigit():
+            continue
+        cmd = (_rd(os.path.join(proc, d, "cmdline")) or "").split("\0")[0]
+        if cmd == pkg or cmd.startswith(pkg + ":"):
+            pids.append((int(d), cmd))
+    if not pids:
+        return None
+
+    def cpu(pid):
+        out = {}
+        for t in os.listdir(os.path.join(proc, str(pid), "task")) if os.path.isdir(os.path.join(proc, str(pid),
+                                                                                                  "task")) else []:
+            st = _rd(os.path.join(proc, str(pid), "task", t, "stat")) or ""
+            f = st[st.rfind(")") + 2:].split()
+            if len(f) > 12:
+                out[t] = (f[0], int(f[11]) + int(f[12]))
+        return out
+
+    first = {pid: cpu(pid) for pid, _ in sorted(pids)}
+    for _ in range(max(0, samples - 1)):
+        sleep(gap)
+    span = max(0, samples - 1) * gap
+    lines = [f"# threads of the running game {pkg}; cpu_ms = CPU time used in {span:g} s, wchan = kernel wait, "
+             "syscall = what the thread is blocked in"]
+    for pid, cmd in sorted(pids):
+        last = cpu(pid)
+        lines.append(f"\n## process {cmd} (pid {pid}, {len(last)} threads)")
+        lines.append(f"{'tid':>7} st {'cpu_ms':>7}  {'comm':<16} {'wchan':<24} syscall")
+        rows = []
+        for tid, (state, ticks) in last.items():
+            used = (ticks - first.get(pid, {}).get(tid, (state, ticks))[1]) * 1000 // CLK_TCK
+            tdir = os.path.join(proc, str(pid), "task", tid)
+            comm = (_rd(os.path.join(tdir, "comm")) or "?").strip()
+            wchan = (_rd(os.path.join(tdir, "wchan")) or "?").strip() or "-"
+            sc = (_rd(os.path.join(tdir, "syscall")) or "?").split()
+            call = sc[0] if sc else "?"
+            if call.isdigit():
+                call = ARM64_SYSCALLS.get(int(call), "syscall " + call)
+            rows.append((-used, int(tid), f"{tid:>7} {state:>2} {used:>7}  {comm:<16} {wchan:<24} {call}"))
+        lines += [r[2] for r in sorted(rows)]
+        socks = []
+        for name in ("tcp", "tcp6"):
+            for ln in (_rd(os.path.join(proc, str(pid), "net", name)) or "").splitlines()[1:]:
+                f = ln.split()
+                if len(f) > 3 and ":" in f[2]:
+                    addr, port = f[2].rsplit(":", 1)
+                    socks.append(f"{name:<4} {TCP_STATES.get(f[3], f[3]):<12} remote={_remote_kind(addr)}"
+                                 f":{int(port, 16)}")
+        if socks:
+            lines.append("# TCP sockets (remote = loopback / local network / internet, and port)")
+            lines += sorted(set(socks))
+    return "\n".join(lines) + "\n"
+
+
 def cmd_collect_diag(args):
     """Everything useful for debugging without the game or the PC app: host runtime facts and, with a package, the
     game's launcher, settings, deployment, logs (launch, Lepton logcat, Proton/Revive/Unreal) and its file listing.
@@ -6016,6 +6106,13 @@ def cmd_collect_diag(args):
     for p in sorted(cands, key=lambda p: next((i for i, k in enumerate(order) if k in os.path.basename(p)), 9)):
         name = os.path.basename(p)
         files[name if name.startswith("logcat") else "logcat-" + name] = _tail(p, max_bytes)
+    if dep.get("kind", "quest") == "quest":
+        try:
+            threads = game_threads(pkg, samples=int(args.get("thread_samples", 3)))
+        except OSError:
+            threads = None
+        if threads:
+            files["threads.txt"] = threads
     shaders = shader_dumps(data_files_dir(base, pkg), int(args.get("shader_bytes", SHADER_DUMP_BYTES)),
                            int(args.get("shader_session_bytes", SHADER_SESSION_BYTES)))
     if shaders:

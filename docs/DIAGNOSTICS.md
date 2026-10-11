@@ -40,6 +40,9 @@ games/<pkg>/target/          from the Frame (or the PC): launch.sh, settings.con
                              ReviveInjector.txt / steam-<appid>.log / game-log-N.txt (PC VR), files.json (+ missing)
                              (game-log-N.txt: Unreal Saved/Logs + crash summaries, Unity Player.log / Player-prev.log /
                              output_log.txt + crash error.log from the Proton prefix, agent v67)
+                             threads.txt (agent v79): saved while a Quest game runs (e.g. hangs), each thread's
+                             state, CPU ms over 2 s, kernel wait and syscall, plus its TCP sockets (remote = loopback /
+                             local / internet + port, no addresses); read once from /proc, the game isn't paused
 games/<pkg>/target/shaders/  shader dumps (agent v72), when the game wrote any:
     fp_vk_shaders/           adapter vk_shader_dump=1 (Vulkan shim): <size>_<sha256>.spv + index.txt
     fp_spirv/                adapter zink_shader_dump=1 (OpenGL ES, shader-fix layer under Zink): <size>_<sha256>.spv

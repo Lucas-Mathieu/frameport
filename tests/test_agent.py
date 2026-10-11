@@ -1710,3 +1710,39 @@ def test_two_revive_games_keep_their_own_shortcuts(monkeypatch, tmp_path):
     assert again == one
     names = sorted(v["appname"] for v in a.vdf_decode(vdf.read_bytes())["shortcuts"].values())
     assert names == ["Game One", "Game Two"]
+
+
+def test_game_threads_reports_stuck_threads(monkeypatch, tmp_path):
+    """GitHub #157: diagnostics saved while a game hangs show what each thread waits in."""
+    a = load_agent(monkeypatch, tmp_path)
+    proc = tmp_path / "proc"
+
+    def task(pid, tid, comm, ticks, wchan, syscall):
+        t = proc / str(pid) / "task" / str(tid)
+        t.mkdir(parents=True)
+        (t / "stat").write_text(f"{tid} ({comm}) S 1 1 1 0 -1 0 0 0 0 0 {ticks} 0 0 0 20 0 1 0")
+        (t / "comm").write_text(comm + "\n")
+        (t / "wchan").write_text(wchan)
+        (t / "syscall").write_text(syscall)
+
+    (proc / "200").mkdir(parents=True)
+    (proc / "200" / "cmdline").write_text("com.example.game\0")
+    task(200, 200, "GameThread", 50, "futex_wait_queue", "98 0x1 0x2")
+    task(200, 201, "RenderThread", 10, "do_epoll_wait", "22 0x1")
+    (proc / "200" / "net").mkdir()
+    (proc / "200" / "net" / "tcp").write_text(
+        "  sl  local_address rem_address   st\n"
+        "   0: 0100007F:1F90 0B01A8C0:01BB 02 00000000:00000000\n")
+    (proc / "300").mkdir()
+    (proc / "300" / "cmdline").write_text("com.other\0")
+
+    def sleep(_):  # GameThread uses 1 s of CPU between the two samples
+        (proc / "200" / "task" / "200" / "stat").write_text(
+            "200 (GameThread) R 1 1 1 0 -1 0 0 0 0 0 150 0 0 0 20 0 1 0")
+
+    out = a.game_threads("com.example.game", proc=str(proc), samples=2, gap=1, sleep=sleep)
+    assert "com.example.game (pid 200, 2 threads)" in out
+    game = next(ln for ln in out.splitlines() if "GameThread" in ln)
+    assert "futex" in game and "futex_wait_queue" in game and f"{100 * 1000 // a.CLK_TCK}" in game
+    assert "epoll_pwait" in out and "SYN_SENT" in out and "remote=local:443" in out
+    assert "192.168" not in out and a.game_threads("com.missing", proc=str(proc)) is None

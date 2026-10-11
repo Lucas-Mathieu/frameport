@@ -183,7 +183,9 @@ version is `catalog/triage.yaml` (used by `frameport test` / the Job screen); ke
   touching new memory (`perf script -F comm,tid,ip,dso`); `-t <tid> -F 499` samples one thread. Map IL2CPP
   addresses with a full Cpp2IL diffable-cs dump (method `Offset` = address − the r-xp mapping of libil2cpp.so).
   Sample memory per mapping name from `/proc/<pid>/smaps` (`[anon:libc_malloc]` = native heap).
-- Hangs (every thread asleep): backtraces of all threads with gdb. Root inside the Lepton container may ptrace the
+- Hangs (every thread asleep): first ask for a diagnostics zip saved *while the game hangs*: `target/threads.txt`
+  (agent v79) shows each thread's wait and syscall (futex = a lock, ppoll/recvfrom + an internet socket = network). Then
+  backtraces of all threads with gdb. Root inside the Lepton container may ptrace the
   game (the host's `ptrace_scope` 1 doesn't apply there) and the guest has `gdbserver64`; `debuggerd -b` fails (no
   tombstoned). Copy every mapped library to a local sysroot (`podman exec <container> cat /proc/<pid>/maps`, then
   `tar -chf - -T <list>` through `podman exec -i`; the app's own libs from the installed `lepton-app/game.apk` at their
