@@ -1,14 +1,23 @@
 {
- "updated": "2026-10-10",
+ "updated": "2026-10-11",
  "people": [
   {
    "login": "spoopyghosty0",
    "avatar": "https://avatars.githubusercontent.com/u/336754034?v=4",
    "url": "https://github.com/spoopyghosty0",
-   "commits": 462,
+   "commits": 523,
    "issues": 4,
-   "prs": 2,
-   "total": 484
+   "prs": 3,
+   "total": 550
+  },
+  {
+   "login": "StevenPartridge",
+   "avatar": "https://avatars.githubusercontent.com/u/22158507?v=4",
+   "url": "https://github.com/StevenPartridge",
+   "commits": 0,
+   "issues": 15,
+   "prs": 0,
+   "total": 45
   },
   {
    "login": "tkp206093",
@@ -18,15 +27,6 @@
    "issues": 15,
    "prs": 0,
    "total": 45
-  },
-  {
-   "login": "StevenPartridge",
-   "avatar": "https://avatars.githubusercontent.com/u/22158507?v=4",
-   "url": "https://github.com/StevenPartridge",
-   "commits": 0,
-   "issues": 14,
-   "prs": 0,
-   "total": 42
   },
   {
    "login": "Klownicle",
@@ -101,6 +101,24 @@
    "total": 15
   },
   {
+   "login": "eepykith",
+   "avatar": "https://avatars.githubusercontent.com/u/338898488?v=4",
+   "url": "https://github.com/eepykith",
+   "commits": 0,
+   "issues": 4,
+   "prs": 0,
+   "total": 12
+  },
+  {
+   "login": "nickwilde77555",
+   "avatar": "https://avatars.githubusercontent.com/u/180547421?v=4",
+   "url": "https://github.com/nickwilde77555",
+   "commits": 0,
+   "issues": 4,
+   "prs": 0,
+   "total": 12
+  },
+  {
    "login": "Rizsraketa",
    "avatar": "https://avatars.githubusercontent.com/u/64963535?v=4",
    "url": "https://github.com/Rizsraketa",
@@ -122,6 +140,15 @@
    "login": "TheFloydman",
    "avatar": "https://avatars.githubusercontent.com/u/22880199?v=4",
    "url": "https://github.com/TheFloydman",
+   "commits": 0,
+   "issues": 4,
+   "prs": 0,
+   "total": 12
+  },
+  {
+   "login": "trankillity",
+   "avatar": "https://avatars.githubusercontent.com/u/53357041?v=4",
+   "url": "https://github.com/trankillity",
    "commits": 0,
    "issues": 4,
    "prs": 0,
@@ -158,15 +185,6 @@
    "login": "diegojansen7",
    "avatar": "https://avatars.githubusercontent.com/u/38290452?v=4",
    "url": "https://github.com/diegojansen7",
-   "commits": 0,
-   "issues": 3,
-   "prs": 0,
-   "total": 9
-  },
-  {
-   "login": "eepykith",
-   "avatar": "https://avatars.githubusercontent.com/u/338898488?v=4",
-   "url": "https://github.com/eepykith",
    "commits": 0,
    "issues": 3,
    "prs": 0,
@@ -227,18 +245,18 @@
    "total": 6
   },
   {
-   "login": "nickwilde77555",
-   "avatar": "https://avatars.githubusercontent.com/u/180547421?v=4",
-   "url": "https://github.com/nickwilde77555",
+   "login": "puppet-head",
+   "avatar": "https://avatars.githubusercontent.com/u/8073775?v=4",
+   "url": "https://github.com/puppet-head",
    "commits": 0,
    "issues": 2,
    "prs": 0,
    "total": 6
   },
   {
-   "login": "puppet-head",
-   "avatar": "https://avatars.githubusercontent.com/u/8073775?v=4",
-   "url": "https://github.com/puppet-head",
+   "login": "Sidilium",
+   "avatar": "https://avatars.githubusercontent.com/u/44266441?v=4",
+   "url": "https://github.com/Sidilium",
    "commits": 0,
    "issues": 2,
    "prs": 0,
@@ -261,6 +279,15 @@
    "issues": 0,
    "prs": 1,
    "total": 6
+  },
+  {
+   "login": "AlexanderCowell",
+   "avatar": "https://avatars.githubusercontent.com/u/225416878?v=4",
+   "url": "https://github.com/AlexanderCowell",
+   "commits": 0,
+   "issues": 1,
+   "prs": 0,
+   "total": 3
   },
   {
    "login": "bcain2005-gif",
@@ -335,6 +362,15 @@
    "total": 3
   },
   {
+   "login": "gnargle",
+   "avatar": "https://avatars.githubusercontent.com/u/9372593?v=4",
+   "url": "https://github.com/gnargle",
+   "commits": 0,
+   "issues": 1,
+   "prs": 0,
+   "total": 3
+  },
+  {
    "login": "InsideCat02",
    "avatar": "https://avatars.githubusercontent.com/u/111202797?v=4",
    "url": "https://github.com/InsideCat02",
@@ -389,9 +425,9 @@
    "total": 3
   },
   {
-   "login": "Sidilium",
-   "avatar": "https://avatars.githubusercontent.com/u/44266441?v=4",
-   "url": "https://github.com/Sidilium",
+   "login": "s1lenceSRG",
+   "avatar": "https://avatars.githubusercontent.com/u/340965322?v=4",
+   "url": "https://github.com/s1lenceSRG",
    "commits": 0,
    "issues": 1,
    "prs": 0,
@@ -410,15 +446,6 @@
    "login": "Tazzash",
    "avatar": "https://avatars.githubusercontent.com/u/42785850?v=4",
    "url": "https://github.com/Tazzash",
-   "commits": 0,
-   "issues": 1,
-   "prs": 0,
-   "total": 3
-  },
-  {
-   "login": "trankillity",
-   "avatar": "https://avatars.githubusercontent.com/u/53357041?v=4",
-   "url": "https://github.com/trankillity",
    "commits": 0,
    "issues": 1,
    "prs": 0,
