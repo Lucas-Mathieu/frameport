@@ -574,6 +574,11 @@
   "title": "Unreal: thumb follows the capacitive touches",
   "group": "Steam Frame patches"
  },
+ "frame.vermillion_scene_canvas": {
+  "anchor": "frame-vermillion_scene_canvas",
+  "title": "Vermillion: paint canvases in the scene",
+  "group": "Steam Frame patches"
+ },
  "frame.vivox_audio_route": {
   "anchor": "frame-vivox_audio_route",
   "title": "Vivox voice chat: skip Android 12 audio routing",

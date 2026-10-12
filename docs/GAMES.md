@@ -142,6 +142,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | The Light Brigade | Quest | ⚠️ Works with issues | Judder in weapons |
 | The Thrill Of The Fight | Quest | ⚠️ Works with issues | Right eye doesn't draw the opponent or the referee. |
 | Time Stall | Quest | ⚠️ Works with issues | Both eyes distort during movement (unresolved). |
+| Vermillion | Quest | ⚠️ Works with issues | Runs. |
 | WiiCompiled VR | Quest | ⚠️ Works with issues | To add a game: in FramePort's Files tab, upload your .wcgame file to this game's storage, folder Android/data/org.wiicompiled.quest/files/WiiCompiledOpenXRVR… |
 | Eleven Table Tennis | Quest | ❌ Doesn't run | Stops at the splash screen. |
 | Espire 1: VR Operative (Quest Edition) | Quest | ❌ Doesn't run | Mesa GL driver crash during texture upload. |

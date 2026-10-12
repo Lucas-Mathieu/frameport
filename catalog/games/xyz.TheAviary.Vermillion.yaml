@@ -1,0 +1,25 @@
+package: xyz.TheAviary.Vermillion
+title: Vermillion
+status: issues
+notes: Runs. The canvas used to hide the hand and brush while painting (the Frame draws the game's canvas layer in
+  front of everything); the recipe makes the game draw canvases in the scene instead (fix found by Klownicle, GitHub
+  #200). Not yet confirmed in the headset with this patch.
+tested_version: 1.7.2
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+- frame.vermillion_scene_canvas
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+  scene_emul: 1
+verified:
+  date: '2026-10-11'
+  app: 1.0.1
+  frame_build: '20261007.6125817'
+  agent: 79
+  issue: 200
+updated: '2026-10-12'
+source_hint: Vermillion - VR Painting

@@ -55,6 +55,8 @@ SUMMARIES = {
                        "(for example Star Wars Pinball VR).",
     "frame.unity_no_overlay_copy": "Stops a gray screen crash in some Unity games by skipping their overlay layers "
                                    "(for example The Room VR).",
+    "frame.vermillion_scene_canvas": "Keeps the hand and brush visible over Vermillion's painting canvas (the "
+                                     "canvas is drawn in the scene instead of as a layer in front).",
     "frame.nodebug": "Stops strict debugging checks that make some games quit.",
     "frame.meta_permissions": "Declares Meta's permissions some mixed-reality games ask for, so they don't stop.",
     "frame.ovrplatformcompat": "Adds a small piece of Meta's platform library that some games need to start.",

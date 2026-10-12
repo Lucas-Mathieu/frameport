@@ -379,3 +379,32 @@ def test_frame_loop_fixes_are_per_game_settings():
     recipe = yaml.safe_load((Path(__file__).parents[1] / "catalog/games/com.JustAddWater.SniperEliteVR.yaml")
                             .read_text())
     assert recipe["adapter"]["ovrp_begin_gate"] == 1 and recipe["adapter"]["ovrp_hold_physics"] == 1
+
+
+def test_vermillion_canvas_stays_in_the_scene():
+    """Vermillion (GitHub #200): the canvas layer hid the hand and brush; both compositor checks return false (method
+    starts as Cpp2IL reports them for 1.7.2), and only Vermillion is offered the patch."""
+    from frameport.analysis.il2cpp import parse_methods
+    from frameport.patches.frame import vermillion_canvas as V
+
+    base.load_all()
+    lib = _lib()
+    lo, _hi = U._executable(lib)[0]
+    a, b = (lo + 0x40) & ~3, (lo + 0x80) & ~3
+    cs = (f"\t[Address(RVA = \"0x{a:X}\", Offset = \"0x{a:X}\", Length = \"0x90\")]\n"
+          "\t[Token(Token = \"0x600148D\")]\n"
+          "\tpublic bool get_HasCompositorLayerAvailable() { }\n\n"
+          f"\t[Address(RVA = \"0x{b:X}\", Offset = \"0x{b:X}\", Length = \"0x330\")]\n"
+          "\t[Token(Token = \"0x60014B0\")]\n"
+          "\tpublic bool get_ShouldUseCompositorOverlay() { }\n")
+    found = {V.PAINTABLE: parse_methods(cs, list(V.VermillionSceneCanvas.targets[V.PAINTABLE]))}
+    assert found[V.PAINTABLE] == {"get_HasCompositorLayerAvailable": (a, 0x90),
+                                  "get_ShouldUseCompositorOverlay": (b, 0x330)}
+    out, notes = U.patch_methods(lib, found, V.VermillionSceneCanvas.targets)
+    assert out[a:a + 8] == U.RET_FALSE and out[b:b + 8] == U.RET_FALSE and len(notes) == 2
+    assert U.patch_methods(out, found, V.VermillionSceneCanvas.targets)[0] is None  # already applied
+    assert set(V.VermillionSceneCanvas.targets[V.PAINTABLE]) <= set(U.ALL_TARGETS[V.PAINTABLE])
+    p = base.get("frame.vermillion_scene_canvas")
+    game = _analysis(package=V.PACKAGE, libs=["libil2cpp.so", "libunity.so"])
+    assert p.applies(game) and p.detect(game) is None
+    assert not p.applies(_analysis(package="com.other.game", libs=["libil2cpp.so"]))
