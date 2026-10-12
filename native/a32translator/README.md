@@ -17,7 +17,9 @@ a32run [--interp] [--strace] [--trace] [--sysroot DIR] [-v] program [args...]
 
 Environment: `A32_STATS=1` (block/chain statistics at exit), `A32_DUMP=file` (translated code, see
 `tools/jitdump.py`), `A32_EXACT_ADDR=1` (guest address arithmetic modulo 2^32, see below), `A32_CACHE_KB=n`
-(small code cache, exercises flushes), `A32_INTERP=1`, `A32_STRACE=1`.
+(small code cache, exercises flushes), `A32_INTERP=1`, `A32_STRACE=1`, `A32_PERFMAP=<file>|1` (a perf map of the
+translated code: `a32:<pc>` block bodies, `a32:exits` exit stubs, `a32:fpcr` FPCR writes; `1` writes
+`/tmp/perf-<pid>.map`, which `perf report` reads).
 
 32-bit bionic refuses pids above 65535, which hosts with a large `pid_max` (SteamOS: 4194304) exceed. Start such
 programs in a fresh pid namespace: `unshare -Urpf --kill-child a32run prog`.
@@ -68,7 +70,9 @@ programs in a fresh pid namespace: `unshare -Urpf --kill-child a32run prog`.
   guest. `A32_EXACT_ADDR=1` computes every address modulo 2^32 instead. Unaligned LDRD/LDM/VLDn are allowed
   (newer arm64 kernels fix them up for AArch32 too); qemu raises SIGBUS. The host page size must be 4 KiB.
 - **Self-modifying code.** `cacheflush` (what `__builtin___clear_cache` calls on ARM), `mprotect`, `munmap` and
-  `mremap` invalidate the translated blocks of the affected pages and unlink chains into them. A full cache
+  `mremap` invalidate the translated blocks of the affected pages and unlink chains into them. Each guest page keeps
+  a list of its blocks, so an invalidation only visits those (Unity's Mono JIT flushes new code next to translated
+  code all the time; scanning every block made that 72 % of Spunky Dungeon's main thread). A full cache
   (128 MiB) is flushed once every thread has left translated code.
 - **Faults.** A guest memory fault in translated code is mapped back to the guest instruction (per-instruction
   host offsets, plus the VFP cache state). The guest registers are rebuilt from the signal context, and the
@@ -83,7 +87,11 @@ programs in a fresh pid namespace: `unshare -Urpf --kill-child a32run prog`.
   kernel's frame layouts (`sigframe`/`rt_sigframe`, `sigaltstack`, SA_RESTORER, SA_NODEFER, SA_RESETHAND).
   Guest SIG_DFL/SIG_IGN dispositions stay on the host, so the kernel applies default actions itself.
 - **Threads** (`threads.c`): `clone` with CLONE_VM|CLONE_THREAD starts a host pthread running its own `a32_cpu`.
-  Other clones become `fork`. The code cache is shared (a mutex guards translation; lookups are lock-free).
+  Other clones become `fork`. The code cache is shared: a mutex guards translation and chaining only. The run loop
+  finds blocks without it (the inline lookup table first, then the hash chains) and puts each block it dispatched
+  back into the inline table, so a block translated later into the same slot can't shut a hot return target out.
+  Each thread flags itself while it is in the run loop or translated code; a cache flush waits for the flags (a
+  shared counter cost every dispatch a contended atomic).
   LDREX/STREX are emulated as compare-and-swap on the exclusive value; ABA changes are not detected.
 
 Not supported: big-endian data (SETEND BE), ARMv8.1+ AArch32 extensions (FP16 arithmetic, RDM, JSCVT, dot

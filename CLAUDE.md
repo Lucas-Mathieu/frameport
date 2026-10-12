@@ -352,8 +352,12 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
   AInputEvent/AKeyEvent/AMotionEvent getters are hand-written "!" imports that know them; touch positions scaled to the
   window size). Same mapping as AFFECTED: trigger = hold touchpad, A = tap, right stick = swipe, B = back; for NativeActivity games the stick's up/down = swipe forward/back (touchpad X: Gunjack's OnFlick = reload at ~0°, special weapon at ~180°). Not yet
   headset-verified. Next: the three 32-bit catalog games
-  (Journey of the Gods, Shadow Point, Sports Scramble: still "unsupported" until tested), translator speed (~40 % of
-  the main thread is block exits / FPCR switches).
+  (Journey of the Gods, Shadow Point, Sports Scramble: still "unsupported" until tested), translator speed. Profiled on the Frame
+  (2026-10-12, `A32_PERFMAP` + perf): FPCR switches are negligible (8 of 86k samples); the cost was the run loop
+  (a mutex + hash-chain walk on every dispatch, a contended counter, inline-lookup slots never refilled: Gunjack
+  ~45 % of its CPU) and `jit_invalidate` scanning every block on each Mono `cacheflush` (72 % of Spunky Dungeon's
+  main thread). Now lock-free lookups, ltab refill, per-thread flags, per-page block lists: Gunjack's dispatcher
+  23.6 % -> 1.6 %, CPU in the same phase about -55 %, still 72 fps.
 - `scripts/` — `package.py` (flet build/pack), `eval_heuristics.py` (score heuristics), `ui_smoke.py` (GUI screenshots).
 - `docs/` — PLAYBOOK, FRAME_RUNTIME, ARCHITECTURE, INSTALL (end users), parity reports (offline + device).
 

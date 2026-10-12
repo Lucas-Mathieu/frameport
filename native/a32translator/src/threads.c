@@ -148,6 +148,16 @@ void threads_interrupt_all(void)
     pthread_mutex_unlock(&list_lock);
 }
 
+int threads_any_in_jit(void)
+{
+    int any = 0;
+    pthread_mutex_lock(&list_lock);
+    for (a32_thread *t = &main_thread; t && !any; t = t->next)
+        any = t != g_self && __atomic_load_n(&t->in_jit_section, __ATOMIC_ACQUIRE);
+    pthread_mutex_unlock(&list_lock);
+    return any;
+}
+
 _Noreturn void thread_exit(a32_cpu *c, int status)
 {
     (void)c;

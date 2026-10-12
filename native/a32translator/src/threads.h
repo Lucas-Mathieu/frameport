@@ -19,7 +19,7 @@ typedef struct a32_thread {
     sigjmp_buf fault_jmp;        /* recovery point for faults in guest memory accesses */
     volatile int in_guest;       /* executing guest code (interpreter or JIT) */
     volatile int in_helper;      /* JIT code called the interpreter for one instruction */
-    int in_jit_section;          /* counted in jit_users (left on fault recovery) */
+    int in_jit_section;          /* in jit_run's dispatch or translated code (a flush waits; left on fault recovery) */
     uint32_t fault_pc;           /* guest pc of the instruction being executed (interpreter) */
     volatile siginfo_t fault_info;
     volatile int fault_sig;
@@ -35,6 +35,7 @@ a32_thread *thread_main(void);
 long sys_clone(a32_cpu *c, uint32_t flags, uint32_t stack, uint32_t ptid, uint32_t tls, uint32_t ctid);
 _Noreturn void thread_exit(a32_cpu *c, int status);
 void threads_interrupt_all(void); /* make every thread leave translated code soon */
+int threads_any_in_jit(void);      /* some other thread is in jit_run's dispatch or translated code */
 
 /* Bridge mode: the next CLONE_THREAD clone on this thread hands the new guest thread to *g_clone_adopt (another
  * host thread, which runs it with thread_adopt) instead of starting a host pthread for it. */

@@ -65,6 +65,7 @@ typedef struct jit_block {
     uint64_t *map_vc;              /* scalar VFP cache state before the instruction (jit_vfp_state) */
     int nmap;
     uint8_t thumb, valid;
+    struct jit_block *pnext[2];    /* lists of the blocks on the guest page(s) of guest_lo and guest_hi - 1 */
 } jit_block;
 
 #define MAX_STUBS 64

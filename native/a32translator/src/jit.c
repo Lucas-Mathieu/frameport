@@ -29,8 +29,8 @@ extern void jit_exit(void);
 
 #define CACHE_BYTES (128u << 20)
 #define CACHE_MARGIN (64u << 10)   /* free space needed to start a block (a block uses far less) */
-#define HASH_BITS 16
-#define LTAB_BITS 16
+#define HASH_BITS 18
+#define LTAB_BITS 18
 #define MAX_INSNS 96
 
 static uint32_t *cache, *cache_cur, *cache_end;
@@ -41,11 +41,13 @@ static pthread_mutex_t tlock = PTHREAD_MUTEX_INITIALIZER;
 static jit_block **blocks;          /* in code address order (the cache is append-only between flushes) */
 static size_t nblocks, cap_blocks;
 static uint8_t codepages[(1u << 20) / 8];
+/* the blocks on each guest page (jit_invalidate), two levels: 2^10 tables of 2^10 list heads, allocated on use */
+static jit_block **pagelists[1u << 10];
 static void *helpers[HELP_COUNT];
-static int jit_users;               /* threads currently inside translated code */
-static volatile int flush_pending;
+static volatile int flush_pending;   /* a flush waits for every thread to leave (a32_thread.in_jit_section) */
 int jit_stats;
 static FILE *dump_file;
+static FILE *perf_map; /* A32_PERFMAP: perf's map of translated code (body, exit stubs, FPCR writes) */
 static unsigned long helper_hist[OP_COUNT];
 static unsigned long st_blocks, st_helpers_emitted, st_flushes, st_chains;
 
@@ -1181,11 +1183,39 @@ static void translate_insn(jit_ctx *x, const insn_t *i)
 static inline uint64_t make_key(uint32_t pc, int thumb, uint32_t it) { return pc | (uint64_t)thumb | (uint64_t)it << 32; }
 static inline unsigned hash_key(uint64_t k) { return (unsigned)((k ^ (k >> 15) ^ (k >> 32) * 0x9e37u) & ((1u << HASH_BITS) - 1)); }
 
+static inline unsigned ltab_index(uint64_t key) { return (unsigned)(key >> 1) & ((1u << LTAB_BITS) - 1); }
+
+/* lock-free: blocks are published with a release store and never leave a hash chain before a flush */
 static jit_block *lookup(uint64_t key)
 {
-    for (jit_block *b = htab[hash_key(key)]; b; b = b->hnext)
+    for (jit_block *b = __atomic_load_n(&htab[hash_key(key)], __ATOMIC_ACQUIRE); b; b = b->hnext)
         if (b->key == key && b->valid) return b;
     return NULL;
+}
+
+/* the run loop puts a block it dispatched back into the inline lookup table: a later block in the same slot must
+ * not shut a hot target out of it. Without the lock, so an invalidation may run at the same time: see
+ * invalidate_block. */
+static void ltab_refill(jit_block *blk)
+{
+    jit_block **slot = &ltab[ltab_index(blk->key)];
+    if (__atomic_load_n(slot, __ATOMIC_RELAXED) == blk) return;
+    __atomic_store_n(slot, blk, __ATOMIC_SEQ_CST);
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    if (!__atomic_load_n(&blk->valid, __ATOMIC_SEQ_CST)) {
+        jit_block *expect = blk;
+        __atomic_compare_exchange_n(slot, &expect, &invalid_block, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+    }
+}
+
+static jit_block **page_list(uint32_t page, int create)
+{
+    jit_block **t = pagelists[page >> 10];
+    if (!t) {
+        if (!create) return NULL;
+        t = pagelists[page >> 10] = calloc(1u << 10, sizeof *t);
+    }
+    return &t[page & ((1u << 10) - 1)];
 }
 
 static void emit_stubs(jit_ctx *x)
@@ -1269,6 +1299,27 @@ static void mark_code(uint32_t lo, uint32_t hi)
     for (uint32_t p = lo / GUEST_PAGE; p <= (hi - 1) / GUEST_PAGE; p++) codepages[p >> 3] |= 1u << (p & 7);
 }
 
+/* "START SIZE name" lines (perf's /tmp/perf-<pid>.map format): the block's body as "a32:<pc>[T]", each FPCR write
+ * with the instruction after it (where its samples land) as "a32:fpcr", the exit stubs as "a32:exits" */
+static void write_perf_map(const jit_block *blk, const uint32_t *stubs)
+{
+    char name[32];
+    snprintf(name, sizeof name, "a32:%08x%s", (uint32_t)blk->key, blk->thumb ? "T" : "");
+#define RANGE(lo, hi, n) fprintf(perf_map, "%lx %lx %s\n", (unsigned long)(uintptr_t)(lo), \
+                                 (unsigned long)(((hi) - (lo)) * 4), n)
+    const uint32_t *from = blk->code;
+    for (const uint32_t *w = blk->code; w + 1 < stubs; w++) {
+        if (*w != a64_msr(T2, SYS_FPCR)) continue;
+        if (w > from) RANGE(from, w, name);
+        RANGE(w, w + 2, "a32:fpcr");
+        from = w + 2;
+    }
+    if (stubs > from) RANGE(from, stubs, name);
+    if (blk->end > stubs) RANGE(stubs, blk->end, "a32:exits");
+#undef RANGE
+    fflush(perf_map);
+}
+
 /* returns NULL if the code is not readable (*fault set) or the cache is full (*full set) */
 static jit_block *translate(uint32_t pc, int thumb, uint32_t it, int *fault, int *full)
 {
@@ -1337,6 +1388,7 @@ static jit_block *translate(uint32_t pc, int thumb, uint32_t it, int *fault, int
         }
         if (nlen) in = nx;
     }
+    uint32_t *stubs_start = b->p;
     emit_stubs(x);
     if (b->overflow) {
         fatal("block at 0x%08x overflowed the code buffer", pc);
@@ -1365,16 +1417,22 @@ static jit_block *translate(uint32_t pc, int thumb, uint32_t it, int *fault, int
     blk->valid = 1;
     cache_cur = (uint32_t *)(((uintptr_t)b->p + 15) & ~(uintptr_t)15);
     __builtin___clear_cache((char *)blk->code, (char *)blk->end);
+    uint32_t p0 = lo / GUEST_PAGE, p1 = (hi - 1) / GUEST_PAGE;
+    if (p1 > p0 + 1) fatal("block at 0x%08x spans more than two pages", pc);
+    jit_block **l = page_list(p0, 1);
+    blk->pnext[0] = *l, *l = blk;
+    if (p1 != p0) l = page_list(p1, 1), blk->pnext[1] = *l, *l = blk;
     unsigned h = hash_key(blk->key);
     blk->hnext = htab[h];
-    htab[h] = blk;
-    if (it == 0) __atomic_store_n(&ltab[(blk->key >> 1) & ((1u << LTAB_BITS) - 1)], blk, __ATOMIC_RELEASE);
+    __atomic_store_n(&htab[h], blk, __ATOMIC_RELEASE);
+    if (it == 0) __atomic_store_n(&ltab[ltab_index(blk->key)], blk, __ATOMIC_RELEASE);
     if (nblocks == cap_blocks) {
         cap_blocks = cap_blocks ? cap_blocks * 2 : 4096;
         blocks = realloc(blocks, cap_blocks * sizeof *blocks);
     }
     blocks[nblocks++] = blk;
     mark_code(lo, hi);
+    if (perf_map) write_perf_map(blk, stubs_start);
     st_blocks++;
     if (opt_trace) fprintf(stderr, "a32: block %08x%s it=%02x: %d insns, %zu host words\n", pc, thumb ? "T" : "A", it,
                            nmap, (size_t)(blk->end - blk->code));
@@ -1407,9 +1465,12 @@ static void chain(jit_site *s, jit_block *target)
 static void invalidate_block(jit_block *blk)
 {
     if (!blk->valid) return;
-    blk->valid = 0;
-    unsigned li = (blk->key >> 1) & ((1u << LTAB_BITS) - 1);
-    if (ltab[li] == blk) __atomic_store_n(&ltab[li], &invalid_block, __ATOMIC_RELEASE);
+    /* fenced against ltab_refill: either it sees valid == 0 or we see its entry */
+    __atomic_store_n(&blk->valid, 0, __ATOMIC_SEQ_CST);
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    unsigned li = ltab_index(blk->key);
+    if (__atomic_load_n(&ltab[li], __ATOMIC_SEQ_CST) == blk)
+        __atomic_store_n(&ltab[li], &invalid_block, __ATOMIC_RELEASE);
     for (jit_site *s = blk->in; s; s = s->next_in) {
         __atomic_store_n(s->insn, a64_b((int32_t)(s->stub - s->insn)), __ATOMIC_RELEASE);
         __builtin___clear_cache((char *)s->insn, (char *)(s->insn + 1));
@@ -1438,10 +1499,19 @@ void jit_invalidate(uint32_t addr, uint32_t len)
             break;
         }
     if (!any) return;
+    /* only the blocks on the affected pages (Mono's JIT flushes new code next to translated code all the time);
+     * invalid blocks leave the lists on the way */
     pthread_mutex_lock(&tlock);
-    for (size_t k = 0; k < nblocks; k++) {
-        jit_block *blk = blocks[k];
-        if (blk->valid && blk->guest_lo < end && blk->guest_hi > addr) invalidate_block(blk);
+    for (uint32_t p = addr / GUEST_PAGE; p <= (end - 1) / GUEST_PAGE; p++) {
+        if (!((codepages[p >> 3] >> (p & 7)) & 1)) continue;
+        jit_block **pp = page_list(p, 0);
+        while (pp && *pp) {
+            jit_block *blk = *pp;
+            int k = blk->guest_lo / GUEST_PAGE != p;
+            if (blk->valid && blk->guest_lo < end && blk->guest_hi > addr) invalidate_block(blk);
+            if (blk->valid) pp = &blk->pnext[k];
+            else *pp = blk->pnext[k];
+        }
     }
     pthread_mutex_unlock(&tlock);
 }
@@ -1461,6 +1531,10 @@ static void free_all_blocks(void)
     memset(htab, 0, sizeof htab);
     for (size_t k = 0; k < (1u << LTAB_BITS); k++) ltab[k] = &invalid_block;
     memset(codepages, 0, sizeof codepages);
+    for (size_t k = 0; k < sizeof pagelists / sizeof *pagelists; k++) {
+        free(pagelists[k]);
+        pagelists[k] = NULL;
+    }
     while (arenas) {
         arena_t *a = arenas->next;
         free(arenas);
@@ -1471,22 +1545,20 @@ static void free_all_blocks(void)
 
 /* ---------------------------------------------------------------- thread coordination for flushes */
 
+/* every dispatch passes here: a per-thread flag and a fence instead of a shared counter, whose cache line all
+ * threads fought over (flush_cache sets flush_pending, fences, then waits for the flags: Dekker) */
 static void enter_jit(void)
 {
     for (;;) {
-        __atomic_add_fetch(&jit_users, 1, __ATOMIC_SEQ_CST);
-        if (!flush_pending) break;
-        __atomic_sub_fetch(&jit_users, 1, __ATOMIC_SEQ_CST);
-        while (flush_pending) sched_yield();
+        __atomic_store_n(&g_self->in_jit_section, 1, __ATOMIC_RELAXED);
+        __atomic_thread_fence(__ATOMIC_SEQ_CST);
+        if (!__atomic_load_n(&flush_pending, __ATOMIC_RELAXED)) break;
+        __atomic_store_n(&g_self->in_jit_section, 0, __ATOMIC_RELEASE);
+        while (__atomic_load_n(&flush_pending, __ATOMIC_ACQUIRE)) sched_yield();
     }
-    g_self->in_jit_section = 1;
 }
 
-static void leave_jit(void)
-{
-    g_self->in_jit_section = 0;
-    __atomic_sub_fetch(&jit_users, 1, __ATOMIC_SEQ_CST);
-}
+static void leave_jit(void) { __atomic_store_n(&g_self->in_jit_section, 0, __ATOMIC_RELEASE); }
 
 /* run_guest after a fault longjmp'ed out of translated code */
 void jit_fault_cleanup(a32_thread *t)
@@ -1500,14 +1572,15 @@ extern void threads_interrupt_all(void);
 static void flush_cache(void)
 {
     /* the caller is not inside translated code (left before calling) */
-    flush_pending = 1;
+    __atomic_store_n(&flush_pending, 1, __ATOMIC_RELAXED);
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
     threads_interrupt_all();
-    while (__atomic_load_n(&jit_users, __ATOMIC_SEQ_CST)) sched_yield();
+    while (threads_any_in_jit()) sched_yield();
     pthread_mutex_lock(&tlock);
     free_all_blocks();
     st_flushes++;
     pthread_mutex_unlock(&tlock);
-    flush_pending = 0;
+    __atomic_store_n(&flush_pending, 0, __ATOMIC_RELEASE);
 }
 
 /* ---------------------------------------------------------------- run loop */
@@ -1548,6 +1621,12 @@ static void jit_init(void)
     helpers[HELP_EXEC] = (void *)jit_helper_exec;
     if (getenv("A32_STATS")) jit_stats = atoi(getenv("A32_STATS")) > 1 ? 2 : 1;
     if (getenv("A32_DUMP")) dump_file = fopen(getenv("A32_DUMP"), "w");
+    if (getenv("A32_PERFMAP")) { /* a path, or "1" for /tmp/perf-<pid>.map */
+        char path[64];
+        const char *e = getenv("A32_PERFMAP");
+        if (!strcmp(e, "1")) snprintf(path, sizeof path, "/tmp/perf-%d.map", (int)getpid()), e = path;
+        perf_map = fopen(e, "w");
+    }
     if (getenv("A32_EXACT_ADDR")) jit_exact_addr = 1;
 }
 
@@ -1573,25 +1652,35 @@ int jit_run(a32_cpu *c)
                     a32_break_hit(c);
                 }
         enter_jit();
-        pthread_mutex_lock(&tlock);
-        jit_block *blk = lookup(key);
-        if (!blk) {
-            int fault, full;
-            blk = translate(pc, c->thumb, c->itstate, &fault, &full);
-            if (!blk) {
-                pthread_mutex_unlock(&tlock);
-                leave_jit();
-                if (full) {
-                    flush_cache();
-                    c->last_exit = 0;
-                    continue;
-                }
-                c->fault_addr = pc;
-                return EXIT_SEGV;
-            }
+        /* the lock only to translate or to chain the exit we came from (once per exit) */
+        jit_block *blk = NULL;
+        if (!c->itstate) {
+            jit_block *f = __atomic_load_n(&ltab[ltab_index(key)], __ATOMIC_ACQUIRE);
+            if (f->key == key && f->valid) blk = f;
         }
-        if (c->last_exit) chain((jit_site *)(uintptr_t)c->last_exit, blk);
-        pthread_mutex_unlock(&tlock);
+        if (!blk) blk = lookup(key);
+        if (!blk || c->last_exit) {
+            pthread_mutex_lock(&tlock);
+            if (!blk || !blk->valid) blk = lookup(key);
+            if (!blk) {
+                int fault, full;
+                blk = translate(pc, c->thumb, c->itstate, &fault, &full);
+                if (!blk) {
+                    pthread_mutex_unlock(&tlock);
+                    leave_jit();
+                    if (full) {
+                        flush_cache();
+                        c->last_exit = 0;
+                        continue;
+                    }
+                    c->fault_addr = pc;
+                    return EXIT_SEGV;
+                }
+            }
+            if (c->last_exit) chain((jit_site *)(uintptr_t)c->last_exit, blk);
+            pthread_mutex_unlock(&tlock);
+        }
+        if (!c->itstate) ltab_refill(blk);
         c->last_exit = 0;
         c->exit_reason = EXIT_NONE;
         t->in_guest = 1;
