@@ -7,7 +7,7 @@
  *
  * Gear VR had a touchpad on the headset (tap, hold, swipe) and a back button; games that took a gamepad read it too:
  *   right trigger -> touchpad held (Gear VR games: walk), A -> a short tap
- *   right stick   -> a swipe in that direction (flick it)
+ *   right stick   -> a swipe in that direction (flick it); NativeActivity games: up/down = swipe forward/back
  *   B, left menu  -> back (Unity: Escape)
  *   X, Y, sticks  -> gamepad X/Y, joystick axes X/Y (left) and Z/RZ (right), as a real gamepad if there is one */
 #include <android/input.h>
@@ -518,6 +518,9 @@ static void *poll_thread(void *arg)
         if (!swipe_step && swipe_armed && mag > 0.5f && !prev_tap) {
             swipe_armed = 0;
             if (rx * rx > ry * ry) swipe_dx = rx > 0 ? 1 : -1, swipe_dy = 0;
+            /* NativeActivity games get the touchpad's own axes: X runs front to back, so stick up = swipe forward,
+             * down = swipe back (Gunjack: back = reload, forward = special weapon) */
+            else if (native_active()) swipe_dx = ry > 0 ? -1 : 1, swipe_dy = 0;
             else swipe_dx = 0, swipe_dy = ry > 0 ? -1 : 1; /* stick forward: swipe towards the front */
             touch(env, ACTION_DOWN, CX, CY);
             swipe_step = 1;

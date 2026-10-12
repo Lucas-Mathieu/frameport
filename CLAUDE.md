@@ -350,7 +350,7 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
   AInputQueue (native_app_glue), so dispatchKeyEvent never reached it (no control at all) → input.c queues synthetic
   events there (ALooper_poll* return the queue's ident while one waits; AInputQueue_getEvent/finishEvent and the
   AInputEvent/AKeyEvent/AMotionEvent getters are hand-written "!" imports that know them; touch positions scaled to the
-  window size). Same mapping as AFFECTED: trigger = hold touchpad, A = tap, right stick = swipe, B = back. Not yet
+  window size). Same mapping as AFFECTED: trigger = hold touchpad, A = tap, right stick = swipe, B = back; for NativeActivity games the stick's up/down = swipe forward/back (touchpad X: Gunjack's OnFlick = reload at ~0°, special weapon at ~180°). Not yet
   headset-verified. Next: the three 32-bit catalog games
   (Journey of the Gods, Shadow Point, Sports Scramble: still "unsupported" until tested), translator speed (~40 % of
   the main thread is block exits / FPCR switches).
