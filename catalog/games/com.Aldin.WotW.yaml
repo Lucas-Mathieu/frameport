@@ -10,12 +10,14 @@ frame:
 - frame.unity_text_input
 device:
 - device.text_input_window
+adapter:
+  haptic_fix: 1
 verified:
-  date: '2026-10-05'
-  known_good_sha256: 522cfebf954e1cab6054798479b0b32c5ba9e38cca83dd98db2ac0f7e3c0802a
-  app: 0.9.1
+  date: '2026-10-11'
+  known_good_sha256: 0e55a80ed420395b7eaf8075230fad1fae288f6c25d2ce8cc6aa49899e9b7596
+  app: 1.0.4
   overport_cli: 1.2.5
-  frame_build: '20260922.6101926'
-  agent: 48
-  issue: 44
-source_hint: WotW
+  frame_build: '20261007.6125817'
+  agent: 79
+  issue: 211
+source_hint: Waltz

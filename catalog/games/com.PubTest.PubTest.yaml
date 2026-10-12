@@ -1,0 +1,20 @@
+package: com.PubTest.PubTest
+title: Drunkn Bar Fight 2 - Early Access
+status: works
+notes: Game launches and plays fine
+tested_version: '0.515'
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
+verified:
+  date: '2026-10-11'
+  known_good_sha256: f340b5ba70ee9368ead6bfe2c287eda6c5686280ddb8e12b8c9a8d720326de36
+  app: 1.0.4
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 79
+  issue: 218
+source_hint: Drunkn Bar Fight 2 - Early Access

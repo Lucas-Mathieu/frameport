@@ -1,0 +1,21 @@
+package: com.GenderGames.Ladder
+title: Ladder
+status: works
+tested_version: Release
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.unity_gl_shim
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-12'
+  known_good_sha256: 7d23692149d40fe469dbf2e13446ceeb94a8a32807e09ddad7731158de9be0a2
+  app: 1.0.4
+  overport_cli: 1.2.5
+  issue: 243
+source_hint: Ladder

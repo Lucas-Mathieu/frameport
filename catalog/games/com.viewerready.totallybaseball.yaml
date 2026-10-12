@@ -1,0 +1,23 @@
+package: com.viewerready.totallybaseball
+title: Totally Baseball
+status: works
+notes: Game Launches and works
+tested_version: '2.5886'
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+- frame.oculusos
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-11'
+  known_good_sha256: 80d53ee2c59cd1846e42a1c309bd8b0c365841d0aaea4092854fa01d2902a839
+  app: 1.0.4
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 79
+  issue: 223
+source_hint: TOTALLY BASEBALL

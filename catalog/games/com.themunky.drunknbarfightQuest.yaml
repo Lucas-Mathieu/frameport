@@ -1,0 +1,24 @@
+package: com.themunky.drunknbarfightQuest
+title: Drunkn Bar Fight
+status: works
+notes: Works
+tested_version: '11.00'
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.unity_gl_shim
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-11'
+  known_good_sha256: a66895bf0fde60a7ccd9bea6b8b1e922650cf1692fe26c1d08bee5b5c866b8b6
+  app: 1.0.4
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 79
+  issue: 222
+source_hint: Drunkn Bar Fight

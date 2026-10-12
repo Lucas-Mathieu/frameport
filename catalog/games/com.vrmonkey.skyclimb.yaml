@@ -1,0 +1,23 @@
+package: com.vrmonkey.skyclimb
+title: MacacoVR
+status: issues
+notes: 2d loading screens are glitchy, otherwise main gameplay is fine
+tested_version: '1.1325'
+engine: Unreal
+xr: OpenXR
+alt_overport:
+- patch_remove_unreal_force_quit
+frame:
+- frame.unreal_skip_obb_check
+- frame.hw_video_decode
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-12'
+  known_good_sha256: 78de47cf0200a6e8e06feeef4a02da0737393b5007e71ba8f62f01dfa93cec0a
+  app: 1.0.4
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 79
+  issue: 236
+source_hint: MacacoVR

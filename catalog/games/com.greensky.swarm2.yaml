@@ -1,0 +1,23 @@
+package: com.greensky.swarm2
+title: Swarm 2
+status: issues
+notes: MSAA creates visible seams around edge geometry and also the skybox edge
+tested_version: '8472'
+engine: Unity
+xr: VrApi
+frame:
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.unity_gl_shim
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-12'
+  app: 1.0.4
+  overport_cli: 1.2.5
+  frame_build: '20260922.6101926'
+  agent: 79
+  issue: 224
+source_hint: SWARM 2

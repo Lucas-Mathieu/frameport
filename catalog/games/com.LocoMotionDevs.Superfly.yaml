@@ -1,0 +1,22 @@
+package: com.LocoMotionDevs.Superfly
+title: Superfly
+status: works
+notes: Works, take a bit to launch but works
+tested_version: 1.3.3
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-11'
+  known_good_sha256: e180b6c58b80c1c2d0cc49e75d645a41d3d4bc63ed7ffe1e6f91eac51e486a17
+  app: 1.0.4
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 79
+  issue: 217
+source_hint: Superfly

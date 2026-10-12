@@ -1,0 +1,25 @@
+package: com.halfbrick.fruitninjavr
+title: Fruit Ninja
+status: works
+notes: Works, launches and plays
+tested_version: 1.7.3.696775
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.hw_video_decode
+- frame.unity_gl_shim
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-11'
+  known_good_sha256: 5afd1383c6f4aab50425bea955202c74e1706a8a8ba4219689ef5b6e0c984318
+  app: 1.0.4
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 79
+  issue: 220
+source_hint: Fruit Ninja

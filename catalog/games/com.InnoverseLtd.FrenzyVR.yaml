@@ -1,0 +1,20 @@
+package: com.InnoverseLtd.FrenzyVR
+title: FrenzyVR
+status: works
+notes: Works, runs good
+tested_version: '107'
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
+verified:
+  date: '2026-10-11'
+  known_good_sha256: 0d87e78dcbe1c705af0d01cda8eabbea514849f7403e5904f0ef49b5cf0653fb
+  app: 1.0.4
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 79
+  issue: 216
+source_hint: Frenzy VR

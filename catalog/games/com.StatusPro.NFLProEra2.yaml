@@ -1,0 +1,21 @@
+package: com.StatusPro.NFLProEra2
+title: NFL PRO ERA II
+status: works
+tested_version: 2.4.0
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.unity_gl_shim
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-11'
+  known_good_sha256: caf2e8f148ca4929ba5e73112fa7e0958c00d7ee0c5f28926c3f39714db6c923
+  app: 1.0.4
+  overport_cli: 1.2.3
+  issue: 226
+source_hint: com.StatusPro.NFLProEra2

@@ -1,0 +1,23 @@
+package: com.TinyBuild.killitwithfirevr
+title: Kill It With Fire VR
+status: works
+notes: Works
+tested_version: 1.0.5.4208
+engine: Unreal
+xr: OpenXR
+alt_overport:
+- patch_remove_unreal_force_quit
+frame:
+- frame.unreal_skip_obb_check
+- frame.hw_video_decode
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-11'
+  known_good_sha256: fcadbdaf3255e2909edf763d0c61fb55808ba448d4f277e91ba37b0a0ff9f497
+  app: 1.0.4
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 79
+  issue: 219
+source_hint: Kill It With Fire VR
