@@ -44,7 +44,7 @@ try:
 except ImportError:  # Windows: pc_revive loads this file for its VDF code only (GitHub #131)
     fcntl = None
 
-AGENT_VERSION = 83
+AGENT_VERSION = 84
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -2954,6 +2954,9 @@ r""" true; }}
 r""" here.
 mkdir -p "$app_dir/lepton-data/external/Android/data/{pkg}/files" """
 r""""$app_dir/lepton-data/external/Android/data/{pkg}/cache" 2>/dev/null || true
+# Prepare cloud saves before startup: a newly created cloud folder can have mode 1700, and the game may try to
+# create its data subfolder before the permission watchdog repairs it (Jurassic World Aftermath, GitHub #239).
+{cloud_dirs}
 fix_perms
 {watchdog}
 export SteamAppId={appid}
@@ -3017,6 +3020,12 @@ SINGLE_LINE = ('exec 9>"$app_dir/.launch.lock"; flock -n 9 || '
 LOGCAT_LINE = ('python3 {agent_q} _logcat_keeper "$app_dir/launch.log" "$SteamAppId" $$ '
                '>"$app_dir/logcat-keeper.log" 2>&1 9>&- &')
 
+CLOUD_DIRS_LINE = 'mkdir -p "$app_dir/lepton-data/external/Android/data/{pkg}/files/cloud/data" 2>/dev/null || true'
+
+
+def cloud_dirs_line(pkg):
+    return CLOUD_DIRS_LINE.format(pkg=check_pkg(pkg))
+
 
 def dashboard_line():
     return DASHBOARD_LINE.format(agent_q=shlex.quote(os.path.abspath(__file__)))
@@ -3047,6 +3056,9 @@ def upgrade_launchers():
         # the codec line follows the game's deployment (only Lepton launchers have this variable; Proton/Linux
         # launchers are never touched). Running launchers keep reading their old file.
         if "export LEPTON_ENV_FRAMEBRIDGE_CONFIG=" in new:
+            cloud = cloud_dirs_line(os.path.basename(os.path.dirname(path)))
+            if cloud not in new:
+                new = new.replace("\nfix_perms\n", "\n" + cloud + "\nfix_perms\n", 1)
             new = set_codec_line(new, wants_hw_video(os.path.dirname(path)))
             new = set_gamepad_line(new, wants_gamepad(os.path.dirname(path)))
             new = set_config_sync_line(new, os.path.basename(os.path.dirname(path)),
@@ -3415,6 +3427,7 @@ def write_launcher(anchor, base, pkg, title, appid, lepton, env, hw_video=False,
     text = LAUNCH_SH.format(title=title.replace("\n", " "), pkg=pkg, app_dir=app_dir_lines(base, pkg), appid=appid,
                             lepton_q=shlex.quote(lepton), extra_env=extra, watchdog=WATCHDOG,
                             dashboard=dashboard_line(), logcat=logcat_line(), single=SINGLE_LINE,
+                            cloud_dirs=cloud_dirs_line(pkg),
                             video_codec=wrapper_lines(hw_video, gamepad),
                             plays_start=plays_lines(anchor)[0],
                             plays_end=plays_lines(anchor)[1])

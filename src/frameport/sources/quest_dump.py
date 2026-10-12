@@ -144,18 +144,32 @@ def _find_data_dir(apk_dir: Path, pkg: str | None) -> Path | None:
       <apk dir>/obb/<package>/ or <apk dir>/obb/  FramePort/PATCHED output, backups with an obb folder
       a <package> folder with .obb files up to 3 levels below the APK's folder (e.g. Android/obb/<package>/) or 2
       below its parent (SideQuest-style backups: <game>/apk/x.apk + <game>/obb/<package>/; the parent's folders
-      with APKs of their own are other games and are skipped)."""
-    own = _child(apk_dir, pkg) if pkg else None
-    if _nonempty(own):
-        return own
-    for obb in (_child(apk_dir, name) for name in OBB_FOLDERS):
-        if obb is None:
-            continue
-        inner = _child(obb, pkg) if pkg else None
-        if _nonempty(inner):
-            return inner
-        if _nonempty(obb):
-            return obb
+      with APKs of their own are other games and are skipped).
+    An apk/apks folder belongs to its parent game folder: its sibling obb/ can hold raw assets (e.g. FMOD banks),
+    with or without a package subfolder or .obb files."""
+    roots = [apk_dir]
+    if apk_dir.name.lower() in APK_FOLDERS:
+        roots.append(apk_dir.parent)
+    for root in roots:
+        own = _child(root, pkg) if pkg else None
+        if _nonempty(own):
+            return own
+        for obb in (_child(root, name) for name in OBB_FOLDERS):
+            if obb is None:
+                continue
+            inner = _child(obb, pkg) if pkg else None
+            if _nonempty(inner):
+                return inner
+            if root != apk_dir:
+                entries = _list(obb)
+                # Named expansion files need the package/version selection in find_data, even in a sibling obb/.
+                # A wrapper containing only timestamp folders also needs that search, rather than sending itself.
+                if any(not is_dir and OBB_NAME.match(p.name) for p, is_dir in entries):
+                    continue
+                if not any(not is_dir for _, is_dir in entries):
+                    continue
+            if _nonempty(obb):
+                return obb
     if not pkg:
         return None
     found = _package_dir_below(apk_dir, pkg, 3)
