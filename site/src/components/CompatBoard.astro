@@ -79,7 +79,7 @@ const latest = latestCheck(games);
 <script type="application/json" data-snapshot set:html={JSON.stringify(snapshot).replaceAll('<', '\\u003c')} />
 
 <script>
-  import { counts, engines, latestCheck, rowsHtml, sortGames, type Snapshot } from '../scripts/catalog';
+  import { counts, engines, latestCheck, rowsHtml, shuffleGames, type Game, type Snapshot } from '../scripts/catalog';
   import { patchHref } from '../scripts/patchlinks';
   import { refreshCatalog } from '../scripts/catalog-live';
 
@@ -139,6 +139,11 @@ const latest = latestCheck(games);
       apply();
     });
     search.addEventListener('input', apply);
+    // a random order on every visit (working games still first); the built page lists them alphabetically
+    const rank = new Map<string, number>();
+    const built = Object.values((JSON.parse(document.querySelector('[data-snapshot]')?.textContent || '{"files":{}}') as
+      Snapshot).files).map((f) => f.game).filter((g): g is Game => !!g);
+    if (built.length) list.innerHTML = rowsHtml(shuffleGames(built, rank), patchHref);
     apply();
 
     // bring the board up to date with the catalog on GitHub
@@ -152,7 +157,7 @@ const latest = latestCheck(games);
       src.title = `The catalog on GitHub's main branch, as of ${when}`;
       src.classList.add('live');
       if (!live.changed) return;
-      const games = sortGames(live.games);
+      const games = shuffleGames(live.games, rank);
       list.innerHTML = rowsHtml(games, patchHref);
       const n = counts(games);
       for (const s of ['works', 'issues', 'unsupported'] as const) set(`[data-n="${s}"]`, String(n[s]));

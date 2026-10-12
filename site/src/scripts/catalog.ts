@@ -69,6 +69,14 @@ export function sortGames(games: Game[]): Game[] {
     || a.title.localeCompare(b.title, 'en', { sensitivity: 'base' }));
 }
 
+/** Working games first, then with issues, then not running; a random order inside each group, so every visit leads
+ * with other games. `rank` keeps each game's place for the page's lifetime (the live refresh doesn't reshuffle). */
+export function shuffleGames(games: Game[], rank = new Map<string, number>(), rand: () => number = Math.random): Game[] {
+  const key = (g: Game) => g.package || g.title;
+  for (const g of games) if (!rank.has(key(g))) rank.set(key(g), rand());
+  return [...games].sort((a, b) => ORDER[a.status] - ORDER[b.status] || rank.get(key(a))! - rank.get(key(b))!);
+}
+
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** Where a recipe chip links to (its entry in the patch reference), or null for none. */

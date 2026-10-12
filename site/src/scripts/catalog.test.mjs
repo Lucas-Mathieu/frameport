@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rowHtml, short, sortGames, toGame } from './catalog.ts';
+import { rowHtml, short, shuffleGames, sortGames, toGame } from './catalog.ts';
 
 test('catalog entries become rows like docs/GAMES.md', () => {
   assert.equal(toGame({ title: 'x', status: 'maybe' }), null);
@@ -24,6 +24,21 @@ test('order: works, issues, unsupported, then title', () => {
     return toGame({ status, title });
   });
   assert.deepEqual(sortGames(games).map((g) => g.title), ['a', 'z', 'a', 'b']);
+});
+
+test('shuffle: status groups stay in order, a random order inside, kept across calls', () => {
+  const games = ['unsupported:b', 'works:z', 'issues:a', 'works:a', 'works:m', 'issues:q'].map((s) => {
+    const [status, title] = s.split(':');
+    return toGame({ status, title, package: `p.${status}.${title}` });
+  });
+  const seq = [0.9, 0.1, 0.5, 0.3, 0.7, 0.2];
+  const rank = new Map();
+  const first = shuffleGames(games, rank, () => seq.shift());
+  assert.deepEqual(first.map((g) => g.status), ['works', 'works', 'works', 'issues', 'issues', 'unsupported']);
+  assert.deepEqual(first.filter((g) => g.status === 'works').map((g) => g.title), ['z', 'a', 'm']);
+  // the same page reorders the same way (the live refresh), new games get their own place
+  const again = shuffleGames([...games].reverse(), rank, () => 0.0);
+  assert.deepEqual(again.map((g) => g.title), first.map((g) => g.title));
 });
 
 test('rows escape what comes from GitHub', () => {
