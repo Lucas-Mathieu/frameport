@@ -1,6 +1,30 @@
 {
- "updated": "2026-10-11",
+ "updated": "2026-10-12",
  "releases": [
+  {
+   "tag": "v1.0.4",
+   "name": "FramePort v1.0.4",
+   "date": "2026-10-11",
+   "url": "https://github.com/spoopyghosty0/frameport/releases/tag/v1.0.4",
+   "dev": false,
+   "notes": "FramePort v1.0.4: Windows (x64), macOS (Apple Silicon) and Linux (x64, ARM64).\n\n## What's new\n\n- **Launch tests no longer report \"Failed to launch\"** for games that run fine but crash once the test ends their VR session because no headset is worn (e.g. BlazeRush).\n\nAlready have FramePort? It offers this update itself (Library → **Update now**).\n\n## Install\n\nDownload the file for your PC, unpack it and start FramePort. Guide:\n[Install and first steps](https://frameport.app/docs/install/).\n"
+  },
+  {
+   "tag": "v1.0.3",
+   "name": "FramePort v1.0.3",
+   "date": "2026-10-11",
+   "url": "https://github.com/spoopyghosty0/frameport/releases/tag/v1.0.3",
+   "dev": false,
+   "notes": "FramePort v1.0.3: Windows (x64), macOS (Apple Silicon) and Linux (x64, ARM64).\n\n## What's new\n\n- **One FramePort at a time:** starting it again brings the open window to the front, and FramePort fully closes with its window.\n- **After an update, FramePort restarts with a working window** instead of a black one (Windows).\n- The update dialogs' \"All releases\" and \"Release page\" buttons work again.\n- When several play sessions are checked at once, one message lists them instead of one per game.\n\nAlready have FramePort? It offers this update itself (Library → **Update now**).\n\n## Install\n\nDownload the file for your PC, unpack it and start FramePort. Guide:\n[Install and first steps](https://frameport.app/docs/install/).\n"
+  },
+  {
+   "tag": "v1.0.2",
+   "name": "FramePort v1.0.2",
+   "date": "2026-10-11",
+   "url": "https://github.com/spoopyghosty0/frameport/releases/tag/v1.0.2",
+   "dev": false,
+   "notes": "FramePort v1.0.2: Windows (x64), macOS (Apple Silicon) and Linux (x64, ARM64).\n\n## What's new\n\n- **Progress is kept:** games that save under your Meta user (for example Walkabout Mini Golf) no longer start with an empty profile each time. Click **Update on Frame** on their page.\n- A new troubleshooting FAQ in the docs: where a game's settings are and what to try when a game misbehaves.\n\nAlready have FramePort? It offers this update itself (Library → **Update now**).\n\n## Install\n\nDownload the file for your PC, unpack it and start FramePort. Guide:\n[Install and first steps](https://frameport.app/docs/install/).\n"
+  },
   {
    "tag": "v1.0.1",
    "name": "FramePort v1.0.1",
