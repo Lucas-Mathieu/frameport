@@ -326,7 +326,7 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
   ships OVRPort's loader chain + its 32-bit platform dispatcher itself, `overport.ensure_runtime_lib`), only
   frame.a32_bridge/adapter/launcher of the frame patches, and `device.text_input_window` for Unity (`engine._a32`).
   Analysis `extra.headset` (ANALYSIS_VERSION 9): gearvr / go / quest → "Gear VR" / "Oculus Go" platform + Steam tag.
-  Catalog: `headset:` field; com.fallen.affected, net.mobilemischief.spunkydungeon. Learned: Unity 2019 contexts
+  Catalog: `headset:` field; com.fallen.affected, net.mobilemischief.spunkydungeon, com.ccpgames.gunjack (works, 2026-10-12). Learned: Unity 2019 contexts
   have no EGLConfig (EGL_KHR_no_config_context: the VrApi bridge takes the window's or an RGBA8 ES3 config); Unity's
   floor origin = vrapi_SetTrackingSpace(1) (the VrApi bridge now honours LOCAL_FLOOR/STAGE); mapped GL buffers are
   per buffer object (a per-target guest copy leaked ~10 MB/s and garbled vertices); the guest runtime's own scudo

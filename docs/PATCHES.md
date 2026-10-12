@@ -45,7 +45,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Replace application label and icon](#patch_replace_icon_label) | `patch_replace_icon_label` | Patches from OVRPort | default |
 | [Pico/YVR/Quest metadata](#patch_vr_metadata) | `patch_vr_metadata` | Patches from OVRPort | default |
 | [VrApi → OpenXR adapter (OVRPort)](#patch_vrapi_openxr) | `patch_vrapi_openxr` | Patches from OVRPort |  |
-| [32-bit ARM bridge (Gear VR / Go games)](#frame-a32_bridge) | `frame.a32_bridge` | Steam Frame patches | 2 |
+| [32-bit ARM bridge (Gear VR / Go games)](#frame-a32_bridge) | `frame.a32_bridge` | Steam Frame patches | 3 |
 | [FrameBridge OpenXR adapter](#frame-adapter) | `frame.adapter` | Steam Frame patches | default |
 | [Content files from the game's data](#frame-asset_files) | `frame.asset_files` | Steam Frame patches | 1 |
 | [Skip Meta avatars](#frame-avatar_stub) | `frame.avatar_stub` | Steam Frame patches | 1 |
@@ -490,7 +490,7 @@ Runs a 32-bit game (Gear VR, Oculus Go, early Quest) on the Frame, which only ru
 - `frame.a32_bridge` · experimental
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** 32-bit-only game: the Frame can't run 32-bit ARM code, the bridge translates it.
-- **Catalog games (2):** AFFECTED: The Manor, Spunky Dungeon.
+- **Catalog games (3):** AFFECTED: The Manor, Gunjack, Spunky Dungeon.
 - **Suggested by launch-test signatures:**
   - `no-arm64` (fatal): 32-bit-only APK (e.g. a Gear VR or Oculus Go game).
 - **Source:** [patches/frame/a32_bridge.py](../src/frameport/patches/frame/a32_bridge.py)

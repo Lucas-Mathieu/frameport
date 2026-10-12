@@ -48,6 +48,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Genotype | Quest | ✅ Works |  |
 | GORN2 | Quest | ✅ Works |  |
 | Gravity Lab | Quest | ✅ Works |  |
+| Gunjack | Quest | ✅ Works |  |
 | H.U.N.T | Quest | ✅ Works |  |
 | I Am Cat | Quest | ✅ Works |  |
 | I Am Monkey | Quest | ✅ Works |  |
@@ -125,6 +126,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Waltz of the Wizard: Extended Edition | Quest | ✅ Works |  |
 | Wander | Quest | ✅ Works |  |
 | ZombielandVR | Quest | ✅ Works |  |
+| AFFECTED: The Manor | Quest | ⚠️ Works with issues | Gear VR game (32-bit only), runs through FramePort's 32-bit bridge (experimental). |
 | Ancient_Dungeon | Quest | ⚠️ Works with issues | Multiplayer isn't available (offline). |
 | Arcsmith | Quest | ⚠️ Works with issues | Right eye distorts during movement (unresolved; swap, tracking, Valve layers, depth and pacing ruled out). |
 | Assassin's Creed Nexus | Quest | ⚠️ Works with issues | Some launch warning text is still upside down; the rest of the UI is fixed by flip emulation. |
@@ -139,6 +141,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Phantom: Covert Ops | Quest | ⚠️ Works with issues | DLC/store button crashes (no Meta store). |
 | Pinball FX VR | Quest | ⚠️ Works with issues | Plays; mixed reality mode not working yet. |
 | Silhouette | Quest | ⚠️ Works with issues | Hand-tracking game; the Frame synthesizes hands from controllers, so it is janky. |
+| Spunky Dungeon | Quest | ⚠️ Works with issues | Gear VR / Oculus Go game (32-bit only), runs through FramePort's 32-bit bridge (experimental). |
 | Swarm 2 | Quest | ⚠️ Works with issues | MSAA creates visible seams around edge geometry and also the skybox edge |
 | The Light Brigade | Quest | ⚠️ Works with issues | Judder in weapons |
 | The Thrill Of The Fight | Quest | ⚠️ Works with issues | Right eye doesn't draw the opponent or the referee. |
