@@ -65,19 +65,46 @@ def find_methods(lib: bytes, metadata: bytes, unity_version: str, wanted: dict[s
     [method names]} -> {class file: {method: (file offset, length)}}; classes or methods not in the game are left
     out."""
     cache_file = _cache_file(lib, metadata)
+    from ..tools import cpp2il as tool
+
+    nightly = False  # Cpp2IL's development build: for metadata newer than its release reads (Unity 6.5+)
     try:
         cached = json.loads(cache_file.read_text())
         if cached.get("error"):  # Cpp2IL can't read this build (e.g. an old Unity): don't run it again per patch
-            raise RuntimeError(cached["error"])
-        if all(cls in cached.get("classes", {}) or cls in cached.get("missing", []) for cls in wanted):
+            if cpp2il is not None or cached.get("nightly") or not tool.unsupported_metadata(cached["error"]):
+                raise RuntimeError(cached["error"])
+            nightly = True  # only the release couldn't: the development build gets one try
+        elif all(cls in cached.get("classes", {}) or cls in cached.get("missing", []) for cls in wanted):
             return {cls: {m: tuple(v) for m, v in cached["classes"][cls].items() if m in names}
                     for cls, names in wanted.items() if cls in cached.get("classes", {})}
     except (OSError, ValueError, KeyError):
         pass
-    if cpp2il is None:
-        from ..tools import cpp2il as tool
+    explicit = cpp2il is not None
+    exe = cpp2il or (tool.ensure_nightly() if nightly else tool.ensure())
+    while True:
+        try:
+            out, missing = _run(exe, lib, metadata, unity_version, wanted, timeout)
+            break
+        except _Unreadable as exc:
+            error = "Cpp2IL couldn't read this game's code: " + str(exc)
+            if not explicit and not nightly and tool.unsupported_metadata(error):
+                nightly, exe = True, tool.ensure_nightly()
+                continue
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps({"unity_version": unity_version, "error": error, "nightly": nightly}))
+            raise RuntimeError(error) from None
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps({"unity_version": unity_version, "missing": missing, "nightly": nightly,
+                                      "classes": {c: {m: list(v) for m, v in ms.items()} for c, ms in out.items()}}))
+    return out
 
-        cpp2il = tool.ensure()
+
+class _Unreadable(Exception):
+    """Cpp2IL wrote no output; the message is its last exception line."""
+
+
+def _run(cpp2il: Path, lib: bytes, metadata: bytes, unity_version: str, wanted: dict[str, list[str]],
+         timeout: float) -> tuple[dict, list]:
     with tempfile.TemporaryDirectory(prefix="frameport-il2cpp-") as tmp:
         t = Path(tmp)
         (t / "libil2cpp.so").write_bytes(lib)
@@ -90,10 +117,7 @@ def find_methods(lib: bytes, metadata: bytes, unity_version: str, wanted: dict[s
                               timeout=timeout, cwd=tmp)
         root = t / "out" / "DiffableCs"
         if not root.is_dir():
-            error = "Cpp2IL couldn't read this game's code: " + _last_error(proc.stdout + proc.stderr)
-            cache_file.parent.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(json.dumps({"unity_version": unity_version, "error": error}))
-            raise RuntimeError(error)
+            raise _Unreadable(_last_error(proc.stdout + proc.stderr))
         out, missing = {}, []
         for cls, names in wanted.items():
             f = root / cls
@@ -101,7 +125,4 @@ def find_methods(lib: bytes, metadata: bytes, unity_version: str, wanted: dict[s
                 out[cls] = parse_methods(f.read_text(encoding="utf-8", errors="replace"), names)
             else:
                 missing.append(cls)
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps({"unity_version": unity_version, "missing": missing,
-                                      "classes": {c: {m: list(v) for m, v in ms.items()} for c, ms in out.items()}}))
-    return out
+    return out, missing
