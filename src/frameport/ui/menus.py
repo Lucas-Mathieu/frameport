@@ -52,6 +52,9 @@ def menu_sections(g: dict, st: MenuState, act: Callable[[str], Callable]) -> lis
         top.append((tr("Add videos and files"), ft.Icons.VIDEO_LIBRARY_OUTLINED, act("files")))
     if st.movable and st.on_frame and not job:
         top.append((tr("Move to…"), ft.Icons.DRIVE_FILE_MOVE_ROUNDED, act("move")))
+    if st.on_frame and not rift and not linux and not job:
+        # the new build only; the Frame's game data stays (e.g. changed OBBs a normal update would replace)
+        top.append((tr("Update app only…"), ft.Icons.SYSTEM_UPDATE_ALT_ROUNDED, act("update_app")))
 
     artwork = [(tr("Rename…"), ft.Icons.DRIVE_FILE_RENAME_OUTLINE_OUTLINED, act("rename")),
                (tr("Find artwork…"), ft.Icons.IMAGE_SEARCH_ROUNDED, act("find_art")),

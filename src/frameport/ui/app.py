@@ -901,7 +901,8 @@ class FramePortApp:
         if job.kind == "install" and job.state in ("failed", "cancelled") and job.package and \
                 job.package in self._records():
             out.append(C.primary(tr("Resume"), ft.Icons.PLAY_ARROW_ROUNDED,
-                                 lambda e: self._submit_install(job.package, getattr(job, "to", "frame"))))
+                                 lambda e: self._submit_install(job.package, getattr(job, "to", "frame"),
+                                                                apk_only=getattr(job, "apk_only", False))))
         if job.kind in ("install", "test") and job.package and (summary or {}).get("verdict") == "pass":
             from .views.game import should_ask_to_share
 
@@ -1137,6 +1138,7 @@ class FramePortApp:
             "logs": lambda e: self.collect_logs(pkg),
             "report": lambda e: self.report_problem_dialog(pkg),
             "move": lambda e: self.move_game(pkg),
+            "update_app": lambda e: self.update_app_only(pkg),
             "uninstall_frame": lambda e: self.uninstall(pkg, "frame"),
             "uninstall_pc": lambda e: self.uninstall(pkg, "pc"),
             "remove": lambda e: self.remove_from_library(pkg),
@@ -1498,7 +1500,7 @@ class FramePortApp:
 
     def resume_installs(self) -> None:
         for pkg, r in self.unfinished_installs().items():
-            self._submit_install(pkg, r.get("to", "frame"))
+            self._submit_install(pkg, r.get("to", "frame"), apk_only=bool(r.get("apk_only")))
         self.toast(tr("Resuming — copied files are skipped"), action=tr("Activity"),
                    on_action=lambda e: self.show_activity(True))
 
@@ -1506,7 +1508,9 @@ class FramePortApp:
         library.set_setting("ui.installs", {})
         self.refresh_view()
 
-    def _submit_install(self, pkg: str, to: str = "frame") -> Job | None:
+    def _submit_install(self, pkg: str, to: str = "frame", apk_only: bool = False) -> Job | None:
+        """apk_only: update only the app and leave the game data on the Frame as it is (discussion #180: OBBs
+        changed on the Frame, e.g. mods, would otherwise be replaced by the PC's copies)."""
         if self.jobs.busy_with(pkg):
             return None
         g = library.game(pkg)
@@ -1514,7 +1518,7 @@ class FramePortApp:
             return None  # removed from the library meanwhile
         rift = g.get("kind") == "rift"
         where = tr("your Frame") if to == "frame" else tr("this PC")
-        self._record(pkg, to=to, state="queued")
+        self._record(pkg, to=to, state="queued", apk_only=apk_only)
 
         def run(job: Job):
             rep = job.reporter
@@ -1526,7 +1530,7 @@ class FramePortApp:
                 raise RuntimeError(tr("the game failed its checks (see the list above)"))
             rep.check_cancel()
             target = self._target_for(to)
-            pipeline.install_game(pkg, target, rep, apk_only=False)
+            pipeline.install_game(pkg, target, rep, apk_only=apk_only)
             self._record(pkg, remove=True)  # installed; the launch test below is a separate question
             if to == "frame":  # the install sent the current artwork to the Frame's Steam library
                 library.update_game(pkg, lambda e: e.pop("steam_art_stale", None))
@@ -1551,9 +1555,26 @@ class FramePortApp:
                     .format(get=g.get('title'), where=where)
                     if ok else tr("{get} is installed on {where}, but the launch test needs a look")
                     .format(get=g.get('title'), where=where))
-        job_title = tr("Install {title} on {value}").format(title=self._title(pkg),
-                                                             value='Frame' if to == 'frame' else 'this PC')
-        return self.submit(job_title, run, pkg, "install", to=to)
+        job_title = tr("Update the app of {title} on Frame").format(title=self._title(pkg)) if apk_only else \
+            tr("Install {title} on {value}").format(title=self._title(pkg), value='Frame' if to == 'frame' else 'this PC')
+        job = self.submit(job_title, run, pkg, "install", to=to)
+        job.apk_only = apk_only  # "Resume" after a failure repeats the same kind of update
+        return job
+
+    def update_app_only(self, pkg: str) -> None:
+        """Game menu "Update app only": the new build without touching the game data on the Frame (asks first)."""
+        if self.jobs.busy_with(pkg):
+            return
+        pick = C.one_choice()
+        self.page.show_dialog(C.dialog(
+            tr("Update the app only?"), modal=True, size="s",
+            content=C.body(tr("FramePort installs the new build of {title} and leaves its game data (OBB files) on "
+                              "the Frame as it is, for example data you changed there. If the new version needs "
+                              "new game data, use a normal update instead.").format(title=self._title(pkg))),
+            on_dismiss=pick(lambda e: None),
+            actions=[C.ghost(tr("Cancel"), on_click=pick(lambda e: self.page.pop_dialog())),
+                     C.primary(tr("Update app"), on_click=pick(lambda e: (self.page.pop_dialog(),
+                                                                         self._submit_install(pkg, apk_only=True))))]))
 
     def updatable(self) -> list[tuple[str, str]]:
         """[(package, "frame" | "pc")] installs with an update ready (a newer build or changed patch settings)."""

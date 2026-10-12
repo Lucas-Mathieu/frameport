@@ -126,6 +126,19 @@ def test_sections_and_conditions():
     assert reset[1] != ft.Icons.RESTART_ALT_ROUNDED
 
 
+def test_update_app_only_for_quest_games_on_the_frame():
+    """Discussion #180: the new build without replacing game data changed on the Frame (e.g. a modded OBB)."""
+    def has(g, st):
+        st.quick = False
+        return "Update app only…" in [e[0] for e in _items(menu_sections(g, st, _key))]
+    states = {name: (g, st) for name, g, st in _states()}
+    assert has(*states["quest on Frame"])
+    assert _section_of(menu_sections(QUEST, states["quest on Frame"][1], _key), "Update app only…") is None
+    for name in ("quest not installed", "rift on PC", "linux on Frame", "job running"):
+        assert not has(*states[name]), name
+    assert "Update app only…" not in [e[0] for e in _items(menu_sections(QUEST, _states()[0][2], _key))]  # quick
+
+
 def test_menu_entries_trim_headers_and_dividers():
     act = ("A", ft.Icons.ADD_ROUNDED, None)
     raw = [None, Header("Empty"), None, Header("Kept"), act, None, None, Header("Last")]
