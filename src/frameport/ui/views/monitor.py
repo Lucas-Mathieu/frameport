@@ -289,14 +289,7 @@ class MonitorView:
                               tr("Connect to your Steam Frame to watch its games, load, temperatures and battery "
                                  "live."),
                               C.primary(tr("Connect"), ft.Icons.LINK_ROUNDED, lambda e: app.go("frame")),
-                              features=[
-                                  (ft.Icons.SPEED_ROUNDED, tr("Frame rate"),
-                                   tr("The running game's frames per second, as it plays.")),
-                                  (ft.Icons.THERMOSTAT_ROUNDED, tr("Load and temperatures"),
-                                   tr("CPU, GPU, memory, temperatures, power and battery.")),
-                                  (ft.Icons.LIST_ALT_ROUNDED, tr("Processes"),
-                                   tr("What's running, and a way to end what's stuck.")),
-                              ])], expand=True)
+                              preview=C.ghost_preview("monitor"))], expand=True)
         if self.root is None:
             self.root = ft.Column([
                 app.top_bar(heading, sub, [self.overhead, self.live, self.reconnect, self.interval, self.pause_btn]),

@@ -112,8 +112,7 @@ def _open(app: FramePortApp, package: str, g: dict | None, values: dict) -> None
         kind, *spec = UI[key]["control"]
         v = values[key]
         if kind == "switch":
-            return ft.Switch(value=bool(v), active_color=T.ACCENT,
-                             on_change=lambda e: set_value(key, 1 if e.control.value else 0))
+            return C.switch(value=bool(v), on_change=lambda e: set_value(key, 1 if e.control.value else 0))
         if kind == "slider":
             lo, hi, step, fmt = spec
             readouts[key] = C.body(fmt.format(v), T.TEXT, weight=ft.FontWeight.W_600)

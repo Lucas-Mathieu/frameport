@@ -62,7 +62,7 @@ scenes:
     caption: ["Connect your Steam Frame", "Once: one line on the Frame"]
     hold: 1.5
     steps:
-      - click: "Set up the Frame"
+      - click: "Set up your Frame"
       - wait: 1.6
       - click: "Start setup"
       - wait_for: "Waiting for your Frame to ask"

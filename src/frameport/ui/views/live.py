@@ -58,15 +58,6 @@ def health_text(st: dict) -> str:
                 "quality.", st.get("dropped") or 0)
 
 
-def live_features() -> list[tuple[str, str, str]]:
-    """What the live view does (its empty states)."""
-    return [(G.LIVE, tr("What the player sees"),
-             tr("The headset's view on this PC, for watching along or recording.")),
-            (ft.Icons.VOLUME_UP_ROUNDED, tr("With sound"), tr("The game's audio streams along with the picture.")),
-            (ft.Icons.MEMORY_ROUNDED, tr("Light on the game"),
-             tr("The Frame's own video encoder does the work where it can."))]
-
-
 VIDEO_START_S = 12  # the in-window player must show a moving picture within this, else the next player takes over
 VIDEO_REOPENS = 3  # times a minute the in-window player reconnects after an unexpected end of the stream
 
@@ -134,7 +125,7 @@ class LiveView:
                 C.empty_state(G.LIVE, tr("See what the headset sees"),
                               tr("Connect to your Steam Frame to stream its view and sound to this PC."),
                               C.primary(tr("Connect"), ft.Icons.LINK_ROUNDED, lambda e: app.go("frame")),
-                              features=live_features())], expand=True)
+                              preview=C.ghost_preview("live"))], expand=True)
         if self.embedded_ok is None:
             self.embedded_ok = LP.embedded_available(web=bool(getattr(app.page, "web", False)))
             self.mpv_exe = LP.find_mpv()
@@ -169,7 +160,7 @@ class LiveView:
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=T.S2, tight=True),
                 alignment=ft.Alignment.CENTER, expand=True, padding=T.S6, gradient=C.portal_glow(),
                 bgcolor=T.soft("#000000", 0.25), border=ft.Border.all(1, T.BORDER), border_radius=T.RADIUS)
-            self.idle = ft.Column([stage, C.feature_row(live_features())], spacing=T.S4, expand=True,
+            self.idle = ft.Column([stage], spacing=T.S4, expand=True,
                                   horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
             self.root = ft.Column([
                 app.top_bar(heading, sub),
@@ -233,6 +224,7 @@ class LiveView:
         elsewhere = running and self.mode in ("browser", "mpv")
         self.idle.visible = live is None or elsewhere
         self.idle_start.visible = live is None
+        self.start_btn.visible = not running and not self.idle_start.visible  # one Start on screen, not two
         self.idle_open.visible = elsewhere
         self.idle_title.value = (tr("Streaming to an mpv window") if elsewhere and self.mode == "mpv" else
                                  tr("Streaming to your browser") if elsewhere else tr("Ready when you are"))

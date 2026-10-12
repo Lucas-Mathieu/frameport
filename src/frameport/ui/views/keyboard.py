@@ -67,7 +67,7 @@ class KeyboardView:
                 C.empty_state(G.KEYS, tr("Type in VR with your PC's keyboard"),
                               tr("Connect to your Steam Frame to type into the headset from here."),
                               C.primary(tr("Connect"), ft.Icons.LINK_ROUNDED, lambda e: app.go("frame")),
-                              features=keyboard_tips())], expand=True)
+                              preview=C.ghost_preview("keyboard"))], expand=True)
         if self.root is None:
             self.root = ft.Column([
                 app.top_bar(heading, sub),

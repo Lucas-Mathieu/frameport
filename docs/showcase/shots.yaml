@@ -93,7 +93,7 @@ shots:
     docs: [docs/SHOWCASE.md]
     steps:
       - go: live
-      - wait_for: "What the player sees"
+      - wait_for: "Ready when you are"
 
   - name: install-progress
     docs: [docs/SHOWCASE.md]

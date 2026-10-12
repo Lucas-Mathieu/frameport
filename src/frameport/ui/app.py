@@ -1387,9 +1387,10 @@ class FramePortApp:
             s = job.summary or {}
             fatal = [f for f in s.get("findings", []) if f.get("severity") == "fatal"] or s.get("findings", [])
             if job.state == "failed" and pkg in recs:
-                why = tr("Didn't finish ({value}): {error}").format(value=job.stage or 'install', error=job.error)
+                why = tr("It stopped at \u201c{value}\u201d. {error} Resume picks up where it stopped.").format(
+                    value=(job.stage or tr("Install")).rstrip("…. "), error=job.error)
             elif job.state == "failed":
-                why = tr("Failed: {error}").format(error=job.error)
+                why = job.error
             else:
                 why = tr("Installed, but it didn't start: ") + (
                     fatal[0]["diagnosis"] if fatal
@@ -1416,10 +1417,14 @@ class FramePortApp:
                 ft.Row(buttons, spacing=T.S2, wrap=True),
             ], spacing=T.S2)))
         n = len(jobs)
+        failed = [j for j in jobs if j.state == "failed"]
+        if failed:  # what a failed install never touches, said where the user worries about it
+            rows.append(C.meta(tr("Your saves on the Frame and each game's signing key are kept.")))
+        one = self._title(jobs[0].package) if jobs[0].package else jobs[0].title
         self.page.show_dialog(C.dialog(
-            tr_n("{n} game didn't work out", "{n} games didn't work out", n) if n > 1 else
-            tr("{value} didn't work out").format(
-                value=self._title(jobs[0].package) if jobs[0].package else jobs[0].title),
+            tr_n("{n} game ran into a problem", "{n} games ran into problems", n) if n > 1 else
+            tr("{value} didn't finish installing").format(value=one) if failed else
+            tr("{value} installed, but didn't start").format(value=one),
             ft.Column(rows, spacing=T.S3, scroll=ft.ScrollMode.AUTO, tight=True),
             height=T.px(min(160 * n + 20, 520)),
             actions=[C.ghost(tr("Details"), on_click=lambda e: (self.page.pop_dialog(), self.show_activity(True))),
@@ -1588,9 +1593,8 @@ class FramePortApp:
                 res, _ = target.launch_test(pkg, job.reporter)
                 summary = {"verdict": res.verdict, "milestone": res.milestone, "suggestions": []}
             job.summary, job.to, job.log_path = summary, to, summary.get("log_path")
-            verdict, step = C.test_result(summary["verdict"], summary.get("milestone"))
-            return tr("{title}: launch test {verdict} · furthest step: {value}").format(
-                title=title, verdict=verdict, value=step)
+            line = C.test_line(summary["verdict"], summary.get("milestone"))
+            return tr("{title}: {line}").format(title=title, line=line)
         return self.submit(tr("Launch test: {title}").format(title=title), run, pkg, "test", to=to)
 
     def update_steam_art(self, pkg: str) -> Job:
@@ -1936,10 +1940,7 @@ class FramePortApp:
             ft.Column([
                 C.body(tr("Opens a GitHub issue with this recipe so others get it too. No game files or personal "
                        "data are sent."), T.TEXT_2),
-                *([C.body(tr("Last launch test: {get} · furthest step: {value}").format(
-                              get=C.test_result(last.get("verdict"), last.get("milestone"))[0],
-                              value=C.test_result(last.get("verdict"), last.get("milestone"))[1]),
-                          T.TEXT_3)] if last else []),
+                *([C.body(C.test_line(last.get("verdict"), last.get("milestone")), T.TEXT_3)] if last else []),
                 ft.Row([status, C.help_icon("share_config")]), notes, played_row,
                 C.body(tr("Launch tests can't check the picture or controls — only you can."),
                        T.TEXT_3),

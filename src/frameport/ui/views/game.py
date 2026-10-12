@@ -244,9 +244,7 @@ class GameView:
                      tr("Needs the Meta Horizon app for its license check, so it crashes on the Frame. Play it on "
                      "this PC.") if rift_platform else
                      tr("Uses its own Revive — experimental on the Frame") if rift_repack and not last else
-                     tr("Last launch test: {get} · furthest step: {value}")
-                     .format(get=C.test_result(last.get("verdict"), last.get("milestone"))[0],
-                             value=C.test_result(last.get("verdict"), last.get("milestone"))[1]) if last
+                     C.test_line(last.get("verdict"), last.get("milestone")) if last
                      else tr("Runs directly — no Revive needed") if self.rift else
                      tr("Runs directly on SteamOS, from the Frame's Steam library") if self.linux else "")
         cards.append(self.target_card(
@@ -635,7 +633,7 @@ class GameView:
         else:
             lead, icon, color = tr("Suggested by FramePort from the game's engine"), \
                 ft.Icons.AUTO_AWESOME_ROUNDED, T.ACCENT
-        chips = [ft.Container(C.body(tr(p.title), T.TEXT, size=T.T_META),
+        chips = [ft.Container(C.body(C.patch_title(p.title), T.TEXT, size=T.T_META),
                               tooltip=C.tip(tr(recipe.reasons.get(p.id) or p.description)),
                               bgcolor=T.SURFACE_3, border_radius=T.RADIUS_XS,
                               padding=ft.Padding(T.px(10), T.px(5), T.px(10), T.px(5)))
@@ -780,7 +778,7 @@ class GameView:
                 if reason:
                     shown = tr(reason).replace("overport", "OVRPort") if technical else \
                         plain_reason(reason, p.default_on)
-                    sub.insert(0, C.meta(shown, T.ACCENT))
+                    sub.insert(0, C.meta(shown, T.SECONDARY))  # where a patch came from: information, not an action
                 if on and p.id in superseded:
                     sub.append(C.meta(upstream_note, T.TEXT_3))
                 extra = None
@@ -791,7 +789,7 @@ class GameView:
                     if current not in keys:  # a tool name typed under technical details
                         choices = (*choices, (current, current))
                     rows.append(ft.Container(ft.Row([
-                        ft.Column([C.body(tr(p.title), T.TEXT, weight=ft.FontWeight.W_500), *sub],
+                        ft.Column([C.body(C.patch_title(p.title, technical), T.TEXT, weight=ft.FontWeight.W_500), *sub],
                                   spacing=T.px(3), expand=True),
                         C.dropdown(value=current, width=T.px(280),
                                    options=[ft.DropdownOption(key=k, text=tr(label)) for k, label in choices],
@@ -811,13 +809,13 @@ class GameView:
                                     width=T.px(260), multiline=multi, min_lines=1, max_lines=4 if multi else 1,
                                     on_blur=set_param(p.id, q.key))
                 rows.append(ft.Container(ft.Row([
-                    ft.Column([ft.Row([C.body(tr(p.title), T.TEXT, weight=ft.FontWeight.W_500)]
+                    ft.Column([ft.Row([C.body(C.patch_title(p.title, technical), T.TEXT, weight=ft.FontWeight.W_500)]
                                       + ([C.pill(tr("experimental"), T.WARN, tooltip=C.tip(HELP["experimental"]))]
                                          if p.experimental else [])
                                       + ([C.meta(p.id)] if technical else []), spacing=T.S2, wrap=True), *sub],
                               spacing=T.px(3), expand=True),
                     *([extra] if extra else []),
-                    ft.Switch(value=on, on_change=toggle(p.id), active_color=T.ACCENT),
+                    C.switch(value=on, on_change=toggle(p.id)),
                 ], spacing=T.S3), padding=ft.Padding(T.S4, T.px(10), T.S4, T.px(10)), border=ft.Border(
                     top=ft.BorderSide(1, T.BORDER))))
             if not rows:
@@ -842,13 +840,13 @@ class GameView:
             alt = ", ".join(recipe.alt_patches if technical else
                             [tr(base.get(p).title) if p in base.REGISTRY else p for p in recipe.alt_patches])
             top.append(C.with_help(C.switch(label=tr("Install the second build (") + alt
-                                             + ")", value=recipe.use_alt, on_change=set_alt, active_color=T.ACCENT),
+                                             + ")", value=recipe.use_alt, on_change=set_alt),
                                    "alt_build"))
         if hidden:
             top.append(C.with_help(C.switch(
                 label=tr("Show all patches ({len} don't apply to this game)").format(len=len(hidden)),
                 value=self.show_all,
-                active_color=T.ACCENT, on_change=lambda e: app.open_game(package, advanced=True,
+                on_change=lambda e: app.open_game(package, advanced=True,
                                                                          show_all=e.control.value)), "show_all"))
         warn.value = "\n".join(engine.warnings(recipe))
         return C.section(tr("Patches"), *top, warn, *sections,

@@ -131,14 +131,7 @@ class FilesView:
                               tr("Connect to your Steam Frame to browse its videos, downloads and each game's "
                                  "storage."),
                               C.primary(tr("Connect"), ft.Icons.LINK_ROUNDED, lambda e: app.go("frame")),
-                              features=[
-                                  (ft.Icons.VIDEO_LIBRARY_OUTLINED, tr("Videos for your players"),
-                                   tr("Upload movies straight into a player's own folder.")),
-                                  (ft.Icons.SAVE_ROUNDED, tr("Game storage and saves"),
-                                   tr("Browse each installed game's files and download your saves.")),
-                                  (ft.Icons.DRIVE_FOLDER_UPLOAD_OUTLINED, tr("Files and whole folders"),
-                                   tr("Upload from this PC, download, rename and tidy up.")),
-                              ])], expand=True)
+                              preview=C.ghost_preview("files"))], expand=True)
         if self.root is None:
             self.root = ft.Column([
                 app.top_bar(tr("Files"), tr("Videos, documents, mods and saves on your Steam Frame")),

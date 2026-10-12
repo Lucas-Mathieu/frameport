@@ -102,7 +102,7 @@ def platform_filter_options(games: list[dict]) -> list[tuple[str, str]]:
     kinds = {g.get("kind") or "quest" for g in games}
     if not kinds & {"rift", "linux"}:
         return []
-    out = [("all", tr("All")), ("quest", tr("Android"))]
+    out = [("all", tr("All")), ("quest", tr("Quest/Android"))]
     if "rift" in kinds:
         out.append(("pcvr", tr("PC VR")))
     if "linux" in kinds:

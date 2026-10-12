@@ -73,7 +73,7 @@ class WelcomeView:
                         if t_state == "error" else [])),
             self.step(2, tr("Connect your Steam Frame"), f_text, f_state,
                       *([] if f_state == "done"
-                        else [C.secondary(tr("Set up the Frame"), ft.Icons.ARROW_FORWARD_ROUNDED,
+                        else [C.secondary(tr("Set up your Frame"), ft.Icons.ARROW_FORWARD_ROUNDED,
                                           lambda e: app.go("frame"))])),
             self.step(3, tr("Add your games"),
                       tr("A folder with Quest, Android or PC VR games."),

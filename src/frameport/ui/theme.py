@@ -16,7 +16,7 @@ import flet as ft
 
 # Colour tokens of a theme:
 #   surfaces: BG window, SIDEBAR, SURFACE cards, SURFACE_2 raised/hover, SURFACE_3 inputs/chips, BORDER(_STRONG)
-#   text: TEXT, TEXT_2 secondary, TEXT_3 meta/disabled
+#   text: TEXT, TEXT_2 secondary, TEXT_3 meta/disabled (built-ins keep all three at >= 4.5:1 on BG..SURFACE_2)
 #   ACCENT (+ ACCENT_SOFT tint, ON_ACCENT text on it): the main action and the current selection
 #   SECONDARY (+ SECONDARY_SOFT): secondary actions, progress, switch tracks (with "dual" also the two-colour touches)
 #   states OK/WARN/ERROR/INFO, PC = PC VR / "on this PC"
@@ -29,7 +29,7 @@ TOKENS = ("BG", "SIDEBAR", "SURFACE", "SURFACE_2", "SURFACE_3", "BORDER", "BORDE
 _PORTAL = {
     "BG": "#0D0E12", "SIDEBAR": "#111217", "SURFACE": "#16181E", "SURFACE_2": "#1D1F27", "SURFACE_3": "#252832",
     "BORDER": "#2A2D37", "BORDER_STRONG": "#393D49",
-    "TEXT": "#EDEEF2", "TEXT_2": "#A7ABB7", "TEXT_3": "#717583",
+    "TEXT": "#EDEEF2", "TEXT_2": "#A7ABB7", "TEXT_3": "#868A96",
     "ACCENT": "#FF8A1F", "ACCENT_SOFT": "#3A2512", "ON_ACCENT": "#160C03",
     "SECONDARY": "#3AA8FF", "SECONDARY_SOFT": "#0F2A40",
     # INFO is a cyan of its own: next to PC (the portal blue) it tells data series apart (Monitor: Steam vs
@@ -45,7 +45,7 @@ BUILTIN: dict[str, dict] = {
     "original": {"name": "Original", "dual": False, "colors": {  # FramePort's colours before the Portal theme
         "BG": "#0E0F13", "SIDEBAR": "#121319", "SURFACE": "#171920", "SURFACE_2": "#1E2029", "SURFACE_3": "#262935",
         "BORDER": "#2C2F3B", "BORDER_STRONG": "#3A3E4D",
-        "TEXT": "#ECEDF3", "TEXT_2": "#A9ADBD", "TEXT_3": "#737889",
+        "TEXT": "#ECEDF3", "TEXT_2": "#A9ADBD", "TEXT_3": "#868B9C",
         "ACCENT": "#8B7CFF", "ACCENT_SOFT": "#2A2550", "ON_ACCENT": "#0E0F13",
         "SECONDARY": "#38BDF8", "SECONDARY_SOFT": "#12303F",
         "OK": "#4ADE80", "WARN": "#FBBF24", "ERROR": "#F87171", "INFO": "#60A5FA", "PC": "#38BDF8"}},

@@ -1,6 +1,7 @@
 """Reusable GUI building blocks (all styling comes from ui.theme)."""
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import NamedTuple
@@ -75,6 +76,32 @@ def test_result(verdict: str | None, milestone: str | None) -> tuple[str, str]:
         "Submitting frames": tr("drawing frames"),
     }
     return result, steps.get(milestone or "", milestone or tr("nothing yet"))
+
+
+def test_line(verdict: str | None, milestone: str | None) -> str:
+    """The last launch test in one line: how far it got only when it didn't pass (a passed test reached the end)."""
+    result, step = test_result(verdict, milestone)
+    if verdict == "pass":
+        return tr("Last launch test: passed")
+    return tr("Last launch test: {get} · got as far as: {value}").format(get=result, value=step)
+
+
+def technical() -> bool:
+    """The "Show technical details" switch (game page → Customize; remembered for every screen): engine and VR API
+    names, runtime names, kernel keys, file systems and the internals in patch titles show only with it on."""
+    from ..core import library
+    return bool(library.setting("ui.patch_details", False))
+
+
+# a bracket that holds internals: an arrow, an underscore, camelCase or an all-caps code ("(INFO → LAUNCHER)",
+# "(ovrMessageType_ToString)", "(OVRManager)"); plain ones stay ("(Frame)", "(skip the 2D launcher)")
+_TECH_BRACKET = re.compile(r"\s*\((?=[^)]*(?:→|_|[a-z][A-Z]|[A-Z]{4,}))[^)]*\)")
+
+
+def patch_title(title: str, details: bool | None = None) -> str:
+    """A patch's title as shown: without bracketed internals unless technical details are on."""
+    title = tr(title)
+    return title if (technical() if details is None else details) else _TECH_BRACKET.sub("", title).strip()
 
 
 def settings_diff(game: dict, frame_info: dict | None) -> tuple[list[str], list[str]] | None:
@@ -230,27 +257,58 @@ def checkbox(label: str, **kw) -> tuple[ft.Checkbox, ft.Control]:
                        spacing=T.S1, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
 
+SWITCH_TRACK = (52, 32)  # Material 3's switch track in logical px (the Switch itself doesn't follow the UI scale)
+
+
+def paint_switch_track(track: ft.Container, on: bool, disabled: bool = False) -> None:
+    """On: the portal (blue into orange, as in the logo) under a dark thumb; off: a quiet well with an edge."""
+    if on:
+        track.gradient = portal_gradient(opacity=0.95) if T.DUAL else None
+        track.bgcolor = None if T.DUAL else T.ACCENT
+        track.border = None
+    else:
+        track.gradient, track.bgcolor = None, T.SURFACE_3
+        track.border = ft.Border.all(2, T.BORDER_STRONG)
+    track.opacity = 0.45 if disabled else 1.0
+
+
 def switch(label: str = "", wrap: bool = True, **kw) -> ft.Control:
     """A labelled switch in the theme's text colour (Material's default label is dark text). The label wraps (a
     Switch's own label is cut off when it's longer than the window); clicking it toggles the switch too.
-    wrap=False keeps the built-in label, for a short label in a Row next to other controls."""
-    kw.setdefault("active_color", T.ACCENT)
-    if T.DUAL:  # orange thumb on a blue track
-        kw.setdefault("active_track_color", T.soft(T.SECONDARY, 0.5))
-    if not wrap or not label:
-        return ft.Switch(label=label or None, label_text_style=ft.TextStyle(color=T.TEXT, size=T.px(14)), **kw)
-    sw = ft.Switch(**kw)
+    wrap=False keeps the label on one line, for a short label in a Row next to other controls.
+    The track carries the portal gradient when on: the real ft.Switch (keyboard, focus, semantics) sits with a
+    transparent track on a painted one (paint_switch_track), repainted on every change."""
+    user_change = kw.pop("on_change", None)
+    clear = {ft.ControlState.DEFAULT: ft.Colors.TRANSPARENT}
+    kw.setdefault("track_color", clear)
+    kw.setdefault("track_outline_color", clear)
+    # the thumb is the portal's dark middle on the gradient (a light check on it), light grey with a dark cross when
+    # off; an icon in both states keeps the thumb the same size on and off (Material 3 shrinks an empty off thumb)
+    kw.setdefault("thumb_color", {ft.ControlState.SELECTED: T.BG, ft.ControlState.DEFAULT: T.TEXT_2})
+    kw.setdefault("thumb_icon", {ft.ControlState.SELECTED: ft.Icons.CHECK_ROUNDED,
+                                 ft.ControlState.DEFAULT: ft.Icons.CLOSE_ROUNDED})
+    track = ft.Container(width=SWITCH_TRACK[0], height=SWITCH_TRACK[1], border_radius=SWITCH_TRACK[1] / 2)
+
+    def changed(e):
+        paint_switch_track(track, bool(sw.value), bool(sw.disabled))
+        update(track)
+        if user_change:
+            user_change(e)
+    sw = ft.Switch(on_change=changed, **kw)
+    paint_switch_track(track, bool(sw.value), bool(sw.disabled))
+    knob = ft.Stack([track, sw], alignment=ft.Alignment.CENTER)
+    if not label:
+        return knob
 
     def click_label(e):
         if sw.disabled:
             return
         sw.value = not sw.value
         update(sw)
-        if sw.on_change:
-            sw.on_change(SimpleNamespace(control=sw))
-    return ft.Row([sw, ft.Container(ft.Text(label, color=T.TEXT, size=T.px(14)), expand=True, on_click=click_label,
-                                    ink=True, border_radius=T.RADIUS_XS)],
-                  spacing=T.S2, vertical_alignment=ft.CrossAxisAlignment.CENTER, data="switch")
+        changed(SimpleNamespace(control=sw))
+    text = ft.Text(label, color=T.TEXT, size=T.px(14), no_wrap=not wrap)
+    return ft.Row([knob, ft.Container(text, expand=wrap, on_click=click_label, ink=True, border_radius=T.RADIUS_XS)],
+                  spacing=T.S2, vertical_alignment=ft.CrossAxisAlignment.CENTER, data="switch", tight=not wrap)
 
 
 def body(text: str, color: str | None = None, size: int | None = None, **kw) -> ft.Text:
@@ -673,11 +731,72 @@ def portal_glow() -> ft.RadialGradient:
     return ft.RadialGradient(colors=colors, stops=stops, center=ft.Alignment(0, -0.25), radius=0.85)
 
 
+def _ghost_bar(width: float, height: float = 10, color: str | None = None) -> ft.Container:
+    return ft.Container(width=T.px(width), height=T.px(height), border_radius=T.px(4),
+                        bgcolor=color or T.BORDER_STRONG)
+
+
+def ghost_preview(kind: str) -> ft.Control:
+    """A faint, wordless sketch of what a Frame tab shows once a Frame is connected (its not-connected empty state):
+    shapes only, so it reads as "this is where it goes", never as content. kinds: files, screenshots, live,
+    keyboard, monitor."""
+    if kind == "files":
+        rows = [ft.Row([as_icon(ft.Icons.FOLDER_OUTLINED if i < 2 else ft.Icons.MOVIE_OUTLINED, T.px(18),
+                                T.BORDER_STRONG),
+                        _ghost_bar(w), ft.Container(expand=True), _ghost_bar(56), _ghost_bar(18, 18)],
+                       spacing=T.S3)
+                for i, w in enumerate((140, 96, 210, 172, 120))]
+        return card(ft.Column(rows, spacing=T.S4), bgcolor=T.SURFACE)
+    if kind == "screenshots":
+        return ft.Row([ft.Container(width=T.px(240), height=T.px(135), border_radius=T.RADIUS_SM, bgcolor=T.SURFACE_2,
+                                    border=ft.Border.all(1, T.BORDER)) for _ in range(6)],
+                      wrap=True, spacing=T.S3, run_spacing=T.S3, alignment=ft.MainAxisAlignment.CENTER)
+    if kind == "live":
+        return ft.Container(as_icon(G.LIVE, T.px(40), T.BORDER_STRONG), width=T.px(640), height=T.px(360),
+                            alignment=ft.Alignment.CENTER, border_radius=T.RADIUS, bgcolor=T.BG,
+                            border=ft.Border.all(1, T.BORDER_STRONG))
+    if kind == "keyboard":
+        keys = ft.Row([ft.Container(width=T.px(w), height=T.px(34), border_radius=T.px(6), bgcolor=T.SURFACE_2,
+                                    border=ft.Border.all(1, T.BORDER)) for w in (34, 34, 34, 34, 34, 34, 34, 120)],
+                      spacing=T.S2, alignment=ft.MainAxisAlignment.CENTER)
+        return ft.Column([card(ft.Column([_ghost_bar(220), _ghost_bar(160)], spacing=T.S3), bgcolor=T.SURFACE,
+                               height=T.px(130), width=T.px(640)), keys],
+                         spacing=T.S4, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+    # monitor: tiles with a little graph, then a few process rows
+    spark = [5, 9, 7, 12, 10, 14, 11, 16, 13, 15, 12, 17]
+    tile = card(ft.Column([_ghost_bar(70), _ghost_bar(44, 18),
+                           ft.Row([ft.Container(width=T.px(5), height=T.px(h), border_radius=T.px(2),
+                                                bgcolor=T.BORDER_STRONG) for h in spark],
+                                  spacing=T.px(3), vertical_alignment=ft.CrossAxisAlignment.END)],
+                          spacing=T.S2), bgcolor=T.SURFACE, width=T.px(180))
+    rows = [ft.Row([_ghost_bar(w), ft.Container(expand=True), _ghost_bar(40), _ghost_bar(40)], spacing=T.S4)
+            for w in (180, 130, 220, 150)]
+    return ft.Column([ft.Row([tile] * 4, spacing=T.S3, wrap=True, alignment=ft.MainAxisAlignment.CENTER),
+                      card(ft.Column(rows, spacing=T.S4), bgcolor=T.SURFACE)], spacing=T.S3)
+
+
 def empty_state(icon: str, heading: str, text: str, *actions: ft.Control,
-                features: list[tuple[str, str, str]] | None = None) -> ft.Container:
+                features: list[tuple[str, str, str]] | None = None, preview: ft.Control | None = None) -> ft.Container:
     """A screen with nothing to show yet: the portal with what the screen is about coming out of it, a heading, one
     sentence and the action that fills it. `features` (icon, heading, sentence) say what the screen will show, so a
-    first look isn't an empty page; with them the portal is bigger and a soft portal light fills the background."""
+    first look isn't an empty page; with them the portal is bigger and a soft portal light fills the background.
+    `preview` (C.ghost_preview) is the quieter form for tabs waiting on the Frame: a faint sketch of the tab under
+    the action, fading out, instead of the feature cards."""
+    if preview is not None:
+        sketch = ft.Stack([ft.Container(preview, opacity=0.8),
+                           ft.Container(left=0, right=0, bottom=0, height=T.px(140),
+                                        gradient=ft.LinearGradient(begin=ft.Alignment.TOP_CENTER,
+                                                                   end=ft.Alignment.BOTTOM_CENTER,
+                                                                   colors=[T.soft(T.BG, 0.0), T.BG]))])
+        return ft.Container(ft.Column([
+            portal_scene(icon),
+            title(heading, T.T_DISPLAY),
+            ft.Container(body(text, text_align=ft.TextAlign.CENTER), width=T.px(500)),
+            ft.Row(list(actions), alignment=ft.MainAxisAlignment.CENTER, spacing=T.S3),
+            ft.Container(height=T.S4),
+            ft.Container(sketch, width=T.px(780)),
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=T.S3, scroll=ft.ScrollMode.AUTO, expand=True),
+            alignment=ft.Alignment.TOP_CENTER, expand=True, padding=ft.Padding(0, T.S6, 0, 0))
     rich = bool(features)
     return ft.Container(ft.Column([
         portal_scene(icon, T.px(104) if rich else None),

@@ -168,3 +168,12 @@ def test_as_icon_turns_glyphs_into_tinted_images():
     assert isinstance(img, ft.Image) and img.color == T.ACCENT and img.src.endswith("frame.svg")
     assert isinstance(C.as_icon(ft.Icons.TUNE_ROUNDED, 20), ft.Icon)
     assert C._btn_icon(ft.Icons.TUNE_ROUNDED, T.TEXT) == ft.Icons.TUNE_ROUNDED  # buttons colour Material icons
+
+
+def test_builtin_text_is_readable_on_every_card_surface():
+    # TEXT_3 carries the 11-12 px meta text (C.meta): it was #717583 (3.6:1 on SURFACE_2), now >= 4.5:1 (WCAG AA)
+    for name, theme in T.BUILTIN.items():
+        c = theme["colors"]
+        for token in ("TEXT", "TEXT_2", "TEXT_3"):
+            for surface in ("BG", "SIDEBAR", "SURFACE", "SURFACE_2"):
+                assert T.contrast(c[token], c[surface]) >= 4.5, (name, token, surface)
