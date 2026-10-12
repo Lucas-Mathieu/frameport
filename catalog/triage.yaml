@@ -319,6 +319,12 @@ signatures:
     severity: error
     diagnosis: Epic Online Services can't save its login keychain and retries without end (a start that never finishes, 100 % CPU). The usual cause is missing internal storage (see lepton-data-link-failed); the patch stops the loop, and EOS then reports the failure to the game once.
     suggest: [frame.eos_keychain_loop]
+  - id: pthread-keys-exhausted
+    pattern: 'cannot create thread specific key'
+    severity: fatal
+    diagnosis: The game ran out of thread keys (Android allows 128 per process; Unity 6 plus large native libraries such as Firebase or Gecko, and the Frame's own graphics/OpenXR libraries, use them up), so a library aborted at start (for example Wander in Firebase's Firestore). The patch lets Unity's keys without a clean-up function share one real key.
+    suggest: [frame.unity_tls_key_pool]
+    supersedes: [native-crash]
   - id: unreal-obb-check-stuck
     pattern: 'Displayed \S+/\S*DownloaderActivity\b'
     # the downloader returned (the engine's main init resumed, OpenXR started) or the game crashed (its own finding)

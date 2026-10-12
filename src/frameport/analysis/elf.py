@@ -161,6 +161,63 @@ def hide_exports(data: bytes, names) -> tuple[bytes, list[str]]:
     return bytes(buf), sorted(hidden)
 
 
+def rename_imports(data: bytes, renames: dict[str, str]) -> tuple[bytes, list[str]]:
+    """Rename imported (undefined) dynamic symbols in place: `.dynstr` bytes of each import's name are overwritten
+    with the new name (not longer; NUL-padded), so its relocations bind to whatever library exports the new name
+    (add it to DT_NEEDED). Nothing moves; defined symbols and names that other entries share (string-tail merging,
+    DT_NEEDED/version names) are never touched — such a rename raises. A renamed import's `.gnu.version` entry
+    becomes 1 (global): the replacement has no version, and keeping e.g. LIBC would make bionic look for it in libc
+    only. Returns (data, old names renamed); ELF64 little-endian only. Names already renamed count as done."""
+    import struct
+
+    if not is_elf(data) or not is_64bit(data) or data[5] != 1:
+        return data, []
+    for old, new in renames.items():
+        if len(new) > len(old):
+            raise ValueError(f"{new} is longer than {old}")
+    elf = _elf(data)
+    dynsym, dynstr = elf.get_section_by_name(".dynsym"), elf.get_section_by_name(".dynstr")
+    if not isinstance(dynsym, SymbolTableSection) or dynstr is None:
+        return data, []
+    versym = elf.get_section_by_name(".gnu.version")
+    str_off = dynstr["sh_offset"]
+    targets, refs = {}, {}  # dynsym index -> st_name of an import to rename; st_name -> referencing dynsym indices
+    for i, sym in enumerate(dynsym.iter_symbols()):
+        refs.setdefault(sym["st_name"], []).append(i)
+        if sym.name in renames and sym["st_shndx"] == "SHN_UNDEF":
+            targets[i] = sym["st_name"]
+    others = set()  # string offsets used by anything else: other symbols, dynamic tags, version records
+    for sec in elf.iter_sections():
+        if isinstance(sec, DynamicSection):
+            others |= {t.entry.d_val for t in sec.iter_tags()
+                       if t.entry.d_tag in ("DT_NEEDED", "DT_SONAME", "DT_RPATH", "DT_RUNPATH")}
+        elif sec["sh_type"] == "SHT_GNU_verneed":
+            for vn, aux in sec.iter_versions():
+                others.add(vn["vn_file"])
+                others |= {a["vna_name"] for a in aux}
+        elif sec["sh_type"] == "SHT_GNU_verdef":
+            for _vd, aux in sec.iter_versions():
+                others |= {a["vda_name"] for a in aux}
+    buf, done = bytearray(data), []
+    for i, name_off in sorted(targets.items()):
+        old = bytes(buf[str_off + name_off:buf.index(b"\0", str_off + name_off)]).decode()
+        span = range(name_off, name_off + len(old) + 1)
+        shared = [o for o in others if o in span] + [o for o, users in refs.items()
+                                                    if o in span and any(u not in targets for u in users)]
+        if shared:
+            raise ValueError(f"{old}: its name is shared with another entry; not renamed")
+        buf[str_off + name_off:str_off + name_off + len(old) + 1] = renames[old].encode().ljust(len(old) + 1, b"\0")
+        if versym is not None:
+            struct.pack_into("<H", buf, versym["sh_offset"] + i * 2, 1)
+        done.append(old)
+    if versym is not None:  # imports renamed earlier: keep their version entry global too
+        new_names = set(renames.values())
+        for i, sym in enumerate(dynsym.iter_symbols()):
+            if sym.name in new_names and sym["st_shndx"] == "SHN_UNDEF":
+                struct.pack_into("<H", buf, versym["sh_offset"] + i * 2, 1)
+    return bytes(buf), sorted(set(done))
+
+
 def add_needed(data: bytes, library: str) -> bytes:
     """Add a DT_NEEDED entry in front of the existing ones (same effect as `patchelf --add-needed`; being first matters
     for symbol interposition, e.g. the GL shim must precede libEGL).

@@ -79,6 +79,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Unity: start VR without Meta's system apps](#frame-unity_oculus_check) | `frame.unity_oculus_check` | Steam Frame patches | 9 |
 | [Unity: keep MSAA off at runtime (OVRManager)](#frame-unity_runtime_msaa_off) | `frame.unity_runtime_msaa_off` | Steam Frame patches | 22 |
 | [Make Unity text fields work](#frame-unity_text_input) | `frame.unity_text_input` | Steam Frame patches | 68 |
+| [Unity: share thread keys (games that run out of them)](#frame-unity_tls_key_pool) | `frame.unity_tls_key_pool` | Steam Frame patches | 1 |
 | [Unity: headset always counts as worn](#frame-unity_user_presence) | `frame.unity_user_presence` | Steam Frame patches | 1 |
 | [GL shim for Unreal (no multisampled render-to-texture)](#frame-unreal_gl_shim) | `frame.unreal_gl_shim` | Steam Frame patches | 1 |
 | [Unreal: stand-ins for OVRPlugin functions OVRPort lacks](#frame-unreal_ovrp_entrypoints) | `frame.unreal_ovrp_entrypoints` | Steam Frame patches | 1 |
@@ -926,6 +927,20 @@ Lets you type into this app's text fields on the Frame (they'd close at once).
 - **Source:** [patches/frame/unity_text_input.py](../src/frameport/patches/frame/unity_text_input.py)
 
 > Unity's TMP_InputField / InputField wait for Android's on-screen keyboard and close themselves a frame later when there is none (Lepton has no on-screen keyboard; Meta's system keyboard does this on a Quest), so a selected text field only flashes a caret. Rewrites TouchScreenKeyboardShouldBeUsed -&gt; false and isKeyboardUsingEvents (TMP) / InPlaceEditing (uGUI) -&gt; true in libil2cpp.so, found per game with Cpp2IL (downloaded on first use), so fields stay selected and take key presses: Steam's keyboard (with "Show the app window") or Type on Frame from the PC.
+
+### <a id="frame-unity_tls_key_pool"></a>Unity: share thread keys (games that run out of them)
+
+Lets Unity 6 games with many native libraries start when they run out of thread keys (they'd abort with "cannot create thread specific key"), for example Wander.
+
+- `frame.unity_tls_key_pool` · also for 2D apps
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Offered (off):** Unity 6 with …: turn on if the game aborts at start with "cannot create thread specific key" (for example Wander).
+- **Catalog games (1):** Wander.
+- **Suggested by launch-test signatures:**
+  - `pthread-keys-exhausted` (fatal): The game ran out of thread keys (Android allows 128 per process; Unity 6 plus large native libraries such as Firebase or Gecko, and the Frame's own graphics/OpenXR libraries, use them up), so a library aborted at start (for example Wander in Firebase's Firestore).
+- **Source:** [patches/frame/unity_tls_key_pool.py](../src/frameport/patches/frame/unity_tls_key_pool.py)
+
+> Android gives a process 128 thread keys (pthread keys, per-thread storage slots). Unity 6 takes about 40, and on the Frame the graphics and OpenXR libraries take more than on a Quest, so games with many other native libraries run out: Wander aborted at start ("cannot create thread specific key" in Firebase). Unity's keys without a clean-up function become slots behind one real key (libfp_tkeys.so); every other key and every other library keep real ones. Approach by Klownicle (GitHub #198).
 
 ### <a id="frame-unity_user_presence"></a>Unity: headset always counts as worn
 

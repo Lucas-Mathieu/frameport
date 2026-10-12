@@ -74,7 +74,9 @@ SUMMARIES = {
                                    "on an invisible check screen).",
     "frame.eos_keychain_loop": "Stops Epic Online Services from retrying its login keychain forever (the game "
                                "would never finish starting).",
-    "frame.vivox_audio_route":"Lets games with Vivox voice chat start on the Frame (they'd crash on an Android 12 "
+    "frame.unity_tls_key_pool": "Lets Unity 6 games with many native libraries start when they run out of thread keys "
+                                 "(they'd abort with \"cannot create thread specific key\"), for example Wander.",
+    "frame.vivox_audio_route": "Lets games with Vivox voice chat start on the Frame (they'd crash on an Android 12 "
                                "audio call).",
     "frame.unity_oculus_check": "Lets older Unity games start VR without Meta's system apps (they'd stay on a 2D "
                                 "screen).",
