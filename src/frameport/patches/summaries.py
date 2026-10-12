@@ -107,6 +107,10 @@ SUMMARIES = {
                                      "never starts on the Frame (for example Vader Immortal).",
     "frame.unreal_quest_keymap": "Makes grip, trigger and touch controls reach the game's hands (it picked the "
                                  "empty Gear VR controls on the Frame, for example Vader Immortal).",
+    "frame.unreal_splash_bypass": "Lets the game finish loading when its separate loading splash stalls the "
+                                  "render thread.",
+    "frame.unreal_multiview_depth": "Shows the full environment when its upper part is clipped but menu panels "
+                                    "look correct.",
     "frame.unreal_thumb_touch": "Makes the hands' thumbs follow what your thumb touches (they always pointed up: the "
                                 "Frame doesn't sense a thumb hovering, for example Vader Immortal).",
     "frame.zink_shader_fix":"Repairs shaders that hang the graphics chip at certain effects, from the game's "

@@ -41,6 +41,17 @@ signatures:
     severity: fatal
     diagnosis: The game's graphics crashed a few seconds after start. Its render thread jumped to address 0x10000 in the Frame's GL driver (Mesa/Zink), which reads past a render-pass cache when a game uses multisampled render-to-texture (Unreal's mobile MSAA, for example Star Wars Pinball VR); the GL shim hides that extension.
     suggest: [frame.unreal_gl_shim, frame.unity_gl_shim]
+  - id: unreal-splash-frame-stall
+    pattern: '(?s)\A(?=.*CSxrSession::WaitFrame)(?=.*FSplash::RenderFrame_RenderThread)(?=.*FlushRenderingCommands)'
+    severity: error
+    diagnosis: Unreal's map loading waits for rendering while its separate Oculus splash waits for an unbegun VR frame (Tales from the Galaxy's Edge, issue 61). Bypass the splash renderer to let loading finish; the last image stays visible during loading.
+    suggest: [frame.unreal_splash_bypass]
+  # Attachment sizes captured by the issue 61 GL diagnostic probe, not ordinary launch logs.
+  - id: unreal-multiview-depth-size
+    pattern: '(?s)\A(?=.*ViewLog[^\n]*attachment 8ce0[^\n]*renderbuffer=1728x1728)(?=.*ViewLog[^\n]*attachment 8d00[^\n]*renderbuffer=1920x10(?:16|20))'
+    severity: warning
+    diagnosis: The measured multiview depth attachment keeps the initial Android window dimensions and clips the taller eye color target (Tales from the Galaxy's Edge, issue 61). Refresh Unreal's cached depth dimensions from its eye render size; menu panels use separate layers and remain intact.
+    suggest: [frame.unreal_multiview_depth]
   - id: pac-unpaired
     pattern: 'ILL_ILLOPN\), fault addr 0x[0-9a-f]+ \(\*pc=0xd50323bf\)'
     severity: fatal
