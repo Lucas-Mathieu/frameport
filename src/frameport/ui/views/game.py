@@ -579,9 +579,12 @@ class GameView:
                  if extra.get("x86_64") else tr("Built for the Frame (arm64)"), "linux_x86"),
             C.kv(tr("VR"), tr("Yes") if vr else tr("No: a 2D app")),
             C.kv(tr("Source"), extra.get("source") or g.get("game_dir") or ""),
-            C.kv(tr("Desktop Mode"), C.switch(tr("In the menu and on the desktop"),
-                                              value=g.get("desktop_entry", True) is not False,
-                                              on_change=self.set_desktop_entry), "desktop_entry"),
+            C.kv(tr("Desktop Mode"), ft.Column([
+                C.switch(tr("In the app menu"), value=g.get("desktop_entry", True) is not False,
+                         on_change=self.set_desktop_entry),
+                C.switch(tr("On the desktop"), value=g.get("desktop_icon", True) is not False,
+                         disabled=g.get("desktop_entry", True) is False, on_change=self.set_desktop_icon),
+            ], spacing=T.S1), "desktop_entry"),
         ]
         if extra.get("vr_overlay"):  # a SteamVR overlay app (wrist watch, fps counter, ...)
             rows.append(C.kv(tr("SteamVR overlay"), C.switch(
@@ -603,6 +606,18 @@ class GameView:
                     C.install_state(self.g, app.frame_info) in ("installed", "outdated"):
                 app.target.set_desktop_entry(pkg, on)
             app.toast(tr("Added to Desktop Mode") if on else tr("Removed from Desktop Mode"))
+        app.run_bg(work)
+
+    def set_desktop_icon(self, e) -> None:
+        """The app's copy on Desktop Mode's desktop, apart from its menu entry (GitHub #212)."""
+        app, pkg, on = self.app, self.package, bool(e.control.value)
+
+        def work():
+            library.upsert_game(pkg, desktop_icon=on)
+            if app.frame_state == "connected" and app.target and \
+                    C.install_state(self.g, app.frame_info) in ("installed", "outdated"):
+                app.target.set_desktop_entry(pkg, self.g.get("desktop_entry", True) is not False, icon=on)
+            app.toast(tr("Added to the desktop") if on else tr("Removed from the desktop"))
         app.run_bg(work)
 
     def set_overlay_autostart(self, e) -> None:

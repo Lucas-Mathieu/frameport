@@ -579,6 +579,7 @@ def install_linux(package: str, target: Target, reporter: Reporter, add_to_libra
                                   extra.get("files"), bool(extra.get("appimage")), bool(extra.get("openxr")),
                                   reporter, x86_64=bool(extra.get("x86_64")),
                                   desktop_entry=entry.get("desktop_entry", True) is not False,
+                                  desktop_icon=entry.get("desktop_icon", True) is not False,
                                   overlay=linux_overlay(entry))
     if extra.get("x86_64"):
         reporter.check("x86 translation", True, "runs through FEX on SteamOS's x86 system (its libraries come from "

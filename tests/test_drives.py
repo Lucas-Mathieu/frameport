@@ -380,6 +380,28 @@ def test_desktop_entry_switch_and_refresh(monkeypatch, tmp_path):
         a.cmd_desktop_entry({"package": "com.not.linux", "enabled": True})
 
 
+def test_desktop_icon_apart_from_the_menu_entry(monkeypatch, tmp_path):
+    """GitHub #212: a desktop icon the user deleted came back at every connection, and there was no way to keep only
+    the menu entry. The desktop copy has its own switch, and a refresh only updates a copy that is there."""
+    a = load(monkeypatch, tmp_path)
+    (Path(a.HOME) / "Desktop").mkdir()
+    linux_install(a, tmp_path)
+    menu = Path(a.HOME) / ".local/share/applications/frameport-true.desktop"
+    desk = Path(a.HOME) / "Desktop/frameport-true.desktop"
+    assert menu.exists() and desk.exists()
+    desk.unlink()  # deleted by hand
+    a.ensure_host_fixes()
+    assert menu.exists() and not desk.exists()
+    r = a.cmd_desktop_entry({"package": "linux.true", "enabled": True, "icon": True})
+    assert r["desktop"] == str(desk) and desk.exists()  # switched on again: back
+    a.cmd_desktop_entry({"package": "linux.true", "enabled": True, "icon": False})
+    assert menu.exists() and not desk.exists() and a.deployment("linux.true")["desktop_icon"] is False
+    a.ensure_host_fixes()
+    assert not desk.exists()
+    linux_install(a, tmp_path, pkg="linux.editor", title="Editor", desktop_icon=False)
+    assert not (Path(a.HOME) / "Desktop/frameport-editor.desktop").exists()
+
+
 def test_linux_launcher_from_desktop_mode(monkeypatch, tmp_path):
     """Started from Desktop Mode (FRAMEPORT_DESKTOP=1) the launcher's parent exits at once: the app must keep running,
     and the desktop's display is used instead of Steam's."""

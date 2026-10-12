@@ -4580,7 +4580,7 @@ def cmd_finalize_linux(args):
            "sha256": args.get("exe_sha256"),
            "missing_libraries": missing, "recipe": args.get("recipe"), "installed_by": "frameport",
            "launcher": {"env": args.get("env") or {}}, "desktop_entry": args.get("desktop_entry", True) is not False,
-           "files": {"app": want or {}}, "agent_version": AGENT_VERSION, "time": time.time()}
+           "desktop_icon": args.get("desktop_icon", True) is not False, "files": {"app": want or {}}, "agent_version": AGENT_VERSION, "time": time.time()}
     with open(os.path.join(anchor, "deployment.json"), "w") as f:
         json.dump(dep, f, indent=2)
     try:  # the app's own icon (GitHub #99), found again for every install: a new version may bring another
@@ -4883,9 +4883,11 @@ def desktop_entries(pkg=None, folder=None):
     return out
 
 
-def write_desktop_entry(pkg):
-    """The app's menu entry, plus a copy on ~/Desktop when that folder exists (Plasma starts executable .desktop files
-    there without asking). Returns {"menu": path, "desktop": path or None, "changed": bool}."""
+def write_desktop_entry(pkg, refresh=False):
+    """The app's menu entry, plus a copy on ~/Desktop when that folder exists and deployment.json's "desktop_icon"
+    isn't off (Plasma starts executable .desktop files there without asking). `refresh` (every connection) only
+    updates a desktop copy that is there: one the user deleted stays deleted (GitHub #212). Returns {"menu": path,
+    "desktop": path or None, "changed": bool}."""
     anchor = os.path.join(ANCHORS, pkg)
     dep = deployment(pkg)
     if not dep:
@@ -4897,10 +4899,16 @@ def write_desktop_entry(pkg):
             os.remove(path)
     menu = os.path.join(DESKTOP_APPS, name)
     changed = _write_if_changed(menu, text, 0o755)
-    desk = None
-    if os.path.isdir(DESKTOP_DIR):
-        desk = os.path.join(DESKTOP_DIR, name)
+    desk = os.path.join(DESKTOP_DIR, name)
+    if dep.get("desktop_icon", True) is False:
+        if os.path.exists(desk):
+            os.remove(desk)
+            changed = True
+        desk = None
+    elif os.path.isdir(DESKTOP_DIR) and not (refresh and not os.path.exists(desk)):
         changed = _write_if_changed(desk, text, 0o755) or changed
+    else:
+        desk = None
     return {"menu": menu, "desktop": desk, "changed": changed}
 
 
@@ -4930,7 +4938,7 @@ def refresh_desktop_entries():
             continue
         wanted.add(dep["package"])
         try:
-            if write_desktop_entry(dep["package"])["changed"]:
+            if write_desktop_entry(dep["package"], refresh=True)["changed"]:
                 changed.append(dep["package"])
         except (OSError, AgentError):
             pass
@@ -4942,7 +4950,8 @@ def refresh_desktop_entries():
 
 
 def cmd_desktop_entry(args):
-    """Turn a Linux app's Desktop Mode entry on or off (deployment.json keeps the choice)."""
+    """Turn a Linux app's Desktop Mode entry on or off, and with `icon` its copy on the desktop (agent v83; deployment
+    .json keeps both choices)."""
     pkg = check_pkg(args["package"])
     dep = deployment(pkg)
     if not dep or dep.get("kind") != "linux":
@@ -4952,6 +4961,8 @@ def cmd_desktop_entry(args):
     with open(path) as f:
         raw = json.load(f)
     raw["desktop_entry"] = on
+    if args.get("icon") is not None:
+        raw["desktop_icon"] = bool(args["icon"])
     with open(path + ".tmp", "w") as f:
         json.dump(raw, f, indent=2)
     os.replace(path + ".tmp", path)

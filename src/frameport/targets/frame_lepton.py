@@ -79,9 +79,10 @@ class FrameLeptonTarget(Target):
         return installer.install_pcvr(self.connect().frame, plan, reporter)
 
     def install_linux(self, package, title, root, exe, files, appimage, openxr, reporter, x86_64=False,
-                      desktop_entry=True, overlay=None):
+                      desktop_entry=True, overlay=None, desktop_icon=True):
         plan = installer.LinuxPlan(package, title, Path(root), exe, files, appimage, openxr, x86_64,
-                                   dest=self.install_dest(), desktop_entry=desktop_entry, overlay=overlay)
+                                   dest=self.install_dest(), desktop_entry=desktop_entry, overlay=overlay,
+                                   desktop_icon=desktop_icon)
         return installer.install_linux(self.connect().frame, plan, reporter)
 
     def drives(self) -> list[dict]:
@@ -91,9 +92,11 @@ class FrameLeptonTarget(Target):
         """Move an installed game's files to another drive (or back to internal storage: dest "internal")."""
         return drives.move(self.connect().frame, package, dest, reporter)
 
-    def set_desktop_entry(self, package: str, enabled: bool) -> dict:
-        """A Linux app's Desktop Mode entry on or off (GitHub #84)."""
-        return self.connect().frame.agent("desktop_entry", package=package, enabled=enabled)
+    def set_desktop_entry(self, package: str, enabled: bool, icon: bool | None = None) -> dict:
+        """A Linux app's Desktop Mode entry on or off (GitHub #84); `icon`: its copy on the desktop too (GitHub
+        #212, agent 83; older agents ignore it)."""
+        extra = {} if icon is None else {"icon": icon}
+        return self.connect().frame.agent("desktop_entry", package=package, enabled=enabled, **extra)
 
     def set_vr_overlay(self, package: str, autostart: bool) -> dict:
         """An installed SteamVR overlay app's auto-start with SteamVR (agent >= 75; >= 76: FramePort's own

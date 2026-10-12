@@ -258,6 +258,7 @@ class LinuxPlan:
     x86_64: bool = False  # runs through FEX (installed on the Frame first, like Proton)
     dest: str | None = None  # a drive's install dir for a new install (GitHub #90); None = internal storage
     desktop_entry: bool = True  # an entry in Desktop Mode's menu and on its desktop (GitHub #84)
+    desktop_icon: bool = True  # with it, a copy on Desktop Mode's desktop (GitHub #212)
     overlay: dict | None = None  # a SteamVR overlay app: the agent's overlay argument (analysis/vroverlay.py)
 
 
@@ -291,7 +292,8 @@ def install_linux(frame: Frame, plan: LinuxPlan, reporter: Reporter) -> dict:
     result = frame.agent("finalize_linux", package=plan.package, title=plan.title, exe=plan.exe,
                          appimage=plan.appimage, openxr=plan.openxr, x86_64=plan.x86_64, manifests={"app": manifest},
                          executables=executables, tags=_tags(plan.package), dest=plan.dest,
-                         desktop_entry=plan.desktop_entry, overlay=plan.overlay, timeout=900)
+                         desktop_entry=plan.desktop_entry, desktop_icon=plan.desktop_icon, overlay=plan.overlay,
+                         timeout=900)
     reporter.log(f"installed at {result['base']} (Steam shortcut id {result['appid']})")
     log_overlay(result.get("overlay"), reporter)
     apply_app_icon(frame, plan.package, prep.get("anchor"), result, reporter)

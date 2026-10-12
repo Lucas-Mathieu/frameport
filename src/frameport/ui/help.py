@@ -122,8 +122,8 @@ HELP: dict[str, str] = _Translated({
     "vr_overlay": "A SteamVR overlay app: SteamVR on the Frame draws it over whatever you play, Quest and PC VR "
                   "games alike. With 'Start with SteamVR' on, SteamVR starts it by itself; otherwise start it from "
                   "the library before the game.",
-    "desktop_entry": "Adds the app to Desktop Mode's app menu and desktop. Some apps work better there with a mouse "
-                     "and keyboard.",
+    "desktop_entry": "Adds the app to Desktop Mode's app menu and, if you like, its desktop. Some apps work better "
+                     "there with a mouse and keyboard. An icon you delete from the desktop stays deleted.",
     "adapter_settings": "Sharpness, refresh rate, controllers, menus and more for this game. Changes take effect the "
                         "next time it starts.",
     "frame_summary": "Quest ✓: Lepton is installed, so Quest games can run. PC VR ✓: Proton is installed, so PC VR "
