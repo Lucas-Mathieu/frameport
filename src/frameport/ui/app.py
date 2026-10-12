@@ -24,6 +24,7 @@ from ..errors import explain
 from ..frame import monitor as M
 from ..frame.connection import NOT_IN_LIBRARY, AgentFailed
 from ..i18n import fmt_size, tr, tr_n
+from ..install import drives
 from ..recommend import catalog
 from . import components as C
 from . import frame_card as FC
@@ -102,6 +103,7 @@ class FramePortApp:
         self.page = page
         self.target = None  # FrameLeptonTarget when connected
         self.frame_info: dict | None = None
+        self.frame_drives: list[dict] | None = None  # the agent's `drives`, fetched at connect (space check)
         self.frame_state = "none"  # none | connecting | connected | offline
         self.pairing = None
         self.route: tuple = ("library",)
@@ -834,7 +836,7 @@ class FramePortApp:
                 self.updater.restart = None  # the update didn't get ready: don't quit
             self.updater.on_jobs_changed()  # an update waiting for the queue to empty installs now
             if job.kind in ("install", "test", "uninstall", "tool-frame") and self.target:
-                self.refresh_frame(quiet=True)
+                self.refresh_frame(quiet=True, with_drives=job.kind != "test")
             if job.kind == "tool-frame" and self.route[0] == "files" and self.files_view is not None:
                 # show what an upload added  # re-renders when the Frame's list changed (e.g. after an uninstall)
                 self.files_view.load()
@@ -1192,20 +1194,36 @@ class FramePortApp:
         (updates only re-send what changed)."""
         info = getattr(self, "frame_info", None) or {}
         installed = {d.get("package") for d in info.get("installed", [])} if to == "frame" else set()
-        total = 0
-        for p in pkgs:
-            g = library.game(p) or {}
-            if g.get("kind") == "rift":
-                total += 0 if p in installed else int((g.get("analysis") or {}).get("extra", {}).get("data_bytes") or 0)
-                continue
-            apk = (g.get("build") or {}).get("apk") or g.get("apk")
-            try:
-                total += Path(apk).stat().st_size if apk else 0
-            except OSError:
-                pass
-            if p not in installed:
-                total += int(g.get("data_bytes") or 0)
-        return total
+        return sum(self._upload_bytes(p, p in installed) for p in pkgs)
+
+    @staticmethod
+    def _upload_bytes(pkg: str, installed: bool, apk_only: bool = False) -> int:
+        g = library.game(pkg) or {}
+        if g.get("kind") == "rift":
+            return 0 if installed else int((g.get("analysis") or {}).get("extra", {}).get("data_bytes") or 0)
+        apk, total = (g.get("build") or {}).get("apk") or g.get("apk"), 0
+        try:
+            total += Path(apk).stat().st_size if apk else 0
+        except OSError:
+            pass
+        return total if installed or apk_only else total + int(g.get("data_bytes") or 0)
+
+    def space_shortfalls(self, pkgs: list[str]) -> list[tuple[dict, int, int]]:
+        """Frame drives these installs would overfill (the drive each game goes to: its own when installed, else the
+        one chosen for new games), from the drive list fetched at connect (`frame_drives`)."""
+        info = getattr(self, "frame_info", None) or {}
+        deps = {d.get("package"): d for d in info.get("installed", [])}
+        items = [(deps.get(p), self._upload_bytes(p, p in deps)) for p in pkgs]
+        return drives.space_shortfalls(items, drives.install_dest(), getattr(self, "frame_drives", None),
+                                       info.get("free_bytes"))
+
+    def _remember_drives(self, target) -> None:
+        """Fetch the Frame's drives for the space check before queueing installs (agents before v63 have none)."""
+        try:
+            self.frame_drives = target.drives()
+        except Exception as exc:  # noqa: BLE001 - the check then falls back to internal storage only
+            applog.log.info("drive list unavailable: %s", exc)
+            self.frame_drives = None
 
     def install_many(self, pkgs: list[str], to: str = "frame", allow_blocked: bool = False,
                      then: Callable[[], None] | None = None) -> None:
@@ -1344,16 +1362,25 @@ class FramePortApp:
                          C.primary(tr("Install"), on_click=pick(ok))]))
 
         def go(final: list[str]):
-            need, free = self.upload_estimate(final, to), (getattr(self, "frame_info", None) or {}).get("free_bytes")
-            if to == "frame" and free is not None and need > free - 2**30:
-                # warn before queueing: the installs would fail one by one once the Frame is full
+            short = self.space_shortfalls(final) if to == "frame" else []
+            if short:
+                # warn before queueing: the installs would fail one by one once the drive is full (checked per drive:
+                # new games go to the drive chosen on the Frame page, installed ones stay where they are)
+                lines = []
+                for d, need, free in short:
+                    if d.get("internal"):
+                        lines.append(tr("These installs need about {need}, but the Frame has {free} free.")
+                                     .format(need=fmt_size(need), free=fmt_size(max(free, 0))))
+                    else:
+                        lines.append(tr("These installs need about {need}, but {drive} has {free} free.")
+                                     .format(need=fmt_size(need), drive=d.get("label") or d.get("path"),
+                                             free=fmt_size(max(free, 0))))
+                lines.append(tr("Uninstall games you don't play, install fewer at once, or pick another drive on "
+                                "the Frame page."))
                 pick = C.one_choice()
                 self.page.show_dialog(C.dialog(
                     tr("Not enough space on the Frame"), modal=True, size="s",
-                    content=C.body(tr(
-                        "These installs need about {need}, but the Frame has {free} free. Uninstall games you "
-                        "don't play or install fewer at once.")
-                        .format(need=fmt_size(need), free=fmt_size(max(free, 0)))),
+                    content=C.body(" ".join(lines)),
                     on_dismiss=pick(closed),
                     actions=[C.ghost(tr("Cancel"), on_click=pick(cancel)),
                              C.secondary(tr("Install anyway"), on_click=pick(lambda e: (self.page.pop_dialog(),
@@ -1623,7 +1650,7 @@ class FramePortApp:
 
         def fill():
             try:
-                listed = self._target_for("frame").drives()
+                listed = self.frame_drives = self._target_for("frame").drives()
             except Exception as exc:  # noqa: BLE001
                 group.content.controls = [C.meta(tr("Couldn't list the Frame's drives: {error}")
                                                  .format(error=explain(exc)))]
@@ -2582,6 +2609,7 @@ class FramePortApp:
                 save_target(target)
                 old, self.target, self.frame_info, self.frame_state = self.target, t, info, "connected"
                 self._check_frame_restart(info)
+                self._remember_drives(t)
                 if old is not None and old is not t and not self.jobs.current():
                     try:  # the connection it replaces (a running job keeps using its own until it ends)
                         old.close()
@@ -2594,7 +2622,7 @@ class FramePortApp:
                 from ..frame.connection import FrameNotPaired
 
                 self.frame_state = "offline"
-                self.frame_info = None
+                self.frame_info = self.frame_drives = None
                 # reachable, but it doesn't let FramePort in: the Frame page points at the first-time setup
                 self._not_paired = isinstance(exc, FrameNotPaired)
                 if not isinstance(exc, (FrameNotPaired, OSError)):  # unexpected: keep the traceback for reports
@@ -2620,7 +2648,9 @@ class FramePortApp:
             return
         self.connect(target, password or None)
 
-    def refresh_frame(self, quiet: bool = False, rerender: bool = True, background: bool = True):
+    def refresh_frame(self, quiet: bool = False, rerender: bool = True, background: bool = True,
+                      with_drives: bool = False):
+        """with_drives: also refresh the drive list (free space changes with installs; the 30 s poll skips it)."""
         def work():
             target = self.target
             if not target:
@@ -2634,6 +2664,8 @@ class FramePortApp:
                 self.frame_info, self.frame_state = info, "connected"
                 self._check_frame_restart(info)
                 self._check_sessions(info)
+                if with_drives:
+                    self._remember_drives(target)
             except Exception as exc:  # noqa: BLE001
                 frame = getattr(target, "frame", None)
                 if frame is not None and frame.alive():
@@ -2644,7 +2676,7 @@ class FramePortApp:
                 if self.target is not target:
                     return
                 changed = self.frame_state == "connected"
-                self.frame_state, self.frame_info = "offline", None
+                self.frame_state, self.frame_info, self.frame_drives = "offline", None, None
                 try:
                     target.close()
                 except Exception:  # noqa: BLE001

@@ -461,6 +461,39 @@ def test_free_space_is_checked_before_queueing(monkeypatch, tmp_path):
     assert submitted == ["com.a", "com.b"] and not app._asking
 
 
+def test_free_space_check_uses_the_chosen_drive(monkeypatch, tmp_path):
+    """GitHub #205: with new games going to the SD card, internal storage's free space doesn't matter."""
+    from types import SimpleNamespace
+
+    from frameport.core import library
+    from frameport.install import drives
+    from frameport.ui.app import FramePortApp
+
+    apk = tmp_path / "g.apk"
+    apk.write_bytes(b"x" * 1000)
+    games = {"com.a": {"package": "com.a", "title": "A", "apk": str(apk), "data_bytes": 30 * 2**30, "analysis": {},
+                       "recipe": {"patches": {}}}}
+    monkeypatch.setattr(library, "game", games.get)
+    monkeypatch.setattr(drives, "install_dest", lambda: "/run/media/steamos/SD/FramePort")
+    dialogs, submitted = [], []
+    app = object.__new__(FramePortApp)
+    app.page = SimpleNamespace(show_dialog=dialogs.append, pop_dialog=lambda: None)
+    app.jobs = SimpleNamespace(busy_with=lambda p: None)
+    app.library_view, app.toast, app._title = None, lambda *a, **k: None, lambda p: p
+    app._submit_install = lambda p, to: submitted.append(p)
+    app.frame_info = {"free_bytes": 2 * 2**30, "installed": []}  # internal storage is nearly full
+    app.frame_drives = [
+        {"internal": True, "path": "/home", "free_bytes": 2 * 2**30},
+        {"internal": False, "path": "/run/media/steamos/SD", "install_dir": "/run/media/steamos/SD/FramePort",
+         "label": "SD", "free_bytes": 400 * 2**30}]
+    app.install_many(["com.a"], "frame")
+    assert submitted == ["com.a"] and not dialogs  # the card has room
+    app.frame_drives[1]["free_bytes"] = 20 * 2**30
+    submitted.clear()
+    app.install_many(["com.a"], "frame")
+    assert not submitted and len(dialogs) == 1  # the card is too small: asks first
+
+
 def test_activity_progress_ticks_only_touch_the_progress_controls(monkeypatch):
     """Progress several times a second must not rebuild or re-diff the whole panel (that made the app sluggish)."""
     from types import SimpleNamespace

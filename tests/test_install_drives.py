@@ -136,3 +136,44 @@ def test_pipeline_passes_the_desktop_entry_choice(monkeypatch):
     monkeypatch.setattr(pipeline, "steam_title", lambda e: "Tool")
     pipeline.install_linux("linux.tool", T(), Reporter(), add_to_library=False)
     assert got["desktop_entry"] is False
+
+
+SD = {"internal": False, "path": "/run/media/steamos/SD", "install_dir": "/run/media/steamos/SD/FramePort",
+      "label": "SD", "free_bytes": 50 * 2**30}
+HOME = {"internal": True, "path": "/home", "install_dir": "/home/steamos/Applications/quest-frame",
+        "label": "Internal", "free_bytes": 4 * 2**30}
+
+
+def test_target_drive_new_games_go_to_the_chosen_drive_installed_ones_stay():
+    listed = [HOME, SD]
+    assert drives.target_drive(None, None, listed) is HOME
+    assert drives.target_drive(None, SD["install_dir"], listed) is SD
+    assert drives.target_drive(None, "/run/media/steamos/GONE/FramePort", listed) is None  # card not inserted
+    on_sd = {"package": "a", "drive": {"internal": False, "path": SD["path"], "label": "SD"}}
+    assert drives.target_drive(on_sd, None, listed) is SD
+    assert drives.target_drive({"package": "b"}, SD["install_dir"], listed) is HOME  # agent < v63: internal
+
+
+def test_space_shortfalls_per_drive():
+    """GitHub #205: the warning used internal storage's free space even when new games go to the SD card."""
+    gib = 2**30
+    listed = [HOME, SD]
+    assert drives.space_shortfalls([(None, 30 * gib)], SD["install_dir"], listed, 4 * gib) == []
+    assert drives.space_shortfalls([(None, 30 * gib)], None, listed, 4 * gib) == [(HOME, 30 * gib, 4 * gib)]
+    assert drives.space_shortfalls([(None, 30 * gib), (None, 30 * gib)], SD["install_dir"], listed, 4 * gib) \
+        == [(SD, 60 * gib, 50 * gib)]
+    # an update of a game already on internal storage still counts there
+    inside = {"package": "x", "drive": {"internal": True, "path": "/home", "label": "Internal"}}
+    assert drives.space_shortfalls([(inside, 5 * gib), (None, 30 * gib)], SD["install_dir"], listed, 4 * gib) \
+        == [(HOME, 5 * gib, 4 * gib)]
+    # the chosen card isn't there: the agent refuses that install itself
+    assert drives.space_shortfalls([(None, 30 * gib)], "/run/media/steamos/GONE/FramePort", listed, 4 * gib) == []
+
+
+def test_space_shortfalls_without_a_drive_list():
+    gib = 2**30
+    assert drives.space_shortfalls([(None, 5 * gib)], None, None, 4 * gib)[0][1:] == (5 * gib, 4 * gib)
+    assert drives.space_shortfalls([(None, 5 * gib)], "/run/media/steamos/SD/FramePort", None, 4 * gib) == []
+    on_sd = {"package": "a", "drive": {"internal": False, "path": "/run/media/steamos/SD", "label": "SD"}}
+    assert drives.space_shortfalls([(on_sd, 5 * gib)], None, None, 4 * gib) == []
+    assert drives.space_shortfalls([(None, 5 * gib)], None, [], None) == []  # nothing known

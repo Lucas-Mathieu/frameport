@@ -60,6 +60,39 @@ def is_on(dep: dict | None, d: dict) -> bool:
     return bool(g["internal"]) if d.get("internal") else (not g["internal"] and g["path"] == d["path"])
 
 
+def target_drive(dep: dict | None, dest: str | None, listed: list[dict]) -> dict | None:
+    """The `drives` entry an install lands on: an installed game (its list_installed entry `dep`) stays on its own
+    drive, a new one goes to dest (None = internal storage). None when that drive isn't listed (not inserted)."""
+    if dep is not None:
+        return next((d for d in listed if is_on(dep, d)), None)
+    if dest is None:
+        return next((d for d in listed if d.get("internal")), None)
+    return next((d for d in listed if not d.get("internal") and dest in (d.get("install_dir"), d.get("path"))), None)
+
+
+def space_shortfalls(items: list[tuple[dict | None, int]], dest: str | None, listed: list[dict] | None,
+                     internal_free: int | None, margin: int = 2**30) -> list[tuple[dict, int, int]]:
+    """Drives these installs would overfill: [(drive, bytes needed, bytes free)]. items = [(list_installed entry, or
+    None for a game that isn't on the Frame yet, bytes it uploads)]. Without a drive list (agent before v63, or not
+    fetched yet) only internal storage is checked against `internal_free`, and games headed for another drive are
+    left out; a drive that isn't there or whose free space is unknown is skipped (the agent refuses that install
+    itself)."""
+    if not listed:
+        items = [(dep, n) for dep, n in items
+                 if (dep is None and dest is None) or (dep is not None and (game_drive(dep) or {}).get("internal", True))]
+        need = sum(n for _, n in items)
+        return [({"internal": True}, need, internal_free)] \
+            if items and internal_free is not None and need > internal_free - margin else []
+    need: dict[int, int] = {}
+    for dep, n in items:
+        d = target_drive(dep, dest, listed)
+        if d is not None:
+            need[id(d)] = need.get(id(d), 0) + n
+    return [(d, need[id(d)], int(d["free_bytes"])) for d in listed
+            if id(d) in need and isinstance(d.get("free_bytes"), (int, float))
+            and need[id(d)] > d["free_bytes"] - margin]
+
+
 def move(frame: Frame, package: str, dest: str, reporter: Reporter, poll: float = 2.0,
          timeout: float = 6 * 3600, sleep=time.sleep) -> dict:
     """Move an installed game to `dest` (a drive's install dir or "internal"). The copy runs on the Frame by itself;

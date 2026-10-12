@@ -144,6 +144,8 @@ class FrameView:
         def fill():
             try:
                 found = app.target.drives() if app.target else []
+                if app.target:
+                    app.frame_drives = found  # the space check before queueing installs uses it too
             except Exception as exc:  # noqa: BLE001 - shown in place of the list
                 rows.controls = [C.meta(tr("Couldn't list the Frame's drives: {error}").format(error=explain(exc)))]
                 C.update(rows)
