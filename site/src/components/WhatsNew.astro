@@ -1,7 +1,7 @@
 ---
-// The home page's look at the latest release (src/data/releases.ts): its first changes, the few releases before it
-// and the dev build in testing. The full list is the changelog page.
-import { LATEST, NEXT, RELEASES } from '../data/releases';
+// The home page's look at the latest release (src/data/releases.ts): its first changes and the three releases before
+// it. The full list (and the dev build in testing) is the changelog page.
+import { LATEST, RELEASES } from '../data/releases';
 import { url } from '../data/site';
 
 const before = RELEASES.slice(1, 4);
@@ -12,7 +12,7 @@ const more = LATEST ? LATEST.changes - LATEST.highlights.length : 0;
   <section class="section" id="whats-new">
     <div class="wrap">
       <div class="head reveal">
-        <p class="label"><b>06</b> What's new</p>
+        <p class="label">What's new</p>
         <h2>FramePort {LATEST.version}</h2>
       </div>
 
@@ -35,12 +35,6 @@ const more = LATEST ? LATEST.changes - LATEST.highlights.length : 0;
               </li>
             ))}
           </ol>
-          {NEXT && (
-            <a class="soon" href={url('changelog/#next')}>
-              <span class="pill pill-pc">In testing</span>
-              <span>Coming next: <b>{NEXT.version}</b></span>
-            </a>
-          )}
           <a class="btn btn-secondary btn-small all" href={page()}>All releases</a>
         </div>
       </div>
@@ -75,10 +69,6 @@ const more = LATEST ? LATEST.changes - LATEST.highlights.length : 0;
   .mini time { justify-self: end; align-self: center; }
   .mini .h { grid-column: 1 / -1; color: var(--text-2); font-size: 14px; line-height: 1.45;
     display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-  .soon { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radius-md);
-    border: 1px dashed var(--secondary-line); color: var(--text-2); font-size: 14px; text-decoration: none; }
-  .soon b { color: var(--text); font: 500 13px var(--font-mono); }
-  .soon:hover { background: rgba(58, 168, 255, .06); text-decoration: none; }
   .all { justify-self: start; }
   @media (max-width: 860px) { .wn { grid-template-columns: 1fr; } }
   @media (prefers-reduced-motion: reduce) { .now { transition: none; } .now:hover { transform: none; } }

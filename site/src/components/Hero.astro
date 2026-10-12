@@ -9,7 +9,6 @@ const { games } = Astro.props;
 <section class="hero">
   <div class="hero-in wrap">
     <div class="copy">
-      <p class="eyebrow">For the Steam Frame</p>
       <h1>Your <span class="q">VR games</span>, on the <span class="f">Steam Frame</span></h1>
       <p class="lead">
         FramePort puts Quest games, PC VR games and Android apps on the Steam Frame and in your Steam library. Connect the
@@ -41,9 +40,6 @@ const { games } = Astro.props;
     background: var(--portal-glow); }
   .hero-in { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: clamp(24px, 4vw, 64px);
     align-items: center; }
-  .eyebrow { font: 600 12px/1 var(--font-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--text-2);
-    margin-bottom: 22px; display: flex; align-items: center; gap: 12px; }
-  .eyebrow::before { content: ""; width: 28px; height: 2px; background: var(--portal); }
   h1 { font-size: clamp(42px, 6.4vw, 76px); line-height: 1.0; font-weight: 800; letter-spacing: -0.035em; }
   h1 .q { color: var(--secondary); }
   h1 .f { color: var(--accent); }
@@ -51,7 +47,7 @@ const { games } = Astro.props;
   .ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
   .platforms { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 0; margin: 18px 0 0;
     font: 500 13px/20px var(--font-sans); }
-  .platforms a { color: var(--text-2); text-decoration: none; }
+  .platforms a { display: inline-block; padding-block: 10px; margin-block: -10px; color: var(--text-2); text-decoration: none; }
   .platforms a:hover { color: var(--text); text-decoration: underline; }
   .platforms a[aria-current] { color: var(--accent); }
   .facts { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--border); font: 400 12px/1.6 var(--font-mono);

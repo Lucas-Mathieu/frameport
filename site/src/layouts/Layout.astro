@@ -67,16 +67,20 @@ const feed = new URL(url('changelog/feed.xml'), Astro.site);
           if (label) label.textContent = `Download for ${pick.label}`;
         }
         for (const el of document.querySelectorAll(`[data-os="${pick.os}"]`)) el.setAttribute('aria-current', 'true');
+      } else if (/Android|iPhone|iPad|Mobile/i.test(ua)) {
+        // FramePort runs on a PC: on a phone the buttons lead to the download page's "open this on your PC" state
+        for (const el of document.querySelectorAll('[data-download-label]')) el.textContent = 'Get it on your PC';
       }
     </script>
     <script>
       import { initInteractions } from '../scripts/interactions';
-      // Sections fade in once as they reach the viewport (not with reduced motion: CSS shows them at once).
+      // Sections settle in once as they reach the viewport: a short, small rise (with reduced motion: CSS shows them at
+      // once). Everything is visible without the script.
       const io = new IntersectionObserver((entries) => {
         for (const e of entries) {
           if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
         }
-      }, { rootMargin: '0px 0px -12% 0px' });
+      }, { rootMargin: '0px 0px -8% 0px' });
       document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
       initInteractions();
     </script>

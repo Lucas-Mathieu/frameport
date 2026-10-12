@@ -36,18 +36,21 @@ const videos = [
 <section class="section tour" id="tour">
   <div class="wrap">
     <div class="head reveal">
-      <p class="label"><b>02</b> The app</p>
-      <h2>Try it before you download it</h2>
+      <p class="label">Try the app</p>
+      <h2>Click through FramePort before you download it</h2>
     </div>
 
     <div class="reveal"><AppMock games={games} /></div>
 
-    <div class="shots reveal">
+    <details class="disclose more">
+      <summary>Screenshots and videos of the real app <i aria-hidden="true">▾</i></summary>
+
+    <div class="shots">
       <p class="watch-k">The real app, screenshot by screenshot</p>
       <Carousel slides={shots} />
     </div>
 
-    <div class="watch reveal">
+    <div class="watch">
       <p class="watch-k">Prefer to watch? The real app on video</p>
       <div class="vids">
         {videos.map((v) => (
@@ -60,6 +63,7 @@ const videos = [
         ))}
       </div>
     </div>
+    </details>
   </div>
 
 
@@ -127,6 +131,7 @@ const videos = [
     place-items: center; font-size: 24px; color: var(--text); background: rgba(22, 24, 30, .7); cursor: pointer; }
   .player .close:hover { background: var(--accent); color: var(--on-accent); }
 
-  .shots { margin-top: clamp(40px, 6vw, 64px); display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .more { margin-top: 20px; }
+  .shots { margin-top: 28px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .watch { margin-top: clamp(40px, 6vw, 64px); }
 </style>

@@ -30,3 +30,8 @@ site/src/assets/media/
 site/media-hq/
 site/public/s
 site/public/setup.sh
+
+# Impeccable design-tool files (kept local, not in the repo)
+/PRODUCT.md
+/DESIGN.md
+/.impeccable/

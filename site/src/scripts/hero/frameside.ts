@@ -68,9 +68,12 @@ export function initFrameSide(stage: HTMLElement, host: HTMLElement, firstTitle:
   }
 
   const webgl = hasWebGL();
+  // data saver or a slow connection: no three.js download, the CSS scene underneath stays
+  const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  const lean = conn?.saveData === true || /(^|-)(2g|3g)$/.test(conn?.effectiveType ?? '');
   new IntersectionObserver((es) => {
     visible = es.some((e) => e.isIntersecting);
-    if (visible && !side && !loading && webgl) start();
+    if (visible && !side && !loading && webgl && !lean) start();
     kick();
   }, { rootMargin: '120px' }).observe(stage);
   document.addEventListener('visibilitychange', kick);

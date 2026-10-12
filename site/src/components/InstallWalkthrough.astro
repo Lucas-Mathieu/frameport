@@ -6,6 +6,8 @@ import HeadsetModel from './HeadsetModel.astro';
 import { DOWNLOADS, RELEASES, downloadPage, url } from '../data/site';
 
 const FIRST = Object.fromEntries(DOWNLOADS.map((d) => [d.os, d.first]));
+// what the unpacked folder holds to start, per platform (the Downloads scene shows it)
+const RUN: Record<string, string> = { windows: 'FramePort.exe', macos: 'FramePort.app', linux: 'FramePort', 'linux-arm64': 'FramePort' };
 const LINE = 'curl -fsSL https://frameport.app/s | bash';
 const steps = [
   { side: 'pc', where: 'On your PC', title: 'Download FramePort' },
@@ -35,7 +37,7 @@ const steps = [
         <p>Windows, macOS or Linux. Unpack it anywhere and start it. No installer; it updates itself.</p>
         <div class="dls">
           {DOWNLOADS.map((d) => (
-            <a class="dl" href={downloadPage(d.os)} data-os={d.os} data-first={FIRST[d.os]}>
+            <a class="dl" href={downloadPage(d.os)} data-os={d.os} data-first={FIRST[d.os]} data-asset={d.asset} data-run={RUN[d.os]}>
               <strong>{d.label}</strong><span>{d.detail}</span>
             </a>
           ))}
@@ -45,8 +47,8 @@ const steps = [
       </div>
       <div class="scene pcwin" aria-hidden="true">
         <div class="wbar"><i></i><i></i><i></i><span>Downloads</span></div>
-        <div class="dlrow"><span class="zip">ZIP</span><div><b data-zip>FramePort-windows-x64.zip</b><span class="bar"><i></i></span></div></div>
-        <div class="folder"><span class="fico"></span><b>FramePort</b><span class="exe">FramePort.exe</span></div>
+        <div class="dlrow"><span class="zip" data-kind>ZIP</span><div><b data-zip>FramePort-windows-x64.zip</b><span class="bar"><i></i></span></div></div>
+        <div class="folder"><span class="fico"></span><b>FramePort</b><span class="exe" data-run-out>FramePort.exe</span></div>
       </div>
     </section>
 
@@ -88,6 +90,8 @@ const steps = [
           <p>Open Konsole: SteamVR dashboard → <b>Launch a program → Desktop</b>, then app menu → <b>System → Konsole</b>.
             Run this line:</p>
           <div class="cmd"><code><span class="prompt">$</span>{LINE}</code><button type="button" class="btn btn-ghost btn-small" data-copy-line={LINE}>Copy</button></div>
+          <p class="calm">It finds FramePort on your PC and waits: nothing changes on the Frame until you click
+            <b>Allow</b>. Then it turns on Developer Mode. No password, no root. <a href={url('setup.sh')}>Read the script</a></p>
           <p class="small">No keyboard? Open <a href={url('setup/')}>the setup page</a> in Chromium on the Frame (Steam's
             <b>+</b> on the taskbar installs it) and copy the line.</p>
         </div>
@@ -267,9 +271,14 @@ const steps = [
     const setFirst = (d?: HTMLElement) => {
       if (!d) return;
       if (firstOut) firstOut.textContent = d.dataset.first!;
+      // the real file for that platform (the link itself is the download page, /download/?os=…)
+      const asset = d.dataset.asset ?? 'FramePort-windows-x64.zip';
       const zip = wt.querySelector('[data-zip]');
-      const a = d.getAttribute('href') ?? '';
-      if (zip) zip.textContent = a.split('/').pop() || 'FramePort.zip';
+      if (zip) zip.textContent = asset;
+      const kind = wt.querySelector('[data-kind]');
+      if (kind) kind.textContent = asset.endsWith('.tar.gz') ? 'TAR.GZ' : 'ZIP';
+      const run = wt.querySelector('[data-run-out]');
+      if (run) run.textContent = d.dataset.run ?? 'FramePort';
     };
     requestAnimationFrame(() => setFirst(mine()));
     dls.forEach((d) => {
@@ -294,7 +303,7 @@ const steps = [
   .pip .k { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font: 800 14px/1 var(--font-display);
     background: var(--surface-3); color: var(--text-2); transition: background-color 220ms, color 220ms; }
   .pip .t { display: grid; gap: 1px; min-width: 0; font: 600 13px/1.2 var(--font-sans); color: var(--text-2); }
-  .pip .t small { font: 500 10.5px/1.2 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pip .t small { font: 500 11px/1.2 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pip[aria-selected="true"] { border-color: rgba(255, 138, 31, .55); background: linear-gradient(90deg, rgba(58, 168, 255, .1), rgba(255, 138, 31, .1)); }
   .pip[aria-selected="true"] .t { color: var(--text); }
   .pip.pc[aria-selected="true"] .k, .pip.pc.past .k { background: var(--secondary); color: var(--on-accent); }
@@ -306,12 +315,15 @@ const steps = [
   .pane.on { animation: slide .45s var(--ease-out); }
   @keyframes slide { from { opacity: 0; transform: translateX(calc(var(--dir) * 24px)); } to { opacity: 1; transform: none; } }
   .txt { display: grid; gap: 12px; align-content: start; min-width: 0; }
+  .way-line:not([hidden]) { display: grid; gap: 12px; }
   .txt h3 { font-size: clamp(22px, 2.6vw, 28px); }
   .txt p { color: var(--text-2); }
   .txt b { color: var(--text); font-weight: 600; }
   .ey { font: 600 11px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; }
   .ey.pc { color: var(--secondary); } .ey.fr { color: var(--accent); }
   .small { font-size: 14px; }
+  /* the reassurance next to the one command that changes the Frame: brighter than the hints around it */
+  .txt p.calm { font-size: 14px; color: var(--text); }
   .first { font-size: 14px; min-height: 3em; }
   .dls { display: flex; flex-wrap: wrap; gap: 8px; }
   .dl { display: grid; gap: 2px; padding: 9px 14px; min-width: 130px; border-radius: var(--radius-sm); text-decoration: none;
@@ -334,7 +346,7 @@ const steps = [
   .wbar i { width: 9px; height: 9px; border-radius: 50%; background: var(--surface-3); }
   .wbar span { margin-left: 6px; }
   .dlrow { display: flex; gap: 12px; align-items: center; padding: 18px; }
-  .zip { flex: none; width: 40px; height: 48px; border-radius: 6px; display: grid; place-items: center; font: 800 11px/1 var(--font-display);
+  .zip { flex: none; min-width: 40px; padding-inline: 5px; height: 48px; border-radius: 6px; display: grid; place-items: center; font: 800 11px/1 var(--font-display);
     background: linear-gradient(160deg, var(--secondary-soft), var(--surface-3)); color: var(--secondary); }
   .dlrow > div { display: grid; gap: 8px; flex: 1; min-width: 0; }
   .dlrow b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -403,7 +415,7 @@ const steps = [
   .run .ticks li:nth-child(1) { animation-delay: .3s; } .run .ticks li:nth-child(2) { animation-delay: 1s; }
   .run .ticks li:nth-child(3) { animation-delay: 1.7s; } .run .ticks li:nth-child(4) { animation-delay: 2.4s; }
   @keyframes tick { to { opacity: 1; border-color: rgba(61, 214, 140, .35); } }
-  .run .ticks li::before { animation: tickdot .4s var(--ease-back) forwards; animation-delay: inherit; }
+  .run .ticks li::before { animation: tickdot .4s var(--ease-spring) forwards; animation-delay: inherit; }
   @keyframes tickdot { to { background: var(--ok); transform: scale(1.1); } }
   .conn-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; background: var(--sidebar);
     border: 1px solid var(--border); opacity: 0; transform: translateY(8px); font-size: 13px; }
@@ -424,7 +436,7 @@ const steps = [
   .run .inst .bar i { animation: grow 2.2s var(--ease-out) .3s forwards; }
   .playb { justify-self: start; padding: 9px 14px; border-radius: 8px; background: var(--accent); color: var(--on-accent); font: 600 13px/1 var(--font-sans);
     opacity: 0; transform: scale(.9); }
-  .run .playb { animation: pop .4s var(--ease-back) 2.6s forwards; }
+  .run .playb { animation: pop .4s var(--ease-spring) 2.6s forwards; }
   @keyframes pop { to { opacity: 1; transform: none; } }
   .video { position: relative; display: block; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border); text-decoration: none;
     max-width: 420px; transition: transform 220ms var(--ease-out); }

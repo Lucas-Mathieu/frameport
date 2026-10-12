@@ -88,7 +88,7 @@ const reports = people.filter((p) => p.issues).length;
   .cf button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .cl { margin-top: 6px; color: var(--text-2); font-size: 14px; }
   .wall { list-style: none; margin: 22px 0 6px; padding: 10px 0; display: flex; flex-wrap: wrap; gap: 10px; }
-  .wall li { transition: opacity 300ms, filter 300ms; animation: rise .5s var(--ease-back) both; animation-delay: calc(var(--i) * 18ms); }
+  .wall li { transition: opacity 300ms, filter 300ms; animation: rise .5s var(--ease-spring) both; animation-delay: calc(var(--i) * 18ms); }
   .wall li.dim { opacity: .18; filter: grayscale(1); }
   .wall a { --m: 1; display: block; width: 48px; height: 48px; border-radius: 50%; transform: scale(var(--m)); transform-origin: center bottom;
     transition: transform 160ms var(--ease-out), box-shadow 200ms; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--border-strong); }

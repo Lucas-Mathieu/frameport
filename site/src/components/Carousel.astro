@@ -145,7 +145,7 @@ const { slides } = Astro.props;
   .contain .zoom :global(img) { object-fit: contain; }
   .nav { all: unset; position: absolute; top: 50%; width: 46px; height: 46px; margin-top: -23px; border-radius: 50%; display: grid; place-items: center;
     cursor: pointer; color: var(--text); background: rgba(13, 14, 18, .6); backdrop-filter: blur(8px); border: 1px solid rgba(237, 238, 242, .2);
-    opacity: 0; transition: opacity 220ms, background-color 220ms, transform 320ms var(--ease-back); font-size: 28px; line-height: 1; }
+    opacity: 0; transition: opacity 220ms, background-color 220ms, transform 320ms var(--ease-spring); font-size: 28px; line-height: 1; }
   .prev { left: 14px; } .next { right: 14px; }
   .stage:hover .nav, .nav:focus-visible, .car:focus-within .nav { opacity: 1; }
   .nav:hover { background: var(--accent); color: var(--on-accent); transform: scale(1.08); }

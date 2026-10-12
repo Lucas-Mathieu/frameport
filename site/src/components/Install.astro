@@ -13,7 +13,7 @@ const snippet = `<a href="${pageUrl}?manifest=https%3A%2F%2Fexample.com%2Fmy-gam
 <section class="section" id="install">
   <div class="wrap">
     <div class="head reveal">
-      <p class="label"><b>05</b> Install</p>
+      <p class="label">Get started</p>
       <h2>From the download to your first game</h2>
     </div>
 
@@ -26,14 +26,20 @@ const snippet = `<a href="${pageUrl}?manifest=https%3A%2F%2Fexample.com%2Fmy-gam
         <h3>An "Install with FramePort" button</h3>
         <p class="muted">Put it on your download page. A click opens FramePort, which installs your game on the
           visitor's Frame.</p>
-        <div class="badge-row"><InstallBadge id="makers" href={url('install/?manifest=https%3A%2F%2Fframeport.app%2Fdemo%2Fcool-game.json')}
-          label="Try it: a demo install link (nothing is downloaded)" /><span class="try">← try it</span></div>
         <a class="small" href={url('docs/install-button/')}>How to add the button</a>
       </div>
-      <div class="snippet">
-        <div class="snippet-bar"><span>HTML</span><button type="button" class="btn btn-ghost btn-small" data-copy>Copy</button></div>
-        <pre><code data-snippet>{snippet}</code></pre>
+      <div class="makers-demo">
+        <InstallBadge id="makers" href={url('install/?manifest=https%3A%2F%2Fframeport.app%2Fdemo%2Fcool-game.json')}
+          label="Try it: a demo install link (nothing is downloaded)" />
+        <span class="try">Try it: a demo link, nothing is downloaded</span>
       </div>
+      <details class="disclose makers-code">
+        <summary>Show the HTML <i aria-hidden="true">▾</i></summary>
+        <div class="snippet">
+          <div class="snippet-bar"><span>HTML</span><button type="button" class="btn btn-ghost btn-small" data-copy>Copy</button></div>
+          <pre><code data-snippet>{snippet}</code></pre>
+        </div>
+      </details>
     </div>
   </div>
 </section>
@@ -51,17 +57,21 @@ const snippet = `<a href="${pageUrl}?manifest=https%3A%2F%2Fexample.com%2Fmy-gam
 <style>
   .others { margin-top: 14px; font-size: 14px; color: var(--text-2); }
   .small { font-size: 14px; }
-  .makers { margin-top: clamp(48px, 7vw, 80px); display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 32px;
-    padding: 32px; border-radius: var(--radius-md); border: 1px dashed var(--border-strong); background: var(--portal-glow); }
-  .makers-copy { display: grid; gap: 14px; align-content: start; }
+  /* the game-maker panel: what it is on the left, the button itself on a small stage on the right, the HTML behind a click */
+  .makers { margin-top: clamp(48px, 7vw, 80px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px 32px;
+    padding: clamp(22px, 3vw, 32px); border-radius: var(--radius-md); border: 1px dashed var(--border-strong); background: var(--portal-glow); }
+  .makers-copy { display: grid; gap: 12px; align-content: start; }
   .makers-copy .label { margin-bottom: 0; }
   .makers-copy h3 { font-size: 24px; }
-  .badge-row { display: flex; align-items: center; gap: 14px; margin-block: 6px; }
-  .try { font: 500 13px/1 var(--font-mono); color: var(--text-2); }
-  .snippet { min-width: 0; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border);
-    overflow: hidden; align-self: start; }
+  .makers-copy .muted { max-width: 52ch; }
+  .makers-demo { display: grid; place-items: center; align-content: center; gap: 14px; padding: 28px 20px; border-radius: var(--radius-md);
+    background: rgba(5, 6, 8, .45); border: 1px solid var(--border); }
+  .try { font: 500 12.5px/1.3 var(--font-mono); color: var(--text-2); text-align: center; }
+  .makers-code { grid-column: 1 / -1; }
+  .makers-code[open] > summary { margin-bottom: 12px; }
+  .snippet { min-width: 0; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
   .snippet-bar { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 6px 16px;
     border-bottom: 1px solid var(--border); font: 600 11px/1 var(--font-mono); letter-spacing: .12em; color: var(--text-2); }
   .snippet pre { margin: 0; padding: 16px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: var(--text); }
-  @media (max-width: 760px) { .makers { grid-template-columns: 1fr; padding: 22px 18px; } }
+  @media (max-width: 760px) { .makers { grid-template-columns: minmax(0, 1fr); } }
 </style>

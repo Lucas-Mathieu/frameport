@@ -34,7 +34,7 @@ const logo = readFileSync(join(process.cwd(), '..', 'src/frameport/ui/icons/logo
 <style>
   .ib { --mx: 56%; --my: 65%; position: relative; display: inline-flex; align-items: center; gap: 10px; width: 216px; height: 60px; padding: 0 14px 0 10px;
     box-sizing: border-box; border-radius: 12px; overflow: hidden; text-decoration: none; isolation: isolate;
-    background: #0d0e12; border: 1px solid #2a2d37; transition: transform 320ms var(--ease-back), border-color 220ms, box-shadow 220ms; }
+    background: #0d0e12; border: 1px solid #2a2d37; transition: transform 320ms var(--ease-spring), border-color 220ms, box-shadow 220ms; }
   .ib:hover { transform: translateY(-2px) scale(1.03); border-color: rgba(255, 138, 31, .6); box-shadow: 0 10px 30px rgba(0, 0, 0, .5), 0 0 24px rgba(255, 138, 31, .25); }
   .ib:active { transform: scale(.97); }
   .ib:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -46,7 +46,7 @@ const logo = readFileSync(join(process.cwd(), '..', 'src/frameport/ui/icons/logo
   .ib:hover .ib-core { opacity: 1; }
   .ib.pressed::after { content: ""; position: absolute; left: var(--mx); top: var(--my); width: 20px; height: 20px; margin: -10px; border-radius: 50%;
     border: 2px solid var(--secondary); animation: ibring .6s var(--ease-out) forwards; pointer-events: none; }
-  .ib :global(.ib-logo) { width: 40px; height: 40px; flex: none; transition: transform 600ms var(--ease-back); }
+  .ib :global(.ib-logo) { width: 40px; height: 40px; flex: none; transition: transform 600ms var(--ease-spring); }
   .ib:hover :global(.ib-logo) { transform: rotate(-8deg) scale(1.06); }
   .ib-text { display: grid; gap: 2px; line-height: 1; }
   .ib-text small { font: 700 9.5px/1 var(--font-sans); letter-spacing: .14em; text-transform: uppercase; color: #a7abb7; }

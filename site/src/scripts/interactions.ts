@@ -1,29 +1,9 @@
-// Small reactions all over the page (styles in global.css under "everything reacts"). None of them is needed to read
-// or use the page; with reduced motion only the ones that don't move stay (count-ups show their number at once).
+// Small reactions all over the page (styles in global.css under "small reactions"), kept quiet: a click ripple, labels
+// that decode once, headings whose words rise in, count-ups, the hero leaning away on scroll, the install log completing.
+// None of them is needed to read or use the page; with reduced motion only the ones that don't move stay (count-ups
+// show their number at once).
 
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const fine = matchMedia('(pointer: fine)').matches;
-
-/** A soft portal light under the pointer. */
-function cursorLight() {
-  if (reduce || !fine) return;
-  const light = document.createElement('div');
-  light.className = 'cursor-light';
-  light.setAttribute('aria-hidden', 'true');
-  document.body.append(light);
-  let x = innerWidth / 2, y = innerHeight / 2, tx = x, ty = y, raf = 0;
-  const step = () => {
-    x += (tx - x) * 0.18; y += (ty - y) * 0.18;
-    light.style.transform = `translate(${x}px, ${y}px)`;
-    if (Math.abs(tx - x) + Math.abs(ty - y) > 0.5) raf = requestAnimationFrame(step); else raf = 0;
-  };
-  addEventListener('pointermove', (e) => {
-    tx = e.clientX; ty = e.clientY;
-    light.classList.add('on');
-    if (!raf) raf = requestAnimationFrame(step);
-  }, { passive: true });
-  document.addEventListener('pointerleave', () => light.classList.remove('on'));
-}
 
 /** Clicking empty space: the app's Play ripple, a blue ring then an orange one. Mouse (and pen) only: on a touch
  * screen every tap or scroll start would draw it. */
@@ -44,7 +24,7 @@ function clickRipples() {
   });
 }
 
-/** Headings: the portal's colours light the letters under the pointer; words rise in when the heading appears. */
+/** Headings: the words rise in when the heading appears. */
 function headings() {
   document.querySelectorAll<HTMLElement>('main h2, .prose h1').forEach((h) => {
     if (!reduce && !h.dataset.split) {
@@ -70,18 +50,10 @@ function headings() {
       wrap(h);
       h.classList.add('words');
     }
-    if (!fine) return;
-    h.addEventListener('pointermove', (e) => {
-      const r = h.getBoundingClientRect();
-      h.style.setProperty('--hx', `${e.clientX - r.left}px`);
-      h.style.setProperty('--hy', `${e.clientY - r.top}px`);
-      h.classList.add('lit');
-    });
-    h.addEventListener('pointerleave', () => h.classList.remove('lit'));
   });
 }
 
-/** Section labels unscramble the first time they show; hover scrambles them again. */
+/** Section labels decode the first time they show. */
 function labels() {
   const GLYPHS = '01<>/\\|=+*#%·-_';
   const scramble = (el: HTMLElement) => {
@@ -108,7 +80,6 @@ function labels() {
       } else if (n.nodeType === Node.ELEMENT_NODE) (n as Element).classList.add('scr');
     }
     io.observe(l);
-    l.addEventListener('pointerenter', () => l.querySelectorAll<HTMLElement>('.scr').forEach(scramble));
   });
 }
 
@@ -189,7 +160,6 @@ function logScroll() {
 }
 
 export function initInteractions() {
-  cursorLight();
   clickRipples();
   headings();
   labels();

@@ -59,6 +59,8 @@ const builds = DOWNLOADS.map((d) => ({ os: d.os, label: d.label, detail: d.detai
         <span class="sha" data-sha-wrap hidden>SHA-256 <code data-sha></code><button type="button" data-copysha>Copy</button></span>
         <a href={RELEASES}>Release notes</a>
       </p>
+      <p class="trust">Windows and macOS warn the first time you open FramePort: it's signed by its developer, not with a
+        paid certificate. Each release lists every file's SHA-256 in SHA256SUMS.txt to check it.</p>
     </section>
 
     <section class="wrap next" aria-labelledby="next-h">
@@ -284,7 +286,7 @@ const builds = DOWNLOADS.map((d) => ({ os: d.os, label: d.label, detail: d.detai
   .arrive { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px; display: grid; place-items: center; border-radius: 50%;
     background: var(--accent); color: var(--on-accent); font: 800 24px/1 var(--font-display); box-shadow: 0 0 40px rgba(255, 138, 31, .7);
     transform: translateX(clamp(175px, 22vw, 300px)) scale(0); opacity: 0; z-index: 2; }
-  [data-state="sent"] .arrive { animation: arrive 700ms 780ms var(--ease-back) forwards; }
+  [data-state="sent"] .arrive { animation: arrive 700ms 780ms var(--ease-spring) forwards; }
   .flare { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px; border-radius: 50%; opacity: 0; z-index: 1;
     background: radial-gradient(circle, #fff, rgba(255, 138, 31, .8) 30%, transparent 70%); }
   [data-state="sent"] .flare { animation: flare 900ms 560ms ease-out forwards; }
@@ -327,6 +329,7 @@ const builds = DOWNLOADS.map((d) => ({ os: d.os, label: d.label, detail: d.detai
   [data-state="counting"] .builds, [data-state="sent"] .builds { opacity: .7; }
   .facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; font-size: 13px; color: var(--text-3); margin: 0; }
   .facts[hidden], .sha[hidden] { display: none; }
+  .trust { max-width: 62ch; margin: 14px auto 0; text-align: center; font-size: 13.5px; line-height: 1.55; color: var(--text-2); }
   .facts > span:empty { display: none; }
   .sha code { font-size: 12px; color: var(--text-2); }
   .sha button { all: unset; cursor: pointer; margin-left: 6px; color: var(--secondary); }

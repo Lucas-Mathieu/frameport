@@ -1,5 +1,6 @@
-/* FramePort Portal, for the web. Colour values are the app's (src/frameport/ui/theme.py, theme "portal"). Dark only:
-   the app has no light theme and neither does its page. */
+/* FramePort Portal, for the web. Colour values are the app's (src/frameport/ui/theme.py, theme "portal"), except
+   --text-3: the app's #717583 is below 4.5:1 for the small print it carries here, so the page uses a lighter step.
+   Dark only: the app has no light theme and neither does its page. */
 
 @font-face {
   font-family: Sora;
@@ -22,7 +23,7 @@
   --border-strong: #393d49;
   --text: #edeef2;
   --text-2: #a7abb7;
-  --text-3: #717583;
+  --text-3: #868a96; /* 4.77:1 on --surface-2, 5.15:1 on --surface */
   --accent: #ff8a1f;
   --accent-soft: #3a2512;
   --on-accent: #160c03;
@@ -53,7 +54,7 @@
   --tilt: 18deg; /* the logo's portal tilt */
 
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1); /* a light overshoot: small things land with a little give */
 
   --gutter: clamp(16px, 4vw, 40px);
   --page: 1180px;
@@ -69,22 +70,12 @@ body {
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
-/* film grain: keeps the large dark areas from looking like flat plastic */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 100;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
 img, video, svg { display: block; max-width: 100%; }
 a { color: var(--accent); text-underline-offset: 3px; }
 a:hover { text-decoration-thickness: 2px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
 ::selection { background: rgba(255, 138, 31, 0.35); color: var(--text); }
+::placeholder { color: var(--text-2); opacity: 1; }
 
 h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; }
 h2 { font-size: clamp(30px, 4.2vw, 44px); line-height: 1.1; font-weight: 800; letter-spacing: -0.02em; }
@@ -93,13 +84,13 @@ p { margin: 0; text-wrap: pretty; }
 code, kbd, pre { font-family: var(--font-mono); }
 
 .wrap { width: min(100% - 2 * var(--gutter), var(--page)); margin-inline: auto; }
-.section { padding-block: clamp(56px, 7vw, 96px); position: relative; }
+.section { padding-block: clamp(48px, 6vw, 80px); position: relative; }
 .lead { color: var(--text-2); font-size: clamp(16px, 1.6vw, 18px); line-height: 1.6; max-width: 62ch; }
 .muted { color: var(--text-2); }
 
 /* section label: "02 · The app" + the portal hairline, the app's section label for the web */
 .label {
-  display: flex; align-items: center; gap: 14px; margin-bottom: 20px;
+  display: flex; align-items: center; gap: 14px; margin-bottom: 12px;
   font: 600 12px/1 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-2);
 }
 .label b { color: var(--text); font-weight: 600; }
@@ -124,7 +115,7 @@ code, kbd, pre { font-family: var(--font-mono); }
   font: 600 15px/20px var(--font-sans); text-decoration: none; cursor: pointer; white-space: nowrap;
   color: var(--text); background: transparent;
   transition: background-color 220ms var(--ease-out), border-color 220ms var(--ease-out), filter 220ms var(--ease-out),
-    transform 320ms var(--ease-back);
+    transform 320ms var(--ease-spring);
 }
 .btn:active { transform: scale(0.97); }
 .btn-primary { background: var(--accent); color: var(--on-accent); }
@@ -153,9 +144,14 @@ code, kbd, pre { font-family: var(--font-mono); }
 .cmd .prompt { color: var(--text-3); user-select: none; margin-right: 8px; }
 .cmd .ph { color: var(--secondary); }
 
-/* scroll reveal (script in Layout); without JS or with reduced motion, everything is simply shown */
-.js .reveal { opacity: 0; transform: translateY(18px); transition: opacity 700ms var(--ease-out), transform 700ms var(--ease-out); }
-.js .reveal.in { opacity: 1; transform: none; }
+/* a disclosure: one quiet button that opens more of the same thing (the app's screenshots, the full comparison) */
+.disclose > summary { list-style: none; display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px;
+  border-radius: var(--radius-sm); border: 1px solid var(--secondary-line); cursor: pointer; font: 600 14px/20px var(--font-sans);
+  color: var(--text); transition: background-color 200ms var(--ease-out); }
+.disclose > summary::-webkit-details-marker { display: none; }
+.disclose > summary:hover { background: rgba(58, 168, 255, .08); }
+.disclose > summary i { font-style: normal; color: var(--secondary); transition: transform 300ms var(--ease-out); }
+.disclose[open] > summary i { transform: rotate(180deg); }
 
 .visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);
   white-space: nowrap; }
@@ -164,7 +160,6 @@ code, kbd, pre { font-family: var(--font-mono); }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important; }
-  .js .reveal { opacity: 1; transform: none; }
 }
 
 /* documentation pages (rendered from docs/*.md) */
@@ -193,7 +188,7 @@ code, kbd, pre { font-family: var(--font-mono); }
   background: var(--surface); color: var(--text-2); font: 600 12px/1.4 var(--font-sans); cursor: pointer; opacity: 0; transition: opacity 150ms; }
 .prose pre:hover .copy, .prose pre .copy:focus-visible { opacity: 1; }
 .prose pre .copy:hover { color: var(--text); border-color: var(--accent); }
-.prose blockquote { padding: 12px 16px; border-left: 3px solid var(--secondary); background: rgba(58, 168, 255, .06); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; color: var(--text-2); }
+.prose blockquote { padding: 12px 16px; border: 1px solid rgba(58, 168, 255, .3); background: rgba(58, 168, 255, .06); border-radius: var(--radius-sm); color: var(--text-2); }
 .prose blockquote p:last-child { margin: 0; }
 .prose img { max-width: 100%; height: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); }
 .prose hr { border: 0; border-top: 1px solid var(--border); margin: 32px 0; }
@@ -205,36 +200,33 @@ code, kbd, pre { font-family: var(--font-mono); }
 .prose details { margin: 0 0 16px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .prose summary { cursor: pointer; font-weight: 600; }
 
-/* ---------------- everything reacts (scripts/interactions.ts) ---------------- */
-.cursor-light { position: fixed; left: 0; top: 0; z-index: 90; width: 420px; height: 420px; margin: -210px 0 0 -210px; border-radius: 50%;
-  pointer-events: none; opacity: 0; transition: opacity 500ms; mix-blend-mode: screen;
-  background: radial-gradient(closest-side, rgba(255, 138, 31, .028), rgba(58, 168, 255, .018) 45%, transparent 75%); }
-.cursor-light.on { opacity: 1; }
+/* ---------------- small reactions (scripts/interactions.ts): quiet, and none of them needed to read the page */
+/* sections settle in once: a short rise (scroll reveal script in Layout; without JS everything is simply shown) */
+.js .reveal { opacity: 0; transform: translateY(10px); transition: opacity 600ms var(--ease-out), transform 600ms var(--ease-out); }
+.js .reveal.in { opacity: 1; transform: none; }
+
+/* clicking empty space: the app's Play ripple, faint */
 .click-ring { position: fixed; z-index: 95; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; pointer-events: none;
   border: 1px solid var(--secondary); opacity: 0; animation: click-ring .55s var(--ease-out) both; }
 .click-ring.o { border-color: var(--accent); }
 @media (hover: none) { .click-ring { display: none; } }
-@keyframes click-ring { 0% { opacity: .45; transform: scale(1); } 100% { opacity: 0; transform: scale(2.6); } }
+@keyframes click-ring { 0% { opacity: .3; transform: scale(1); } 100% { opacity: 0; transform: scale(2.4); } }
 
-/* headings: words rise in, the pointer lights them in the portal's colours */
+/* headings: the words rise in, one after another */
 .words .w { display: inline-block; }
-.js .reveal .words .w, .js .words.pre .w { opacity: 0; transform: translateY(.45em) rotate(2deg); }
-.js .reveal.in .words .w { opacity: 1; transform: none; transition: opacity 1150ms var(--ease-out), transform 1300ms var(--ease-back);
-  transition-delay: calc(var(--wi) * 110ms + 200ms); }
-.words.lit { background: radial-gradient(180px circle at var(--hx) var(--hy), var(--accent), var(--secondary) 45%, var(--text) 75%) text;
-  -webkit-background-clip: text; color: transparent; }
-.words.lit .muted { color: transparent; }
+.js .reveal .words .w, .js .words.pre .w { opacity: 0; transform: translateY(.3em); }
+.js .reveal.in .words .w { opacity: 1; transform: none; transition: opacity 700ms var(--ease-out), transform 800ms var(--ease-out);
+  transition-delay: calc(var(--wi) * 60ms + 120ms); }
 
-/* section labels */
+/* section labels: they decode once (tabular digits keep them still), the portal line draws in */
 .label .scr { font-variant-numeric: tabular-nums; }
-.label:hover { color: var(--text); cursor: default; }
 @supports (animation-timeline: view()) {
   .label::after { transform-origin: left; animation: label-line linear both; animation-timeline: view(); animation-range: entry 20% cover 45%; }
   @keyframes label-line { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 }
 
-/* icons: each moves in its own way when what holds it is pointed at */
-.glyph { transition: transform 400ms var(--ease-back); }
+/* icons: each moves in its own small way when what holds it is pointed at */
+.glyph { transition: transform 400ms var(--ease-spring); }
 :is(a, button, li, .stage, .hcard, label):hover > .glyph-sync, :is(a, button, li, .stage):hover .g > .glyph-sync { animation: g-spin .9s var(--ease-out); }
 :is(a, button, li, .stage):hover :is(.glyph-frame, .glyph-frame-solid) { animation: g-nod .7s var(--ease-out); }
 :is(a, button, li, .stage):hover .glyph-pc { animation: g-flicker .6s steps(2) 2; }
@@ -244,7 +236,7 @@ code, kbd, pre { font-family: var(--font-mono); }
 :is(a, button, li, .stage):hover .glyph-test { transform: rotate(14deg) translateY(-1px); }
 :is(a, button, li, .stage):hover .glyph-port { transform: translateX(3px); }
 :is(a, button, li, .stage):hover .glyph-recipe { transform: rotateY(180deg); }
-:is(a, button, li, .stage):hover .glyph-container { animation: g-pop .5s var(--ease-back); }
+:is(a, button, li, .stage):hover .glyph-container { animation: g-pop .5s var(--ease-spring); }
 :is(a, button, li, .stage):hover .glyph-shot { animation: g-flash .5s ease-out; }
 :is(a, button, li, .stage):hover .glyph-link { transform: rotate(-20deg) scale(1.1); }
 @keyframes g-spin { to { transform: rotate(360deg); } }
@@ -255,32 +247,35 @@ code, kbd, pre { font-family: var(--font-mono); }
 @keyframes g-pop { 40% { transform: scale(1.3) rotate(-6deg); } }
 @keyframes g-flash { 30% { filter: drop-shadow(0 0 6px currentColor) brightness(1.8); } }
 
-/* links in running text: the underline wipes in, blue to orange */
+/* links in running text: the portal underline; it thickens under the pointer */
 :is(.lead, .muted, .small, .small-p, .src, .cl, .cu, .foot, .first, .notice-band, .prose) a:not(.btn):not(.anchor) {
   text-decoration: none; background: linear-gradient(90deg, var(--secondary), var(--accent)) left bottom / 100% 1px no-repeat;
-  transition: background-size 350ms var(--ease-out), color 200ms; padding-bottom: 1px; }
-:is(.lead, .muted, .small, .small-p, .src, .cl, .cu, .foot, .first, .notice-band, .prose) a:not(.btn):not(.anchor):hover { background-size: 100% 100%; color: var(--on-accent); border-radius: 3px; }
+  transition: background-size 200ms var(--ease-out); padding-bottom: 1px; }
+:is(.lead, .muted, .small, .small-p, .src, .cl, .cu, .foot, .first, .notice-band, .prose) a:not(.btn):not(.anchor):hover { background-size: 100% 2px; }
 
-/* the hero flies toward its portal as you scroll away */
-.hero .copy { transform: translateY(calc(var(--sp, 0) * -60px)); opacity: calc(1 - var(--sp, 0) * 1.1); }
-.hero .scene { transform: scale(calc(1 + var(--sp, 0) * .35)) translateY(calc(var(--sp, 0) * 40px)); transform-origin: 50% 45%;
-  filter: blur(calc(var(--sp, 0) * 3px)); opacity: calc(1 - var(--sp, 0) * .7); }
+/* the hero leans back toward its portal as you scroll away (gently) */
+.hero .copy { transform: translateY(calc(var(--sp, 0) * -30px)); opacity: calc(1 - var(--sp, 0) * .9); }
+.hero .scene { transform: scale(calc(1 + var(--sp, 0) * .15)) translateY(calc(var(--sp, 0) * 20px)); transform-origin: 50% 45%;
+  filter: blur(calc(var(--sp, 0) * 1.5px)); opacity: calc(1 - var(--sp, 0) * .5); }
 
-@media (prefers-reduced-motion: reduce) {
-  .words .w { opacity: 1 !important; transform: none !important; }
-  .hero .copy, .hero .scene { transform: none; opacity: 1; filter: none; }
-}
-.step .num { display: inline-block; transition: transform 500ms var(--ease-back), filter 300ms; }
-.step:hover .num { transform: scale(1.15) rotate(-8deg); filter: drop-shadow(0 6px 18px rgba(255, 138, 31, .35)); }
-.notice-band .mark { transition: transform 400ms var(--ease-back); }
+.step .num { display: inline-block; transition: transform 500ms var(--ease-spring), filter 300ms; }
+.step:hover .num { transform: scale(1.1) rotate(-6deg); filter: drop-shadow(0 6px 18px rgba(255, 138, 31, .3)); }
+.notice-band .mark { transition: transform 400ms var(--ease-spring); }
 .notice-band:hover .mark { animation: wiggle .6s ease-in-out; }
-@keyframes wiggle { 25% { transform: rotate(-14deg) scale(1.1); } 50% { transform: rotate(10deg); } 75% { transform: rotate(-6deg); } }
-.wordmark svg { transition: transform 700ms var(--ease-back); }
+@keyframes wiggle { 25% { transform: rotate(-10deg) scale(1.06); } 50% { transform: rotate(7deg); } 75% { transform: rotate(-4deg); } }
+.wordmark svg { transition: transform 700ms var(--ease-spring); }
 .wordmark:hover svg, a:hover > .wordmark svg { transform: rotate(180deg); }
-:is(.chip, .tab, .with button, .cf button, .seg button):active { transform: scale(.94); }
+:is(.chip, .tab, .with button, .cf button, .seg button):active { transform: scale(.95); }
 .built li { transition: background-color 250ms, padding-left 300ms var(--ease-out); border-radius: 4px; }
 .built li:hover { background: linear-gradient(90deg, rgba(58, 168, 255, .08), transparent); padding-left: 10px; }
-@media (prefers-reduced-motion: reduce) { .step:hover .num, .wordmark:hover svg, a:hover > .wordmark svg { transform: none; } .notice-band:hover .mark { animation: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .js .reveal { opacity: 1; transform: none; }
+  .words .w { opacity: 1 !important; transform: none !important; }
+  .hero .copy, .hero .scene { transform: none; opacity: 1; filter: none; }
+  .step:hover .num, .wordmark:hover svg, a:hover > .wordmark svg { transform: none; }
+  .notice-band:hover .mark { animation: none; }
+}
 
 /* ---------------------------------------------------------------- docs: what scripts/docs-ui.ts adds to the pages */
 .prose .term { border-bottom: 1px dotted var(--secondary-line); cursor: help; transition: color 160ms, border-color 160ms; outline: none; }
