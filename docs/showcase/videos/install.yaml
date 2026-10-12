@@ -111,7 +111,7 @@ scenes:
       - hook: {name: pairing_done, args: [1.6]}
       - wait_for: "Ready to play"
       - wait: 1.2
-      - hover: "Quest games (Lepton)"
+      - hover: "Quest games"
       - wait: 1.6
 
   - name: add-games
