@@ -288,9 +288,8 @@ class SettingsView:
             app.toast(tr("Removed the theme \"{name}\"").format(name=name))
 
         async def install(e):
-            files = await ft.FilePicker().pick_files(dialog_title=tr("Theme file to install"),
-                                                     allowed_extensions=["json"])
-            path = next((f.path for f in files or [] if f.path), None)
+            path = next(iter(await C.pick_files(app.page, dialog_title=tr("Theme file to install"),
+                                                extensions=["json"])), None)
             if not path:
                 return
             try:

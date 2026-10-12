@@ -127,9 +127,8 @@ def show_custom_art_dialog(app: FramePortApp, package: str) -> None:
             app.toast(message)
 
     async def choose(kind: str, label: str) -> None:
-        files = await ft.FilePicker().pick_files(dialog_title=tr("Image for the {label}").format(label=label),
-                                                 allowed_extensions=["png", "jpg", "jpeg", "webp"])
-        path = next((f.path for f in files or [] if f.path), None)
+        path = next(iter(await C.pick_files(app.page, dialog_title=tr("Image for the {label}").format(label=label),
+                                            extensions=["png", "jpg", "jpeg", "webp"])), None)
         if not path:
             return
 

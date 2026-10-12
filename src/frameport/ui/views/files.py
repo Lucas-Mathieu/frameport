@@ -503,13 +503,12 @@ class FilesView:
 
     # ---------------------------------------------------------------- actions
     async def upload_files(self, e=None):
-        files = await ft.FilePicker().pick_files(allow_multiple=True)
-        paths = [Path(f.path) for f in files or [] if f.path]
+        paths = [Path(p) for p in await C.pick_files(self.app.page, multiple=True)]
         if paths:
             self.upload(paths)
 
     async def upload_folder(self, e=None):
-        path = await ft.FilePicker().get_directory_path(dialog_title=tr("Folder to upload to the Frame"))
+        path = await C.pick_dir(self.app.page, dialog_title=tr("Folder to upload to the Frame"))
         if path:
             self.upload([Path(path)])
 
@@ -528,7 +527,7 @@ class FilesView:
                    open_panel=True)
 
     async def download(self, items: list) -> None:
-        folder = await ft.FilePicker().get_directory_path(dialog_title=tr("Download to which folder on this PC?"))
+        folder = await C.pick_dir(self.app.page, dialog_title=tr("Download to which folder on this PC?"))
         if not folder:
             return
         app, root = self.app, self.loc["path"]

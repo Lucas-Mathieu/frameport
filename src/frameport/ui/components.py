@@ -1,13 +1,17 @@
 """Reusable GUI building blocks (all styling comes from ui.theme)."""
 from __future__ import annotations
 
+import asyncio
 import re
+import sys
 from collections.abc import Callable
+from pathlib import Path
 from types import SimpleNamespace
 from typing import NamedTuple
 
 import flet as ft
 
+from ..core import pickers
 from ..i18n import tr
 from . import glyphs
 from . import glyphs as G  # G.NAME at call sites, like the other modules
@@ -1077,6 +1081,81 @@ def confirm(page: ft.Page, heading: str, text: str, ok_label: str, on_ok: Callab
     page.show_dialog(dialog(heading, content, [ghost(tr("Cancel"), on_click=lambda e: page.pop_dialog()),
                                                (_danger if danger else primary)(ok_label, on_click=go)],
                             size="s"))
+
+
+# ------------------------------------------------------------------------------------------ file pickers
+_no_portal = False  # Flet's picker failed once for lack of a desktop portal: go straight to the fallback
+
+
+async def pick_files(page: ft.Page, dialog_title: str | None = None, multiple: bool = False,
+                     extensions: list[str] | None = None) -> list[str]:
+    """Ask for files (their paths; [] = cancelled). Without a desktop portal (Linux, GitHub #208) this goes through
+    zenity/kdialog, else a "type the path" box."""
+    return await _pick(page, dialog_title, False, multiple, extensions)
+
+
+async def pick_dir(page: ft.Page, dialog_title: str | None = None) -> str | None:
+    """Ask for a folder (None = cancelled); same fallbacks as pick_files."""
+    paths = await _pick(page, dialog_title, True, False, None)
+    return paths[0] if paths else None
+
+
+async def _pick(page: ft.Page, title: str | None, directory: bool, multiple: bool,
+                extensions: list[str] | None) -> list[str]:
+    global _no_portal
+    if not _no_portal:
+        try:
+            if directory:
+                path = await ft.FilePicker().get_directory_path(dialog_title=title)
+                return [path] if path else []
+            files = await ft.FilePicker().pick_files(dialog_title=title, allow_multiple=multiple,
+                                                     allowed_extensions=extensions)
+            return [f.path for f in files or [] if f.path]
+        except Exception as exc:
+            if getattr(page, "web", False) or not pickers.portal_missing(exc, sys.platform):
+                raise
+            _no_portal = True
+    tool = pickers.choose_tool()
+    if tool:
+        cmd = pickers.argv(*tool, directory=directory, multiple=multiple, title=title, extensions=extensions)
+        try:
+            return await asyncio.to_thread(pickers.run, cmd)
+        except pickers.PickerError:
+            pass  # (a broken zenity/kdialog: the typed path still works)
+    return await _ask_path(page, title, directory)
+
+
+async def _ask_path(page: ft.Page, heading: str | None, directory: bool) -> list[str]:
+    """The last fallback: a box for a typed path, checked to exist before it's taken."""
+    loop = asyncio.get_running_loop()
+    answer: asyncio.Future = loop.create_future()
+
+    def finish(paths: list[str]) -> None:
+        loop.call_soon_threadsafe(lambda: answer.done() or answer.set_result(paths))
+
+    label = tr("Folder") if directory else tr("File")
+    box = field(label=label, autofocus=True, width=T.DIALOG_S)
+
+    def go(e=None):
+        p = Path((box.value or "").strip().strip('"')).expanduser()
+        if not (p.is_dir() if directory else p.is_file()):
+            box.error_text = tr("No folder at that path") if directory else tr("No file at that path")
+            update(box)
+            return
+        page.pop_dialog()
+        finish([str(p)])
+
+    def cancel(e=None):
+        page.pop_dialog()
+        finish([])
+    box.on_submit = go
+    text = body(tr("This system has no file picker. Type the full path, or install zenity or kdialog to "
+                   "browse instead."), color=T.TEXT_2)
+    page.show_dialog(dialog(heading or (tr("Choose a folder") if directory else tr("Choose a file")),
+                            ft.Column([text, box], spacing=T.S3, tight=True),
+                            [ghost(tr("Cancel"), on_click=cancel), primary(tr("OK"), on_click=go)], size="s",
+                            on_dismiss=lambda e: finish([])))
+    return await answer
 
 
 def progress_bar(value: float | None = None, color: str | None = None) -> ft.ProgressBar:

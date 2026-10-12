@@ -496,8 +496,8 @@ class ScreenshotsView:
             await self.download(list(self.shots))
 
     async def download(self, shots: list[dict]) -> None:
-        folder = await ft.FilePicker().get_directory_path(
-            dialog_title=tr("Save the screenshots to which folder on this PC?"))
+        folder = await C.pick_dir(self.app.page,
+                                  dialog_title=tr("Save the screenshots to which folder on this PC?"))
         if not folder:
             return
         app = self.app

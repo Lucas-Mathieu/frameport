@@ -1963,28 +1963,23 @@ class FramePortApp:
 
     # ================================================================== library
     async def pick_folder(self, e=None):
-        path = await ft.FilePicker().get_directory_path(
-            dialog_title=tr("Folder with games (APKs or PC VR games)"))
+        path = await C.pick_dir(self.page, dialog_title=tr("Folder with games (APKs or PC VR games)"))
         if path:
             self.scan(path)
 
     async def pick_game_folder(self, e=None):
-        path = await ft.FilePicker().get_directory_path(dialog_title=tr("One PC game folder"))
+        path = await C.pick_dir(self.page, dialog_title=tr("One PC game folder"))
         if path:
             self.scan(path, single=True)
 
     async def pick_apk(self, e=None):
-        files = await ft.FilePicker().pick_files(allow_multiple=True, allowed_extensions=["apk"])
-        for f in files or []:
-            if f.path:
-                self.scan(f.path)
+        for path in await C.pick_files(self.page, multiple=True, extensions=["apk"]):
+            self.scan(path)
 
     async def pick_windows_exe(self, e=None):
-        files = await ft.FilePicker().pick_files(dialog_title=tr("A Windows program (.exe)"), allow_multiple=True,
-                                                 allowed_extensions=["exe"])
-        for f in files or []:
-            if f.path:
-                self.add_windows_exe(f.path)
+        for path in await C.pick_files(self.page, dialog_title=tr("A Windows program (.exe)"), multiple=True,
+                                       extensions=["exe"]):
+            self.add_windows_exe(path)
 
     def add_windows_exe(self, path: str) -> Job:
         """One Windows program: run by Proton on the Frame (flat unless it has VR), like "Add one game folder…"."""
@@ -2043,18 +2038,15 @@ class FramePortApp:
         from ..analysis import linux
 
         title = tr("A Linux app (AppImage, .zip or .tar.gz)")
-        files = await ft.FilePicker().pick_files(dialog_title=title, allow_multiple=True)
-        for f in files or []:
-            if not f.path:
-                continue
-            if linux.looks_like_linux_app(Path(f.path)):
-                self.add_linux(f.path)
+        for path in await C.pick_files(self.page, dialog_title=title, multiple=True):
+            if linux.looks_like_linux_app(Path(path)):
+                self.add_linux(path)
             else:
                 self.toast(tr("{name} isn't a Linux app (AppImage, Linux program or .zip/.tar archive)")
-                           .format(name=Path(f.path).name), error=True)
+                           .format(name=Path(path).name), error=True)
 
     async def pick_linux_folder(self, e=None):
-        path = await ft.FilePicker().get_directory_path(dialog_title=tr("Folder with a Linux app"))
+        path = await C.pick_dir(self.page, dialog_title=tr("Folder with a Linux app"))
         if path:
             self.add_linux(path)
 
