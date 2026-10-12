@@ -75,13 +75,15 @@ static int surf_native_load(void) {
     return sn.client && sn.create && sn.destroy && sn.bind;
 }
 static void surf_native_slot_destroy(surf_native_slot *slot) {
+    if(slot->srgb_view)sn.destroy_view(vk.device,slot->srgb_view,NULL);
+    slot->srgb_view=VK_NULL_HANDLE;
     if(slot->view)sn.destroy_view(vk.device,slot->view,NULL);
     if(slot->image)sn.destroy_image(vk.device,slot->image,NULL);
     if(slot->memory)sn.free_memory(vk.device,slot->memory,NULL);
     if(slot->buffer)sn.release(slot->buffer);
     slot->view=VK_NULL_HANDLE;slot->image=VK_NULL_HANDLE;slot->memory=VK_NULL_HANDLE;slot->buffer=NULL;
 }
-static int surf_native_allocate(surf_native_slot *slot,EGLDisplay display,uint32_t width,uint32_t height) {
+static int surf_native_allocate(surf_native_slot *slot,EGLDisplay display,uint32_t width,uint32_t height,int projected) {
     AHardwareBuffer_Desc desc={.width=width,.height=height,.layers=1,
         .format=AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM,
         .usage=AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE|AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT};
@@ -91,11 +93,14 @@ static int surf_native_allocate(surf_native_slot *slot,EGLDisplay display,uint32
     if(sn.properties(vk.device,slot->buffer,&props)!=VK_SUCCESS || format.format!=VK_FORMAT_R8G8B8A8_UNORM)goto fail;
     VkExternalMemoryImageCreateInfo external={VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,NULL,
         VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID};
-    VkImageCreateInfo image={VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,&external,0,VK_IMAGE_TYPE_2D,format.format,
+    VkImageCreateInfo image={VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,&external,projected?VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT:0,VK_IMAGE_TYPE_2D,format.format,
         {width,height,1},1,1,VK_SAMPLE_COUNT_1_BIT,VK_IMAGE_TILING_OPTIMAL,
         VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
         VK_SHARING_MODE_EXCLUSIVE,0,NULL,VK_IMAGE_LAYOUT_UNDEFINED};
-    if(sn.create_image(vk.device,&image,NULL,&slot->image)!=VK_SUCCESS)goto fail;
+    if(sn.create_image(vk.device,&image,NULL,&slot->image)!=VK_SUCCESS) {
+        image.flags=0;projected=0;
+        if(sn.create_image(vk.device,&image,NULL,&slot->image)!=VK_SUCCESS)goto fail;
+    }
     uint32_t type=0;while(type<32 && !(props.memoryTypeBits&(1u<<type)))type++;
     if(type==32)goto fail;
     VkImportAndroidHardwareBufferInfoANDROID imported={VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID,NULL,slot->buffer};
@@ -106,6 +111,10 @@ static int surf_native_allocate(surf_native_slot *slot,EGLDisplay display,uint32
     VkImageViewCreateInfo view={VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,NULL,0,slot->image,VK_IMAGE_VIEW_TYPE_2D,
         format.format,{0,0,0,0},{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
     if(sn.create_view(vk.device,&view,NULL,&slot->view)!=VK_SUCCESS)goto fail;
+    if(projected) {
+        view.format=VK_FORMAT_R8G8B8A8_SRGB;
+        if(sn.create_view(vk.device,&view,NULL,&slot->srgb_view)!=VK_SUCCESS)slot->srgb_view=VK_NULL_HANDLE;
+    }
     slot->egl_image=sn.create(display,EGL_NO_CONTEXT,EGL_NATIVE_BUFFER_ANDROID,sn.client(slot->buffer),NULL);
     if(slot->egl_image==EGL_NO_IMAGE_KHR)goto fail;
     p_glGenTextures(1,&slot->texture);p_glBindTexture(GL_TEXTURE_2D,slot->texture);
@@ -239,7 +248,7 @@ static void surf_native_worker(surf_swapchain *s,JNIEnv *env,EGLDisplay display)
             if(slot->texture)p_glDeleteTextures(1,&slot->texture);
             if(slot->egl_image)sn.destroy(display,slot->egl_image);
             slot->texture=0;slot->egl_image=EGL_NO_IMAGE_KHR;surf_native_slot_destroy(slot);
-            if(!surf_native_allocate(slot,display,width,height))goto fail;
+            if(!surf_native_allocate(slot,display,width,height,s->native_project))goto fail;
             LOG("surface_native: %ux%u decoded input -> %ux%u shared view",desc.width,desc.height,width,height);
         }
         p_glBindFramebuffer(GL_FRAMEBUFFER,fbo);
@@ -295,11 +304,12 @@ done:
 static void surf_native_complete(surf_swapchain *s) {
     pthread_mutex_lock(&surf_lock);
     if(s->native_pending>=0)s->native_slots[s->native_pending].state=0;
+    for(int i=0;i<SURF_NATIVE_SLOTS;i++)if(s->native_slots[i].state==4)s->native_slots[i].state=0;
     s->native_pending=-1;pthread_mutex_unlock(&surf_lock);
 }
 static void surf_native_ownership(VkCommandBuffer command,surf_native_slot *slot,int acquire) {
-    VkAccessFlags access=slot->projected?VK_ACCESS_TRANSFER_READ_BIT:VK_ACCESS_SHADER_READ_BIT;
-    VkImageLayout layout=slot->projected?VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkAccessFlags access=slot->projected && !slot->sampled?VK_ACCESS_TRANSFER_READ_BIT:VK_ACCESS_SHADER_READ_BIT;
+    VkImageLayout layout=slot->projected && !slot->sampled?VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkImageMemoryBarrier barrier={VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,NULL,
         acquire?0:access,acquire?access:0,
         acquire?VK_IMAGE_LAYOUT_GENERAL:layout,

@@ -629,7 +629,21 @@ def test_foveation_choice_sets_the_launcher_env_and_wins_over_lepton_env():
                                       "device.lepton_env": {"env": {"VK_INSTANCE_LAYERS": "VK_LAYER_x"}}})
     assert install_context(r).env["VK_INSTANCE_LAYERS"] == ""  # applied last, whatever the recipe's order
     r = Recipe("com.x.game", patches={"device.foveation": {"mode": "fixed"}})
-    assert install_context(r).env == {"FDM_DEBUG": "disable_offsets"}
+    assert install_context(r).env == {"ENABLE_VULKAN_FDM_INJECTION_LAYER": "1",
+                                      "FDM_DEBUG": "enable,disable_offsets"}
+
+
+def test_explicit_eye_tracked_foveation_enables_injection_without_debug_spam():
+    from frameport.install.installer import install_context
+
+    r = Recipe("com.x.game", patches={"device.foveation": {"mode": "tracked"},
+                                     "device.lepton_env": {"env": {"FDM_DEBUG": "disable_offsets", "FOVE_LEVEL": "2"}}})
+    env = install_context(r).env
+    assert env["ENABLE_VULKAN_FDM_INJECTION_LAYER"] == "1"
+    assert env["FDM_DEBUG"] == "enable"  # no frozen gaze or per-frame logging
+    assert env["FOVE_LEVEL"] == "2"  # retain independently configured quality
+    assert "VK_INSTANCE_LAYERS" not in env  # keep Steam's other layers
+    assert install_context(Recipe("com.x.game", patches={"device.foveation": {"mode": ""}})).env == {}
 
 
 def test_catalog_foveation_reaches_the_recipe(monkeypatch):
@@ -641,6 +655,14 @@ def test_catalog_foveation_reaches_the_recipe(monkeypatch):
     r = engine.suggest(_analysis(package="com.drbeef.rtcwquest", engine="Other", libs=["libopenxr_loader.so"],
                                  extra={"size": 1}))
     assert r.params("device.foveation") == {"mode": "off"}
+    entry.foveation = "tracked"
+    entry.foveation_radius = 0.3
+    entry.foveation_test = True
+    loaded = catalog.CatalogEntry.from_dict(yaml_load(catalog.to_yaml(entry)), "bundled")
+    assert (loaded.foveation_radius, loaded.foveation_test) == (0.3, True)
+    r = engine.suggest(_analysis(package=entry.package, engine="Other", libs=["libopenxr_loader.so"],
+                                 extra={"size": 1}))
+    assert r.params("device.foveation") == {"mode": "tracked", "radius": 0.3, "test": True}
 
 
 def yaml_load(text):

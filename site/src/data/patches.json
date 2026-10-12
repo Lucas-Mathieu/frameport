@@ -341,7 +341,7 @@
  },
  "device.foveation": {
   "anchor": "device-foveation",
-  "title": "Eye-tracked foveation (Valve)",
+  "title": "Foveated rendering (Valve)",
   "group": "Files and settings on the Frame"
  },
  "device.hide_navbar": {

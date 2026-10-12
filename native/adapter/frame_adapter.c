@@ -91,6 +91,10 @@ static void surf_on_destroy(XrSwapchain handle);
 
 static float scale = 1.0f;
 static int foveation_fix = 1;
+static int foveation_storage_fix; // opt-in ordinary shared storage for native Vulkan foveation
+static int foveation_eye; // experimental profile upgrade; does not inject Vulkan gaze offsets
+static int foveation_eye_enabled, foveation_eye_supported;
+#include "foveation_storage.h"
 // hide XR_FB_space_warp: games then render every frame themselves (UE5 Application SpaceWarp flickered on the Frame,
 // e.g. Into The Radius 2; OVRPort's patch_disable_space_warp doesn't reach UE5's OpenXR plugin)
 static int hide_space_warp = 0;
@@ -162,6 +166,8 @@ static void read_settings(const char *path) {
     while (fgets(line, sizeof(line), f)) {
         if (sscanf(line, "scale=%f", &value) == 1 && value >= 0.5f && value <= 2.0f) scale = value;
         if (sscanf(line, "foveation_fix=%f", &value) == 1) foveation_fix = value != 0;
+        if (sscanf(line, "foveation_storage_fix=%f", &value) == 1) foveation_storage_fix = value != 0;
+        if (sscanf(line, "foveation_eye=%f", &value) == 1) foveation_eye = value != 0;
         if (sscanf(line, "hide_space_warp=%f", &value) == 1) hide_space_warp = value != 0;
         if (sscanf(line, "strip_color_bias=%f", &value) == 1) strip_color_bias = (int)value;
         if (sscanf(line, "frame_balance=%f", &value) == 1) frame_balance = value != 0;
@@ -317,7 +323,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo *info
     }
 
     XrInstanceCreateInfo fixed = *info;
-    const char **names = calloc(info->enabledExtensionCount + 3, sizeof(*names));
+    const char **names = calloc(info->enabledExtensionCount + 7, sizeof(*names));
     if (!names) { free(available); return XR_ERROR_OUT_OF_MEMORY; }
     uint32_t kept = 0;
     for (uint32_t i = 0; i < info->enabledExtensionCount; ++i) {
@@ -363,6 +369,34 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo *info
         for (uint32_t i = 0; i < kept; ++i) requested |= !strcmp(names[i], "XR_FB_display_refresh_rate");
         for (uint32_t j = 0; available && j < available_count; ++j) offered |= !strcmp(available[j].extensionName, "XR_FB_display_refresh_rate");
         if (!requested && offered) { names[kept++] = "XR_FB_display_refresh_rate"; LOG("added XR_FB_display_refresh_rate (refresh_rate)"); }
+    }
+    foveation_eye_enabled = 0;
+    if (foveation_eye && !foveation_fix) {
+        int fb = 0, config = 0, offered = 0;
+        for (uint32_t i = 0; i < kept; ++i) {
+            fb |= !strcmp(names[i], "XR_FB_foveation");
+            config |= !strcmp(names[i], "XR_FB_foveation_configuration");
+            foveation_eye_enabled |= !strcmp(names[i], "XR_META_foveation_eye_tracked");
+        }
+        for (uint32_t i = 0; available && i < available_count; ++i)
+            offered |= !strcmp(available[i].extensionName, "XR_META_foveation_eye_tracked");
+        if (!foveation_eye_enabled && fb && config && offered) {
+            names[kept++] = "XR_META_foveation_eye_tracked";
+            foveation_eye_enabled = 1;
+        }
+    }
+    // Adapter-owned video outputs need an explicit full-rate profile even when
+    // the shared injection layer enables foveation for application swapchains.
+    if (surface_emul) {
+        const char *video_extensions[] = {"XR_FB_foveation", "XR_FB_foveation_configuration",
+            "XR_FB_swapchain_update_state"};
+        for (unsigned e = 0; e < 3; ++e) {
+            int requested = 0, offered = 0;
+            for (uint32_t i = 0; i < kept; ++i) requested |= !strcmp(names[i], video_extensions[e]);
+            for (uint32_t i = 0; available && i < available_count; ++i)
+                offered |= !strcmp(available[i].extensionName, video_extensions[e]);
+            if (offered && !requested) names[kept++] = video_extensions[e];
+        }
     }
     fixed.enabledExtensionNames = names;
     fixed.enabledExtensionCount = kept;
@@ -535,12 +569,55 @@ static int known_swapchain(XrSwapchain handle) {
     return found;
 }
 
+XRAPI_ATTR XrResult XRAPI_CALL xrCreateFoveationProfileFB(XrSession session,
+        const XrFoveationProfileCreateInfoFB *info, XrFoveationProfileFB *profile) {
+    PFN_xrCreateFoveationProfileFB fn = (PFN_xrCreateFoveationProfileFB)lookup(active_instance, "xrCreateFoveationProfileFB");
+    if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    if (!info) return XR_ERROR_VALIDATION_FAILURE;
+    const XrBaseInStructure *p = info->next;
+    if (foveation_storage_fix || foveation_eye) LOG("foveation profile create: next_type=%d", p ? p->type : 0);
+    if (!p || p->type == XR_TYPE_FOVEATION_LEVEL_PROFILE_CREATE_INFO_FB) {
+        XrFoveationLevelProfileCreateInfoFB level = {XR_TYPE_FOVEATION_LEVEL_PROFILE_CREATE_INFO_FB};
+        if (p) level = *(const XrFoveationLevelProfileCreateInfoFB *)p;
+        if (foveation_storage_fix || foveation_eye)
+            LOG("foveation profile: level=%d dynamic=%d eye_requested=%d supported=%d", level.level, level.dynamic,
+                foveation_eye, foveation_eye_supported);
+        if (foveation_eye && !foveation_fix && foveation_eye_supported && !level.next && level.level != XR_FOVEATION_LEVEL_NONE_FB) {
+            XrFoveationEyeTrackedProfileCreateInfoMETA eye = {XR_TYPE_FOVEATION_EYE_TRACKED_PROFILE_CREATE_INFO_META};
+            XrFoveationProfileCreateInfoFB fixed = *info;
+            level.next = &eye;
+            fixed.next = &level;
+            XrResult result = fn(session, &fixed, profile);
+            LOG("foveation profile: eye-tracked upgrade result=%d", result);
+            if (XR_SUCCEEDED(result)) return result;
+        }
+    }
+    return fn(session, info, profile);
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL xrGetFoveationEyeTrackedStateMETA(XrSession session, XrFoveationEyeTrackedStateMETA *state) {
+    PFN_xrGetFoveationEyeTrackedStateMETA fn = (PFN_xrGetFoveationEyeTrackedStateMETA)lookup(active_instance, "xrGetFoveationEyeTrackedStateMETA");
+    if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    XrResult result = fn(session, state);
+    static unsigned queries;
+    if (foveation_eye && state && XR_SUCCEEDED(result) && (++queries % 240 == 1))
+        LOG("foveation gaze consumed by app: valid=%llu left=%.3f,%.3f right=%.3f,%.3f", (unsigned long long)state->flags,
+            state->foveationCenter[0].x, state->foveationCenter[0].y, state->foveationCenter[1].x, state->foveationCenter[1].y);
+    return result;
+}
+
 XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwapchainCreateInfo *info,
         XrSwapchain *swapchain) {
     PFN_xrCreateSwapchain fn = (PFN_xrCreateSwapchain)lookup(active_instance, "xrCreateSwapchain");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
     if (!info) return XR_ERROR_VALIDATION_FAILURE;
     XrSwapchainCreateInfo fixed = *info;
+    FbStorageNode storage_nodes[16];
+    if (!foveation_fix && foveation_storage_fix) {
+        int changed = fb_foveation_storage(&fixed, storage_nodes);
+        LOG("foveation_storage_fix: shared allocation %s", changed > 0 ? "SUBSAMPLED cleared" :
+            changed < 0 ? "unchanged (unsupported chain prefix)" : "already ordinary or no META node");
+    }
     if (foveation_fix) {
         // Drop leading foveation structs; the chain is const so only a prefix can be skipped.
         const XrBaseInStructure *p = (const XrBaseInStructure *)fixed.next;
@@ -1017,6 +1094,15 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance instance, const XrSess
     if (result == XR_ERROR_GRAPHICS_REQUIREMENTS_CALL_MISSING && ask_graphics_requirements(instance, info))
         result = fn(instance, info, session);
     if (XR_SUCCEEDED(result)) {
+        foveation_eye_supported = 0;
+        if (foveation_eye_enabled) {
+            PFN_xrGetSystemProperties properties = (PFN_xrGetSystemProperties)lookup(instance, "xrGetSystemProperties");
+            XrSystemFoveationEyeTrackedPropertiesMETA eye = {XR_TYPE_SYSTEM_FOVEATION_EYE_TRACKED_PROPERTIES_META};
+            XrSystemProperties sys = {XR_TYPE_SYSTEM_PROPERTIES, &eye};
+            if (properties && XR_SUCCEEDED(properties(instance, info->systemId, &sys)))
+                foveation_eye_supported = eye.supportsFoveationEyeTracked;
+            LOG("foveation eye capability: %d", foveation_eye_supported);
+        }
         flip_emul = flip_emul_setting;
         flip_on_create_session(info);
         scene_on_create_session(*session);
@@ -1753,6 +1839,25 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
                 }
             }
         }
+        // SteamVR ignores Batman's projection colour-scale blackout. An opaque
+        // frame has a black background, so omit a fully black primary scene;
+        // later loading UI layers keep their order. Never do this for passthrough,
+        // alpha-blended projections, partial fades, or an already composed video.
+        if(surface_native && i==0 && count==0 &&
+           info->environmentBlendMode==XR_ENVIRONMENT_BLEND_MODE_OPAQUE &&
+           layer->type==XR_TYPE_COMPOSITION_LAYER_PROJECTION &&
+           !(layer->layerFlags&XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT)) {
+            const XrCompositionLayerColorScaleBiasKHR *black=NULL;
+            for(const XrBaseInStructure *n=layer->next;n;n=n->next)
+                if(n->type==XR_TYPE_COMPOSITION_LAYER_COLOR_SCALE_BIAS_KHR)black=(const void*)n;
+            if(black && black->colorScale.r==0 && black->colorScale.g==0 && black->colorScale.b==0 &&
+               black->colorScale.a==1 && black->colorBias.r==0 && black->colorBias.g==0 &&
+               black->colorBias.b==0 && black->colorBias.a==0) {
+                static int black_logged;
+                if(!black_logged++)LOG("loading blackout: omitted fully black primary projection; later UI retained");
+                ++dropped;continue;
+            }
+        }
         kept[count++] = layer;
     }
     XrFrameEndInfo fixed = *info;
@@ -1918,6 +2023,12 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateApiLayerProperties(uint32_t capacity, 
 // For native/xrshim: emulated functions that overport's dispatcher doesn't know (it never asks us for them).
 __attribute__((visibility("default"))) PFN_xrVoidFunction framebridge_extension_proc(const char *name) {
     pthread_once(&init_once, initialize);
+    if (name && !foveation_fix && (foveation_storage_fix || foveation_eye)) {
+        if (!strcmp(name, "xrCreateFoveationProfileFB")) return (PFN_xrVoidFunction)xrCreateFoveationProfileFB;
+        if (!strcmp(name, "xrGetFoveationEyeTrackedStateMETA")) return (PFN_xrVoidFunction)xrGetFoveationEyeTrackedStateMETA;
+        if (!strcmp(name, "xrDestroyFoveationProfileFB") || !strcmp(name, "xrUpdateSwapchainFB") ||
+            !strcmp(name, "xrGetSwapchainStateFB")) return lookup(active_instance, name);
+    }
     if(surface_native && name){
 #define NATIVE_PROC(fn) if(!strcmp(name,#fn))return (PFN_xrVoidFunction)fn;
         NATIVE_PROC(xrGetVulkanGraphicsDeviceKHR)
@@ -1967,6 +2078,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const 
     HOOK(xrCreateInstance)
     HOOK(xrEnumerateViewConfigurationViews)
     HOOK(xrCreateSwapchain)
+    HOOK(xrCreateFoveationProfileFB)
+    HOOK(xrGetFoveationEyeTrackedStateMETA)
     HOOK(xrDestroySwapchain)
     HOOK(xrEndFrame)
     HOOK(xrBeginFrame)

@@ -24,6 +24,15 @@ def test_healthy_log():
     assert r.fps == 72.2
 
 
+def test_foveation_skipped_is_diagnostic_not_an_automatic_game_failure():
+    log = LOG_OK + "09-28 17:39:06.000  1147  1174 D com.valvesoftware.fdm: *** fdm_injection_CreateInstance: skipped ***\n"
+    r = triage(log, "RUNNING", "com.example.game")
+    finding = next(f for f in r.findings if f.id == "foveation-instance-skipped")
+    assert finding.severity == "info"
+    assert finding.suggest == []
+    assert r.verdict == "pass"
+
+
 def test_failures_map_to_patches():
     r = triage(LOG_BAD, "EXITED", "com.example.game")
     ids = {f.id for f in r.findings}

@@ -68,6 +68,10 @@ def suggest(analysis: Analysis, use_catalog: bool = True) -> Recipe:
             recipe.reasons["device.config_sync"] = why
         if entry.foveation:
             recipe.patches["device.foveation"] = {"mode": entry.foveation}
+            if entry.foveation_radius:
+                recipe.patches["device.foveation"]["radius"] = entry.foveation_radius
+            if entry.foveation_test:
+                recipe.patches["device.foveation"]["test"] = True
             recipe.reasons["device.foveation"] = why
         recipe.alt_patches = list(entry.alt_overport)
         recipe.use_alt = entry.use_alt

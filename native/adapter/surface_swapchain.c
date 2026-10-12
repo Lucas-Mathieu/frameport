@@ -24,17 +24,17 @@
 typedef struct {
     AHardwareBuffer *buffer;
     VkImage image;
-    VkImageView view;
+    VkImageView view, srgb_view;
     VkDeviceMemory memory;
     EGLImageKHR egl_image;
     GLuint texture;
     uint32_t width,height;
-    int state; // 0 reusable, 1 worker writing, 2 published, 3 current/pending Vulkan sampler
+    int state; // 0 reusable, 1 worker writing, 2 published, 3 current/pending Vulkan sampler, 4 awaiting release fence
     uint64_t seq;
     uint32_t source_width,source_height;
     int64_t source_time;
     surf_video_job video;
-    int projected;
+    int projected, sampled;
 } surf_native_slot;
 
 #define SURF_MAX 8

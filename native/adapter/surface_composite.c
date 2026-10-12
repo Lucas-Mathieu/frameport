@@ -189,6 +189,7 @@ static int sc_setup(XrSession session,surf_projection *p,surf_composite *c) {
         XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT|XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT,
         VK_FORMAT_R8G8B8A8_SRGB,1,2*p->size,p->size,1,1,1};
     if(!create || !enumerate || XR_FAILED(create(session,&ci,&c->output)))goto fail;
+    surf_video_full_rate(session,c->output);
     XrSwapchainImageVulkanKHR images[MAX_IMAGES];
     for(int i=0;i<MAX_IMAGES;i++)images[i]=(XrSwapchainImageVulkanKHR){XR_TYPE_SWAPCHAIN_IMAGE_VULKAN_KHR};
     if(XR_FAILED(enumerate(c->output,MAX_IMAGES,&c->count,(void*)images)) || !c->count || c->count>MAX_IMAGES) {
@@ -258,7 +259,7 @@ static int sc_setup(XrSession session,surf_projection *p,surf_composite *c) {
     VkResult result=spvk.CreateGraphicsPipelines(vk.device,VK_NULL_HANDLE,1,&pci,NULL,&c->pipeline);
     for(int k=0;k<2;k++)spvk.DestroyShaderModule(vk.device,modules[k],NULL);
     if(result!=VK_SUCCESS)goto fail;
-    LOG("surface_composite: one primary stereo scene, %ux%u per eye",p->size,p->size);return 1;
+    LOG("surface_composite: one primary full-rate raster stereo scene, %ux%u per eye",p->size,p->size);return 1;
 fail:
     surf_composite_destroy(p);c->failed=1;
     LOG("surface_composite: setup failed; retaining ordinary composition");return 0;
@@ -305,8 +306,9 @@ static const XrCompositionLayerBaseHeader *surf_composite_frame(XrSession sessio
         {{0,0},{2*p->size,p->size}},0,NULL};
     spvk.CmdBeginRenderPass(cmd,&rbi,VK_SUBPASS_CONTENTS_INLINE);
     spvk.CmdBindPipeline(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,c->pipeline);
+    VkImageView video_view=s->native_current>=0?s->native_slots[s->native_current].srgb_view:p->video_cache_view;
     for(int e=0;e<2;e++) {
-        VkDescriptorImageInfo di[2]={{c->sampler,p->video_cache_view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+        VkDescriptorImageInfo di[2]={{c->sampler,video_view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
             {c->sampler,sources[e]->view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
         VkWriteDescriptorSet writes[2];
         for(int k=0;k<2;k++)writes[k]=(VkWriteDescriptorSet){VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,NULL,c->sets[index][e],k,0,1,

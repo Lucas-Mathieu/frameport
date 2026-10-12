@@ -6,6 +6,14 @@
 # with diagnostics. Launch tests and real play sessions (agent session_log, `frameport session`) are both matched.
 # Sources: every failure we hit porting 34 games to the Steam Frame (see docs/PLAYBOOK.md).
 signatures:
+  - id: foveation-instance-skipped
+    pattern: 'fdm_injection_CreateInstance: skipped'
+    severity: info
+    diagnosis: Valve's foveation layer skipped a Vulkan instance. This may be a helper instance; it does not prove
+      that every game render pass lacks foveation. Compare with instance-created and render-pass diagnostics.
+      For a compatible renderer, Customize > Eye-tracked foveation > Eye-tracked explicitly enables injection.
+      Verify image quality and GPU time before retaining it; a loaded layer alone is not proof of active foveation.
+    suggest: []
   - id: no-launcher
     pattern: 'APP_ACTIVITY is empty'
     severity: fatal

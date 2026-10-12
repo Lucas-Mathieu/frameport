@@ -126,7 +126,7 @@ SUMMARIES = {
     "device.steam_gamepad": "Lets the game use your controllers as a gamepad instead of a pointer, for 2D games with "
                             "touch controls (for example SDL games).",
     "device.lepton_env": "Extra settings for the Android container (for testing).",
-    "device.foveation": "Try Fixed or Off if one eye shimmers or jitters while menus look fine.",
+    "device.foveation": "Render less detail outside your gaze; adjust the full-resolution area or darken coarse regions to test it.",
     # PC VR
     "pcvr.repack_launcher": "Starts the game with the launcher that came with your copy.",
     "pcvr.launch_args": "Starts the game with options, for example to choose SteamVR or OpenXR.",
