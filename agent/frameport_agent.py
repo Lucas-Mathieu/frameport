@@ -4580,7 +4580,8 @@ def cmd_finalize_linux(args):
            "sha256": args.get("exe_sha256"),
            "missing_libraries": missing, "recipe": args.get("recipe"), "installed_by": "frameport",
            "launcher": {"env": args.get("env") or {}}, "desktop_entry": args.get("desktop_entry", True) is not False,
-           "desktop_icon": args.get("desktop_icon", True) is not False, "files": {"app": want or {}}, "agent_version": AGENT_VERSION, "time": time.time()}
+           "desktop_icon": args.get("desktop_icon", True) is not False, "files": {"app": want or {}},
+           "agent_version": AGENT_VERSION, "time": time.time()}
     with open(os.path.join(anchor, "deployment.json"), "w") as f:
         json.dump(dep, f, indent=2)
     try:  # the app's own icon (GitHub #99), found again for every install: a new version may bring another

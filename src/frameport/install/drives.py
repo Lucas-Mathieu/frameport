@@ -78,8 +78,8 @@ def space_shortfalls(items: list[tuple[dict | None, int]], dest: str | None, lis
     left out; a drive that isn't there or whose free space is unknown is skipped (the agent refuses that install
     itself)."""
     if not listed:
-        items = [(dep, n) for dep, n in items
-                 if (dep is None and dest is None) or (dep is not None and (game_drive(dep) or {}).get("internal", True))]
+        items = [(dep, n) for dep, n in items if (dep is None and dest is None)
+                 or (dep is not None and (game_drive(dep) or {}).get("internal", True))]
         need = sum(n for _, n in items)
         return [({"internal": True}, need, internal_free)] \
             if items and internal_free is not None and need > internal_free - margin else []

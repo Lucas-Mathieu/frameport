@@ -1556,7 +1556,8 @@ class FramePortApp:
                     if ok else tr("{get} is installed on {where}, but the launch test needs a look")
                     .format(get=g.get('title'), where=where))
         job_title = tr("Update the app of {title} on Frame").format(title=self._title(pkg)) if apk_only else \
-            tr("Install {title} on {value}").format(title=self._title(pkg), value='Frame' if to == 'frame' else 'this PC')
+            tr("Install {title} on {value}").format(title=self._title(pkg),
+                                                     value='Frame' if to == 'frame' else 'this PC')
         job = self.submit(job_title, run, pkg, "install", to=to)
         job.apk_only = apk_only  # "Resume" after a failure repeats the same kind of update
         return job

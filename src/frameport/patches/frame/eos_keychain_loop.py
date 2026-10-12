@@ -1,14 +1,14 @@
-"""Epic Online Services (EOS SDK's Android Java part, com.epicgames.mobile.eossdk.EOSSDK) keeps its login keychain in
-SharedPreferences. When it can't write there, createKeychain() calls resetKeychain(), which calls createKeychain() again,
-without end: Beyond Sandbox (GitHub #214) logged that pair ~13,500 times, a 1.85 GB launch.log at 100 % CPU, and never
-got past its start. The trigger there was the app's missing internal storage (a game on a drive whose name has a space,
-fixed in the agent's launcher); this patch is the guard for any other cause: resetKeychain() returns at once (in-place
-classes.dex edit, see vivox_audio_route), so a failed keychain stays failed and EOS reports it to the game instead of
-looping. Only that one method changes; EOS logins that work never call it."""
+"""Epic Online Services (EOS SDK's Android Java part, com.epicgames.mobile.eossdk.EOSSDK) keeps its login keychain
+in SharedPreferences. When it can't write there, createKeychain() calls resetKeychain(), which calls createKeychain()
+again, without end: Beyond Sandbox (GitHub #214) logged that pair ~13,500 times, a 1.85 GB launch.log at 100 % CPU,
+and never got past its start. The trigger there was the app's missing internal storage (a game on a drive whose name
+has a space, fixed in the agent's launcher); this patch is the guard for any other cause: resetKeychain() returns at
+once (in-place classes.dex edit, see vivox_audio_route), so a failed keychain stays failed and EOS reports it to the
+game instead of looping. Only that one method changes; EOS logins that work never call it."""
 from __future__ import annotations
 
 from ...apk.dex import Dex
-from ..base import ApkContext, Patch, Suggestion, register
+from ..base import ApkContext, Patch, register
 
 EOSSDK = "Lcom/epicgames/mobile/eossdk/EOSSDK;"
 METHOD = "resetKeychain"
