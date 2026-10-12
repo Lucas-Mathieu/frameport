@@ -562,9 +562,10 @@ class DeviceFiles(Patch):
     def detect(self, a):
         if (a.engine == "CryEngine" and a.graphics.startswith("Vulkan")
                 or (a.engine == "CryEngine" and "libCryRenderVulkan.so" in a.libs)):
+            cvar = "r_vr_foveated" if (a.extra or {}).get("cryengine_vr_foveated") else "r_variable_rate_shading"
             return Suggestion(True, "CryEngine: variable-rate shading isn't supported on the Frame, so user.cfg turns "
-                                    "it off (r_variable_rate_shading = 0; for example The Climb 2).",
-                              {"files": {"user.cfg": "r_variable_rate_shading = 0\n"}})
+                                    f"it off ({cvar} = 0; The Climb / The Climb 2).",
+                              {"files": {"user.cfg": f"{cvar} = 0\n"}})
         return None
 
     def install(self, ctx: InstallContext) -> None:

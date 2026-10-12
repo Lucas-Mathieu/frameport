@@ -1084,6 +1084,7 @@ Lets games built on Meta's oldest VR interface run on the Frame.
 - **Catalog games (3):** BlazeRush, Path of the Warrior, The Climb 2.
 - **Suggested by launch-test signatures:**
   - `direct-vrapi` (warning): The game uses Meta's VrApi directly and needs the VrApi bridge.
+  - `vrapi-frame-rejected` (fatal): The VrApi bridge rejected the game's frame options, so no picture reaches the headset even though frame pacing can appear in the log.
 - **Source:** [patches/frame/vrapi_bridge.py](../src/frameport/patches/frame/vrapi_bridge.py)
 
 > Replaces libvrapi.so with a VrApi→OpenXR bridge (Android-XR-Bridge/OVRPort fork, GPL-3.0, patched for the Frame: GLES sessions, cylinder→quad layers, sRGB format fallback, 30 s VR-mode deadline, emulated time conversion). Needed when the engine calls VrApi itself instead of through OVRPlugin (for example The Climb 2, Path of the Warrior); OVRPort cannot translate those.
@@ -2117,7 +2118,7 @@ Puts settings files next to the game on the Frame, for example to turn off an un
 
 - `device.files` · also for 2D apps
 - **Changes:** Install only: written on the Frame when the game is installed; the APK isn't changed.
-- **Suggested (on):** CryEngine: variable-rate shading isn't supported on the Frame, so user.cfg turns it off (r_variable_rate_shading = 0; for example The Climb 2).
+- **Suggested (on):** CryEngine: variable-rate shading isn't supported on the Frame, so user.cfg turns it off (… = 0; The Climb / The Climb 2).
 - **Options:** `files`: text, default none — path relative to files/ -&gt; content
 - **Catalog games (2):** SUPERHOT VR, The Climb 2.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)

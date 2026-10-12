@@ -202,7 +202,8 @@ def _secs(line: str) -> float | None:
 
 
 MISSING_OBB = ("The game keeps its content in a data file (.obb) and none was installed: FramePort found no .obb "
-               "files next to its APK. Unreal games then stop right after start without an error (GitHub #85). Put "
+               "files next to its APK. Games can stop silently (Unreal) or crash during engine initialization "
+               "(CryEngine, for example The Climb). Put "
                "the .obb files in a folder named like the package (or obb/) next to the APK, add the folder again "
                "and reinstall.")
 
@@ -212,7 +213,7 @@ def add_missing_obb(res: TriageResult) -> TriageResult:
     game logs nothing about it). Only when it sent no frames: an OBB from an earlier install may still be there."""
     if res.fps is None and not any(f.id == "missing-obb" for f in res.findings):
         res.findings.insert(0, Finding("missing-obb", "fatal", MISSING_OBB, [],
-                                       "analysis: the APK expects an OBB (Unreal bHasOBBFiles); no data folder"))
+                                       "analysis: the APK expects an OBB; no data folder"))
     return res
 
 

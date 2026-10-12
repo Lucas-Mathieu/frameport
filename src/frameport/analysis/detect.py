@@ -1,6 +1,7 @@
 """Inspect an APK and describe everything the patch suggestions depend on."""
 from __future__ import annotations
 
+import json
 import logging
 import re
 import zipfile
@@ -34,7 +35,8 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 # 11: unreal_verify_obb (Unreal's bVerifyOBBOnStartUp: frame.unreal_skip_obb_check, GitHub #159) (2026-10)
 # 12: eos_keychain (Epic Online Services' Java keychain: frame.eos_keychain_loop, GitHub #214); CryEngine also from
 #     libAndroidLauncher.so + a .cryproject (Climb 1 has no libCrySystem.so, GitHub #238) (2026-10)
-ANALYSIS_VERSION = 12
+# 13: validate monolithic CryEngine projects/config, OBB filename formats and foveation cvar (The Climb, GitHub #238)
+ANALYSIS_VERSION = 13
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -64,6 +66,15 @@ UE_OBB_KEY = ".GameActivity.bHasOBBFiles"  # com.epicgames.ue4.… (UE4) / com.e
 def expects_obb(meta: dict) -> bool:
     """Unreal packaged the game's content as an OBB (expansion file) and opens it at start."""
     return any(k.endswith(UE_OBB_KEY) and v in (True, "true", "True") for k, v in meta.items())
+
+
+def cryengine_project(data: bytes) -> bool:
+    """Monolithic CryEngine builds ship game.cryproject instead of a separate libCrySystem.so."""
+    try:
+        project = json.loads(data)
+    except (ValueError, UnicodeDecodeError):
+        return False
+    return isinstance(project, dict) and project.get("type") == "CRYENGINE Project"
 
 
 UE_VERIFY_OBB_KEY = ".GameActivity.bVerifyOBBOnStartUp"
@@ -213,14 +224,14 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         il2cpp_meta = z.read(IL2CPP_METADATA) if deep and IL2CPP_METADATA in names and "libil2cpp.so" in libs else None
         # a Unity split build: the rest of the game is in a zip OBB (analysis/unity_split.py)
         unity_split = "libunity.so" in libs and unity_split_build(z, names, ggm, deep)
+        cry_project = any(cryengine_project(z.read(n)) for n in names if n.endswith(".cryproject"))
+        system_cfg = (z.read("assets/system.cfg").decode("utf-8", "replace")
+                      if "assets/system.cfg" in names else "")
 
     package, version, label, activity, apk_info = _read_manifest_info(path)
     libset = set(libs)
-    # CryEngine: libCrySystem.so, or one monolithic libAndroidLauncher.so next to a .cryproject (Climb 1)
-    cryengine = "libCrySystem.so" in libset or ("libAndroidLauncher.so" in libset
-                                                and any(n.endswith(".cryproject") for n in names))
     engine = ("Unreal" if libset & {"libUE4.so", "libUnreal.so"} else "Unity" if "libunity.so" in libset
-              else "CryEngine" if cryengine else "Other")
+              else "CryEngine" if "libCrySystem.so" in libset or cry_project else "Other")
     has_openxr, has_vrapi = "libopenxr_loader.so" in libset, "libvrapi.so" in libset
     xr = "OpenXR+VrApi" if has_openxr and has_vrapi else "OpenXR" if has_openxr else "VrApi" if has_vrapi else "?"
     is_overport = "libopenxr_loader_generic.so" in libset or "liboverport.config.so" in libset
@@ -234,6 +245,8 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         graphics = "Vulkan (declared in manifest)"
     elif engine == "Unity" and "vulkan" in boot.lower():
         graphics = "Vulkan (Unity boot.config)"
+    elif engine == "CryEngine" and re.search(r'(?im)^\s*r_Driver\s*=\s*"?vk"?\s*(?:;.*)?$', system_cfg):
+        graphics = "Vulkan (CryEngine system.cfg)"
     else:
         graphics = "GLES or unknown (no Vulkan declaration)"
 
@@ -334,8 +347,13 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             # a website in an Android wrapper (TWA): nothing to port
             "web_wrapper": web_wrapper(meta, manifest_strings, apk_info),
             # Unreal packaged its content as an OBB (expansion file), or a Unity split build keeps all but its first
-            # scene in one: without it the game hangs at start (GitHub #85, #92)
-            "expects_obb": expects_obb(meta) or unity_split,
+            # scene in one; CryEngine's launcher formats external OBB paths (including versionless ones).
+            # Without it the game hangs or crashes at start (GitHub #85, #92, #238).
+            "expects_obb": (expects_obb(meta) or unity_split or engine == "CryEngine" and any(
+                b"\0%s/%s.%i.%s.obb\0" in d or b"\0%s/%s.%s.obb\0" in d for d in lib_bytes.values())),
+            # The Climb uses the older foveation cvar, not The Climb 2's r_variable_rate_shading.
+            "cryengine_vr_foveated": engine == "CryEngine" and any(
+                b"\0r_vr_foveated\0" in d for d in lib_bytes.values()),
             "unity_split": unity_split,
             # Unreal CRC-checks the OBB before the game starts (frame.unreal_skip_obb_check, GitHub #159)
             "unreal_verify_obb": unreal_verify_obb(meta),
