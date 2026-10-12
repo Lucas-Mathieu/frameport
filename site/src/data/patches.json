@@ -384,6 +384,11 @@
   "title": "BlazeRush: controllers without Meta avatars, own shader cache",
   "group": "Steam Frame patches"
  },
+ "frame.eos_keychain_loop": {
+  "anchor": "frame-eos_keychain_loop",
+  "title": "Epic Online Services: stop the keychain retry loop",
+  "group": "Steam Frame patches"
+ },
  "frame.gl_multiview_fbo": {
   "anchor": "frame-gl_multiview_fbo",
   "title": "OpenGL ES: multiview shaders on flat panels (HUD, menus)",

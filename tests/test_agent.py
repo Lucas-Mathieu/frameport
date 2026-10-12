@@ -44,7 +44,7 @@ def test_launcher_template(monkeypatch, tmp_path):
     a.write_launcher(str(anchor), "/data/game dir/pkg", "com.x.y", "Game's Title", 123, "/lepton/lepton",
                      {"VK_INSTANCE_LAYERS": "", "bad-name": "x"})
     text = (anchor / "launch.sh").read_text()
-    assert "export SteamAppId=123" in text and "app_dir='/data/game dir/pkg'" in text
+    assert "export SteamAppId=123" in text and a.launcher_base(text, "com.x.y") == "/data/game dir/pkg"
     assert "export VK_INSTANCE_LAYERS=''" in text and "bad-name" not in text
     assert subprocess.run(["bash", "-n", str(anchor / "launch.sh")]).returncode == 0
 
@@ -1427,7 +1427,7 @@ def test_second_launch_while_starting_is_ignored(monkeypatch, tmp_path):
     lepton = tmp_path / "lepton"
     lepton.write_text(f"#!/bin/bash\necho started >>{tmp_path}/starts\nsleep ${{FAKE_RUN:-30}}\n")
     lepton.chmod(0o755)
-    text = a.LAUNCH_SH.format(title="T", pkg="com.x.y", base_q=str(base), appid=1, lepton_q=str(lepton), extra_env="",
+    text = a.LAUNCH_SH.format(title="T", pkg="com.x.y", app_dir=f"app_dir={base}", appid=1, lepton_q=str(lepton), extra_env="",
                               watchdog=a.WATCHDOG, dashboard="true", logcat="true", single=a.SINGLE_LINE,
                               plays_start="true", plays_end="true", video_codec="")
     launcher = tmp_path / "launch.sh"

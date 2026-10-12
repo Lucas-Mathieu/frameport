@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 156 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 157 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -11,7 +11,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 ## Groups
 
 - [Patches from OVRPort](#group-overport) (25)
-- [Steam Frame patches](#group-frame) (45)
+- [Steam Frame patches](#group-frame) (46)
 - [Game settings](#group-adapter) (65)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
@@ -49,6 +49,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Content files from the game's data](#frame-asset_files) | `frame.asset_files` | Steam Frame patches | 1 |
 | [Skip Meta avatars](#frame-avatar_stub) | `frame.avatar_stub` | Steam Frame patches | 1 |
 | [BlazeRush: controllers without Meta avatars, own shader cache](#frame-blazerush) | `frame.blazerush` | Steam Frame patches | 1 |
+| [Epic Online Services: stop the keychain retry loop](#frame-eos_keychain_loop) | `frame.eos_keychain_loop` | Steam Frame patches |  |
 | [OpenGL ES: multiview shaders on flat panels (HUD, menus)](#frame-gl_multiview_fbo) | `frame.gl_multiview_fbo` | Steam Frame patches | 1 |
 | [GL shim (Mesa GLSL compatibility)](#frame-gl_shim) | `frame.gl_shim` | Steam Frame patches | 2 |
 | [Godot apps: start without a clipboard service](#frame-godot_clipboard) | `frame.godot_clipboard` | Steam Frame patches |  |
@@ -529,6 +530,19 @@ Makes BlazeRush's menus and controllers work without Meta's avatars, and lets it
 - **Source:** [patches/frame/blazerush.py](../src/frameport/patches/frame/blazerush.py)
 
 > BlazeRush 1.0.349 only (Klownicle's guide, GitHub #57). Its menus wait for Meta's avatar, which never comes on the Frame, before they create the game's own controllers: the second menu ignored all input. Two instructions in libtargemapp.so skip that wait and the avatar mesh drawing; the game's shader cache gets a new folder name (cache/br_shader_v1), so programs compiled before the GL shim's shader fixes aren't reused. Only this exact build is changed (code fingerprint and every instruction checked); anything else is left as it is.
+
+### <a id="frame-eos_keychain_loop"></a>Epic Online Services: stop the keychain retry loop
+
+Stops Epic Online Services from retrying its login keychain forever (the game would never finish starting).
+
+- `frame.eos_keychain_loop` · also for 2D apps
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
+- **Suggested by launch-test signatures:**
+  - `eos-keychain-loop` (error): Epic Online Services can't save its login keychain and retries without end (a start that never finishes, 100 % CPU).
+- **Source:** [patches/frame/eos_keychain_loop.py](../src/frameport/patches/frame/eos_keychain_loop.py)
+
+> Epic Online Services (EOS) keeps its login keychain in the app's settings storage. When it can't write there, it resets the keychain and tries again without end (for example Beyond Sandbox: a start that never finishes, 100 % CPU, a log of gigabytes). The reset method returns at once instead (an in-place edit of classes.dex), so EOS reports the failure to the game once.
 
 ### <a id="frame-gl_multiview_fbo"></a>OpenGL ES: multiview shaders on flat panels (HUD, menus)
 

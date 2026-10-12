@@ -72,7 +72,9 @@ SUMMARIES = {
     "frame.godot_clipboard": "Lets Godot games start on the Frame (they'd crash looking for a clipboard).",
     "frame.unreal_skip_obb_check": "Starts Unreal games without re-checking their data file (they'd seem to hang "
                                    "on an invisible check screen).",
-    "frame.vivox_audio_route": "Lets games with Vivox voice chat start on the Frame (they'd crash on an Android 12 "
+    "frame.eos_keychain_loop": "Stops Epic Online Services from retrying its login keychain forever (the game "
+                               "would never finish starting).",
+    "frame.vivox_audio_route":"Lets games with Vivox voice chat start on the Frame (they'd crash on an Android 12 "
                                "audio call).",
     "frame.unity_oculus_check": "Lets older Unity games start VR without Meta's system apps (they'd stay on a 2D "
                                 "screen).",

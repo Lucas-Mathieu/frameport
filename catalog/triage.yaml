@@ -308,6 +308,17 @@ signatures:
     diagnosis: The game's Vivox voice-chat SDK calls Android 12 audio-routing methods (AudioManager communication devices) without checking the Android version; Lepton runs Android 11, so the app crashes (for example Green Hell VR). The patch makes Vivox's audio-route check return early (voice chat keeps the default route).
     suggest: [frame.vivox_audio_route]
     supersedes: [java-crash]
+  - id: lepton-data-link-failed
+    pattern: "ln: cannot create symbolic link from '[^']*' to '/data/data/|Couldn't create directory for SharedPreferences file /data/user/0/"
+    severity: fatal
+    diagnosis: The game has no internal storage (saves, settings) inside Lepton. Usually its folder's path has a space (a microSD card named for example "Steam Frame 512g"), which Lepton's own scripts can't handle; FramePort's launcher (agent 83 and newer) gives Lepton a path without spaces. Connect FramePort once so the launcher is updated, then start the game again.
+    report: true
+    supersedes: [java-crash, native-crash]
+  - id: eos-keychain-loop
+    pattern: 'LogEos: Resetting EOS SDK keychain: Failed to create'
+    severity: error
+    diagnosis: Epic Online Services can't save its login keychain and retries without end (a start that never finishes, 100 % CPU). The usual cause is missing internal storage (see lepton-data-link-failed); the patch stops the loop, and EOS then reports the failure to the game once.
+    suggest: [frame.eos_keychain_loop]
   - id: unreal-obb-check-stuck
     pattern: 'Displayed \S+/\S*DownloaderActivity\b'
     # the downloader returned (the engine's main init resumed, OpenXR started) or the game crashed (its own finding)

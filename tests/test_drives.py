@@ -156,7 +156,10 @@ def test_move_quest_game_to_sd_and_back(monkeypatch, tmp_path, same_drive):
     dep = a.deployment("com.x.y")
     assert dep["base"] == str(new) and dep["moved"]["from"] == str(anchor)
     text = (anchor / "launch.sh").read_text()
-    assert f"app_dir='{new}'" in text and "export X=1" in text
+    # the card's name has a space: Lepton gets the game through a link without one (GitHub #213)
+    link = Path(a.LEPTON_PATHS) / "com.x.y"
+    assert f"ln -sfn '{new}' {link}" in text and f"\napp_dir={link}\n" in text and "export X=1" in text
+    assert a.launcher_base(text, "com.x.y") == str(new)
     assert subprocess.run(["bash", "-n", str(anchor / "launch.sh")]).returncode == 0
     assert a.cmd_move_status({})["state"] == "done"
     with pytest.raises(a.AgentError, match="already there"):
@@ -535,3 +538,38 @@ def test_folder_app_icon_next_to_its_desktop_file(monkeypatch, tmp_path):
     (Path(prep["base"]) / "app/Tool/share/pixmaps/tool.png").unlink()
     a.ensure_app_icon(a.deployment("linux.tool"), prep["anchor"], refresh=True)
     assert not icon.exists()
+
+
+def test_lepton_gets_paths_without_spaces(monkeypatch, tmp_path):
+    """Lepton pastes STEAM_COMPAT_DATA_PATH unquoted into `sh -c "ln -s ..."`: a game on a card named "Steam Frame
+    512g" never got its internal storage (GitHub #213/#214/#215/#221). The launcher links it to a path without spaces
+    at every start; internal games keep their plain line."""
+    a = load(monkeypatch, tmp_path)
+    prep = quest_install(a, dest=str(sd_dir(tmp_path)))
+    anchor, base = Path(prep["anchor"]), Path(prep["base"])
+    text = (anchor / "launch.sh").read_text()
+    head = text[:text.index('[[ -d "$app_dir/lepton-app" ]]')]
+    out = subprocess.run(["bash", "-c", head + 'printf %s "$app_dir"'], capture_output=True, text=True, check=True)
+    link = Path(out.stdout)
+    assert " " not in out.stdout and link.resolve() == base.resolve()
+    assert (link / "lepton-app" / "game.apk").exists()
+    # an internal game is unchanged
+    other = quest_install(a, pkg="com.x.z")
+    assert f"app_dir={other['anchor']}\n" in (Path(other["anchor"]) / "launch.sh").read_text()
+    # uninstalling removes the link
+    a.cmd_uninstall({"package": "com.x.y", "keep_data": False})
+    assert not os.path.lexists(link)
+
+
+def test_upgrade_gives_old_launchers_the_link(monkeypatch, tmp_path):
+    a = load(monkeypatch, tmp_path)
+    prep = quest_install(a, dest=str(sd_dir(tmp_path)))
+    path = Path(prep["anchor"]) / "launch.sh"
+    fresh = path.read_text()
+    m = a.APP_DIR_RE.search(fresh)
+    old = fresh.replace(m.group(0), "app_dir=" + a.shlex.quote(prep["base"]))  # as agent <= 82 wrote it
+    path.write_text(old)
+    assert "com.x.y" in a.upgrade_launchers()
+    assert path.read_text() == fresh
+    assert a.upgrade_launchers() == []  # nothing left to do
+    assert subprocess.run(["bash", "-n", str(path)]).returncode == 0
