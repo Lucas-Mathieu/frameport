@@ -330,6 +330,11 @@ signatures:
     diagnosis: The game has no internal storage (saves, settings) inside Lepton. Usually its folder's path has a space (a microSD card named for example "Steam Frame 512g"), which Lepton's own scripts can't handle; FramePort's launcher (agent 83 and newer) gives Lepton a path without spaces. Connect FramePort once so the launcher is updated, then start the game again.
     report: true
     supersedes: [java-crash, native-crash]
+  - id: bhaptics-permission-prompt
+    pattern: 'GrantPermissionsActivity: Permission grant result .*permission=android\.permission\.BLUETOOTH_CONNECT'
+    severity: error
+    diagnosis: The game asked for Android 12's Bluetooth permission (bHaptics' vest SDK, for example Yupitergrad). Lepton runs Android 11, so Android's permission screen opens for a moment, the game is paused, and Meta's OVRPlugin may stop drawing (a frozen loading screen). The patch makes that request return at once.
+    suggest: [frame.bhaptics_permission]
   - id: eos-keychain-loop
     pattern: 'LogEos: Resetting EOS SDK keychain: Failed to create'
     severity: error

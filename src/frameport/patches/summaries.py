@@ -74,7 +74,9 @@ SUMMARIES = {
     "frame.godot_clipboard": "Lets Godot games start on the Frame (they'd crash looking for a clipboard).",
     "frame.unreal_skip_obb_check": "Starts Unreal games without re-checking their data file (they'd seem to hang "
                                    "on an invisible check screen).",
-    "frame.eos_keychain_loop": "Stops Epic Online Services from retrying its login keychain forever (the game "
+    "frame.bhaptics_permission": "Stops bHaptics from asking for a Bluetooth permission the Frame doesn't have (the "
+                                 "game would freeze on its loading screen).",
+    "frame.eos_keychain_loop":"Stops Epic Online Services from retrying its login keychain forever (the game "
                                "would never finish starting).",
     "frame.unity_tls_key_pool": "Lets Unity 6 games with many native libraries start when they run out of thread keys "
                                  "(they'd abort with \"cannot create thread specific key\"), for example Wander.",

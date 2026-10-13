@@ -36,7 +36,8 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 # 12: eos_keychain (Epic Online Services' Java keychain: frame.eos_keychain_loop, GitHub #214); CryEngine also from
 #     libAndroidLauncher.so + a .cryproject (Climb 1 has no libCrySystem.so, GitHub #238) (2026-10)
 # 13: validate monolithic CryEngine projects/config, OBB filename formats and foveation cvar (The Climb, GitHub #238)
-ANALYSIS_VERSION = 13
+# 14: bhaptics_permission (bHaptics asks for Android 12's BLUETOOTH_CONNECT: frame.bhaptics_permission, GitHub #235)
+ANALYSIS_VERSION = 14
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -204,6 +205,9 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         vivox_api31 = any(b"Lcom/vivox/sdk/AudioChangeListener;" in d and b"CommunicationDevice" in d for d in dexes)
         # Epic Online Services' keychain (it can retry without end when it can't write: frame.eos_keychain_loop)
         eos_keychain = any(b"Lcom/epicgames/mobile/eossdk/EOSSDK;" in d and b"resetKeychain" in d for d in dexes)
+        # bHaptics asks for an Android 12 permission; the prompt interrupts the game (frame.bhaptics_permission)
+        bhaptics_permission = any(b"Lcom/bhaptics/commons/PermissionUtils;" in d and b"requestBluetoothPermission" in d
+                                  for d in dexes)
         # video through Android's decoders (frame.hw_video_decode): Java MediaCodec, ExoPlayer/Media3, or libVLC
         media_codec = any(m in d for d in dexes for m in MEDIA_CODEC_MARKERS) or "libvlc.so" in libs
         del dexes
@@ -333,6 +337,7 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             "godot_clipboard": godot_clipboard,
             "vivox_api31": vivox_api31,
             "eos_keychain": eos_keychain,
+            "bhaptics_permission": bhaptics_permission,
             "media_codec": media_codec,
             # declares gamepad support (SDL's manifest template has both): device.steam_gamepad
             "gamepad": "android.hardware.gamepad" in features or axml.LEANBACK_LAUNCHER in cats,

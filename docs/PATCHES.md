@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 162 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 163 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -11,7 +11,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 ## Groups
 
 - [Patches from OVRPort](#group-overport) (25)
-- [Steam Frame patches](#group-frame) (50)
+- [Steam Frame patches](#group-frame) (51)
 - [Game settings](#group-adapter) (66)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
@@ -48,6 +48,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [FrameBridge OpenXR adapter](#frame-adapter) | `frame.adapter` | Steam Frame patches | default |
 | [Content files from the game's data](#frame-asset_files) | `frame.asset_files` | Steam Frame patches | 1 |
 | [Skip Meta avatars](#frame-avatar_stub) | `frame.avatar_stub` | Steam Frame patches | 1 |
+| [bHaptics: skip the Bluetooth permission request](#frame-bhaptics_permission) | `frame.bhaptics_permission` | Steam Frame patches |  |
 | [BlazeRush: controllers without Meta avatars, own shader cache](#frame-blazerush) | `frame.blazerush` | Steam Frame patches | 1 |
 | [Epic Online Services: stop the keychain retry loop](#frame-eos_keychain_loop) | `frame.eos_keychain_loop` | Steam Frame patches |  |
 | [OpenGL ES: multiview shaders on flat panels (HUD, menus)](#frame-gl_multiview_fbo) | `frame.gl_multiview_fbo` | Steam Frame patches | 1 |
@@ -522,6 +523,19 @@ Lets games start that would stop at Meta's avatars (for example BlazeRush). No M
 - **Source:** [patches/frame/avatar_stub.py](../src/frameport/patches/frame/avatar_stub.py)
 
 > Meta's avatar library needs Meta's Horizon app, which the Frame doesn't have; it then stops the game at start ("Failed to launch SystemActivities", for example BlazeRush). Replaces it with a library that does nothing, so the game runs without Meta avatars.
+
+### <a id="frame-bhaptics_permission"></a>bHaptics: skip the Bluetooth permission request
+
+Stops bHaptics from asking for a Bluetooth permission the Frame doesn't have (the game would freeze on its loading screen).
+
+- `frame.bhaptics_permission` · also for 2D apps
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested (on):** bHaptics asks for an Android 12 Bluetooth permission at start; the permission screen interrupts the game on the Frame.
+- **Suggested by launch-test signatures:**
+  - `bhaptics-permission-prompt` (error): The game asked for Android 12's Bluetooth permission (bHaptics' vest SDK, for example Yupitergrad).
+- **Source:** [patches/frame/bhaptics_permission.py](../src/frameport/patches/frame/bhaptics_permission.py)
+
+> bHaptics' vest SDK asks for an Android 12 Bluetooth permission at start; on Lepton's Android 11 the permission screen takes the foreground for a moment and Meta's OVRPlugin stops drawing (for example Yupitergrad freezing on its loading screen). The request returns at once instead (an in-place edit of classes.dex).
 
 ### <a id="frame-blazerush"></a>BlazeRush: controllers without Meta avatars, own shader cache
 

@@ -384,6 +384,11 @@
   "title": "Skip Meta avatars",
   "group": "Steam Frame patches"
  },
+ "frame.bhaptics_permission": {
+  "anchor": "frame-bhaptics_permission",
+  "title": "bHaptics: skip the Bluetooth permission request",
+  "group": "Steam Frame patches"
+ },
  "frame.blazerush": {
   "anchor": "frame-blazerush",
   "title": "BlazeRush: controllers without Meta avatars, own shader cache",
