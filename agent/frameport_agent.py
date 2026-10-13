@@ -44,7 +44,7 @@ try:
 except ImportError:  # Windows: pc_revive loads this file for its VDF code only (GitHub #131)
     fcntl = None
 
-AGENT_VERSION = 84
+AGENT_VERSION = 85
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -74,10 +74,21 @@ OLD_CODEC_LINES = ('[[ ! -x "$app_dir/frameport-codec/bin/podman" ]] || '
 # LEPTON_ENV_<NAME> to the app as <NAME>). Off for one game: FRAMEPORT_NO_GAMEPAD=1 in its launch options.
 GAMEPAD_PATCH = "device.steam_gamepad"
 PODMAN_BIN = os.path.join(HOME, ".local/share/frameport/agent/bin")
+# Pads come and go (Steam makes its virtual pad only while the Frame's controllers are awake): the container gets the
+# host's /dev/input at /dev/fp-input, and _gamepad_links keeps /dev/input/eventN links to Steam's pads in step while
+# the game runs (Android's EventHub adds and removes them through inotify; agent v85, before only the pads present at
+# the start were bound).
+OLD_GAMEPAD_LINES = ('[[ "${FRAMEPORT_NO_GAMEPAD:-0}" != 0 ]] || { export FRAMEPORT_GAMEPAD=1 '
+                     'LEPTON_ENV_SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD=1; '
+                     '[[ ! -x "$HOME/.local/share/frameport/agent/bin/podman" ]] || '
+                     'export PATH="$HOME/.local/share/frameport/agent/bin:$PATH"; }',)
 GAMEPAD_LINE = ('[[ "${FRAMEPORT_NO_GAMEPAD:-0}" != 0 ]] || { export FRAMEPORT_GAMEPAD=1 '
                 'LEPTON_ENV_SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD=1; '
                 '[[ ! -x "$HOME/.local/share/frameport/agent/bin/podman" ]] || '
-                'export PATH="$HOME/.local/share/frameport/agent/bin:$PATH"; }')
+                'export PATH="$HOME/.local/share/frameport/agent/bin:$PATH"; '
+                'python3 "$HOME/.local/share/frameport/agent/frameport_agent.py" _gamepad_links "$SteamAppId" $$ '
+                '>"$app_dir/gamepad.log" 2>&1 9>&- & }')
+PAD_DIR = "/dev/fp-input"  # the host's /dev/input inside the container
 
 
 class AgentError(Exception):
@@ -3172,7 +3183,8 @@ def wrapper_lines(hw_video, gamepad):
 def set_gamepad_line(text, want):
     """A Lepton launcher with the gamepad line (want) or without it. It always follows the codec line (when there is
     one), else stands where the codec line would."""
-    text = text.replace(GAMEPAD_LINE + "\n", "")
+    for line in (GAMEPAD_LINE, *OLD_GAMEPAD_LINES):
+        text = text.replace(line + "\n", "")
     if not want:
         return text
     i = text.find(VIDEO_CODEC_LINE + "\n")
@@ -3185,7 +3197,9 @@ def set_gamepad_line(text, want):
 
 # Android's layout for an Xbox 360 pad (AOSP's Vendor_045e_Product_028e.kl, with Select as BUTTON_SELECT instead of
 # BACK, which would close many apps): Steam's virtual pad reports Valve's ids, so Android would fall back to Generic.kl
-# (triggers on Z/RZ, right stick on RX/RY: games then mix up the right stick and the triggers).
+# (triggers on Z/RZ, right stick on RX/RY: games then mix up the right stick and the triggers). The D-pad keys
+# (BTN_DPAD_*, as AOSP's Generic.kl) cover a pad that sends its D-pad as buttons rather than the hat axes: the Frame's
+# controllers have no D-pad, so it only comes from a Steam Input layout (e.g. a stick set to D-pad, GitHub #162).
 GAMEPAD_KL = """# Steam Input virtual gamepad (Xbox 360 layout). Written by FramePort (device.steam_gamepad).
 key 304   BUTTON_A
 key 305   BUTTON_B
@@ -3198,6 +3212,10 @@ key 315   BUTTON_START
 key 316   BUTTON_MODE
 key 317   BUTTON_THUMBL
 key 318   BUTTON_THUMBR
+key 544   DPAD_UP
+key 545   DPAD_DOWN
+key 546   DPAD_LEFT
+key 547   DPAD_RIGHT
 axis 0x00 X flat 4096
 axis 0x01 Y flat 4096
 axis 0x03 Z flat 4096
@@ -3251,9 +3269,11 @@ def steam_gamepads(sys_root="/sys", dev_root="/dev"):
 
 def podman_run_args(args, env, sys_root="/sys", dev_root="/dev"):
     """FramePort's Podman wrapper (PODMAN_WRAPPER) for `podman run`: the game's own container
-    (lepton-steamlaunch-<SteamAppId>, launcher env) gets Steam's virtual gamepads and their key layout when its
-    launcher asked for them (FRAMEPORT_GAMEPAD=1, the gamepad line). Anything else: the arguments unchanged. Lepton
-    mounts a tmpfs over /dev, so a `--device` node would vanish under it: bind mounts, like Lepton's own GPU nodes."""
+    (lepton-steamlaunch-<SteamAppId>, launcher env) gets the host's /dev/input at PAD_DIR and the gamepad key layout
+    when its launcher asked for them (FRAMEPORT_GAMEPAD=1, the gamepad line); _gamepad_links then links Steam's pads
+    into the container's /dev/input. Anything else: the arguments unchanged. Lepton mounts a tmpfs over /dev, so a
+    `--device` node would vanish under it, and its /dev/input holds its own Wayland input pipes: a bind mount next to
+    it, like Lepton's own GPU nodes."""
     if args[:1] != ["run"] or env.get("FRAMEPORT_GAMEPAD") != "1" or \
             env.get("FRAMEPORT_NO_GAMEPAD", "0") not in ("", "0"):
         return args
@@ -3276,19 +3296,54 @@ def podman_run_args(args, env, sys_root="/sys", dev_root="/dev"):
                 taken.add(value)
     pads = steam_gamepads(sys_root, dev_root)
     extra = []
-    for pad in pads:
-        node = f"/dev/input/{pad['event']}"
-        if node not in taken:
-            extra += ["--mount", f"type=bind,source={os.path.join(dev_root, 'input', pad['event'])},"
-                                 f"destination={node},rw"]
+    if PAD_DIR not in taken:
+        extra += ["--mount", f"type=bind,source={os.path.join(dev_root, 'input')},destination={PAD_DIR},rw"]
     layout = gamepad_layout_file() if extra else ""
-    for product in sorted({p["product"] for p in pads}):
+    for product in sorted({"11ff", *(p["product"] for p in pads)}):  # 11ff: Steam's pad, also when it comes later
         target = f"/system/usr/keylayout/Vendor_28de_Product_{product}.kl"
         if layout and target not in taken and re.fullmatch(r"[0-9a-f]{4}", product):
             extra += ["--mount", f"type=bind,source={layout},destination={target},ro"]
     names = ", ".join(f"{p['event']} ({p['name']}, 28de:{p['product']})" for p in pads) or "none"
     print(f"FramePort gamepad: Steam Input virtual gamepads for this container: {names}", file=sys.stderr)
     return [args[0], *extra, *args[1:]] if extra else args
+
+
+def pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+
+
+def gamepad_link_script(want, linked):
+    """Shell for the container: /dev/input links to Steam's pads (want: event names) instead of linked ones."""
+    gone = sorted(set(linked) - set(want))
+    parts = [f"rm -f /dev/input/{e}" for e in gone if re.fullmatch(r"event[0-9]+", e)]
+    parts += [f"[ -e /dev/input/{e} ] || ln -s {PAD_DIR}/{e} /dev/input/{e}" for e in sorted(want)
+              if re.fullmatch(r"event[0-9]+", e)]
+    return "; ".join(parts) or "true"
+
+
+def gamepad_links(appid, parent, poll=1.0, refresh=15.0, exec_=None, pads=steam_gamepads, alive=pid_alive):
+    """While the launcher (parent) runs: keep the game's container's /dev/input links in step with Steam's virtual
+    pads (made when the Frame's controllers wake up, gone when they sleep). Re-applied every `refresh` s, so a
+    container Lepton started again gets them too."""
+    container = f"lepton-steamlaunch-{int(appid)}"
+    exec_ = exec_ or (lambda script: run(["podman", "exec", container, "sh", "-c", script], timeout=20))
+    linked, last = set(), 0.0
+    while alive(int(parent)):
+        want = {p["event"] for p in pads()}
+        now = time.monotonic()
+        if want != linked or (want and now - last >= refresh):
+            r = exec_(gamepad_link_script(want, linked))
+            if r.returncode == 0:
+                if want != linked:
+                    print(f"{time.strftime('%H:%M:%S')} pads: {', '.join(sorted(want)) or 'none'}", flush=True)
+                linked, last = want, now
+        time.sleep(poll)
 
 
 def gamepad_layout_file():
@@ -7551,6 +7606,9 @@ def main():
         return 0
     if len(sys.argv) >= 5 and sys.argv[1] == "_logcat_keeper":
         logcat_keeper(sys.argv[2], sys.argv[3], sys.argv[4])
+        return 0
+    if len(sys.argv) >= 4 and sys.argv[1] == "_gamepad_links":
+        gamepad_links(sys.argv[2], sys.argv[3])
         return 0
     if len(sys.argv) >= 4 and sys.argv[1] == "_dashboard_worker":
         dashboard_worker(sys.argv[2], sys.argv[3])

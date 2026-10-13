@@ -85,17 +85,16 @@ def test_run_args_get_the_pads_and_their_key_layout(monkeypatch, tmp_path):
     out = agent.podman_run_args(RUN, ENV, sys_root, dev_root)
     layout = tmp_path / "agent/steam-gamepad.kl"
     assert out == ["run",
-                   "--mount", f"type=bind,source={dev_root}/input/event5,destination=/dev/input/event5,rw",
-                   "--mount", f"type=bind,source={dev_root}/input/event8,destination=/dev/input/event8,rw",
+                   "--mount", f"type=bind,source={dev_root}/input,destination=/dev/fp-input,rw",
                    "--mount", f"type=bind,source={layout},destination=/system/usr/keylayout/"
                               "Vendor_28de_Product_11ff.kl,ro",
                    *RUN[1:]]
     assert layout.read_text() == agent.GAMEPAD_KL
     assert "key 304   BUTTON_A" in agent.GAMEPAD_KL and "axis 0x05 RTRIGGER" in agent.GAMEPAD_KL
     # a destination Lepton mounts itself isn't mounted twice
-    taken = ["run", "--mount", "type=bind,source=/x,destination=/dev/input/event5,rw", *RUN[1:]]
+    taken = ["run", "--mount", "type=bind,source=/x,destination=/dev/fp-input,rw", *RUN[1:]]
     out = " ".join(agent.podman_run_args(taken, ENV, sys_root, dev_root))
-    assert out.count("destination=/dev/input/event5,") == 1 and "destination=/dev/input/event8," in out
+    assert out.count("destination=/dev/fp-input,") == 1
 
 
 @NEEDS_POSIX
@@ -113,11 +112,51 @@ def test_run_args_unchanged(monkeypatch, tmp_path, args, env):
 
 
 @NEEDS_POSIX
-def test_no_pads_no_mounts(monkeypatch, tmp_path):
+def test_controllers_asleep_at_start_still_get_the_input_folder(monkeypatch, tmp_path):
+    """No pad at the start (the controllers sleep): the input folder and Steam's pad layout are there for later."""
     agent = agent_module(monkeypatch, tmp_path)
     fake_input(tmp_path, 4, "28de", "0000", "steamos-manager", MANAGER_KEYS)
-    assert agent.podman_run_args(RUN, ENV, str(tmp_path / "sys"), str(tmp_path / "dev")) == RUN
-    assert not (tmp_path / "agent/steam-gamepad.kl").exists()
+    out = " ".join(agent.podman_run_args(RUN, ENV, str(tmp_path / "sys"), str(tmp_path / "dev")))
+    assert "destination=/dev/fp-input,rw" in out and "Vendor_28de_Product_11ff.kl,ro" in out
+
+
+def test_link_script_follows_the_pads(monkeypatch, tmp_path):
+    agent = agent_module(monkeypatch, tmp_path)
+    assert agent.gamepad_link_script({"event7"}, {"event5"}) == \
+        "rm -f /dev/input/event5; [ -e /dev/input/event7 ] || ln -s /dev/fp-input/event7 /dev/input/event7"
+    assert agent.gamepad_link_script(set(), set()) == "true"
+    assert "x" not in agent.gamepad_link_script({"x; reboot"}, set())  # only eventN names
+
+
+def test_link_worker_relinks_when_pads_come_and_go(monkeypatch, tmp_path):
+    """GitHub #162: controllers switched off and on again make a new pad; it reaches the running container."""
+    agent = agent_module(monkeypatch, tmp_path)
+    rounds = iter([set(), {"event5"}, {"event5"}, set(), {"event6"}])
+    scripts, codes = [], iter([1, 0, 0, 0])  # the first exec fails: the container isn't up yet
+
+    def pads():
+        return [{"event": e} for e in next(rounds)]
+
+    def exec_(script):
+        scripts.append(script)
+        return types.SimpleNamespace(returncode=next(codes, 0))
+
+    left = iter([True] * 5 + [False])
+    monkeypatch.setattr(agent.time, "sleep", lambda s: None)
+    agent.gamepad_links("123", 1, exec_=exec_, pads=pads, alive=lambda pid: next(left))
+    assert scripts == [
+        "[ -e /dev/input/event5 ] || ln -s /dev/fp-input/event5 /dev/input/event5",
+        "[ -e /dev/input/event5 ] || ln -s /dev/fp-input/event5 /dev/input/event5",  # retried once the container ran
+        "rm -f /dev/input/event5",
+        "[ -e /dev/input/event6 ] || ln -s /dev/fp-input/event6 /dev/input/event6"]
+
+
+def test_old_gamepad_line_is_replaced(monkeypatch, tmp_path):
+    agent = agent_module(monkeypatch, tmp_path)
+    old = "#!/bin/bash\nexport X=1\n" + agent.OLD_GAMEPAD_LINES[0] + "\nchild=''\nsetsid lepton start &\n"
+    new = agent.set_gamepad_line(old, True)
+    assert agent.OLD_GAMEPAD_LINES[0] not in new and new.count(agent.GAMEPAD_LINE) == 1
+    assert agent.set_gamepad_line(new, True) == new and agent.GAMEPAD_LINE not in agent.set_gamepad_line(new, False)
 
 
 def fake_podman(folder, label):
