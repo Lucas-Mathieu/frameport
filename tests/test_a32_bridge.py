@@ -398,6 +398,8 @@ def test_game_page_bridge_switch(tmp_path, monkeypatch):
     from frameport.ui.views.game import GameView
 
     monkeypatch.setattr(library, "_path", lambda: tmp_path / "library.json")
+    # a library that ran the a32_bridge_on migration, and the user switched the bridge off afterwards
+    (tmp_path / "library.json").write_text('{"games": {}, "settings": {"migrations": ["a32_bridge_on"]}}')
     a = _analysis()
     r = Recipe(package=a.package, source="user", status="unsupported", notes="32-bit only; no AArch32.",
                patches={"patch_copy_libraries": {}, "frame.adapter": {}, "frame.vk_sanitize": {}})
@@ -436,3 +438,35 @@ def test_game_page_bridge_switch(tmp_path, monkeypatch):
     assert set(saved.patches) == {"frame.a32_bridge", "frame.adapter", "device.text_input_window"}
     assert not saved.overport and saved.status == "unknown" and "32-bit bridge" in saved.notes
     assert redraws == [{"advanced": True, "show_all": True}]  # the switches now show what changed
+
+
+def test_migration_turns_the_bridge_on_once(tmp_path, monkeypatch):
+    """Recipes from before the bridge (also the user's own) get it once at load; switched off later, it stays off."""
+    import json
+
+    from frameport import pipeline
+    from frameport.core import library
+    from frameport.recommend import catalog
+
+    monkeypatch.setattr(library, "_path", lambda: tmp_path / "library.json")
+    removed = catalog.CatalogEntry(package="com.x.removed", title="R", frame_remove=["frame.a32_bridge"])
+    monkeypatch.setattr(catalog, "lookup", lambda pkg: removed if pkg == "com.x.removed" else None)
+    old = {"patches": {"patch_copy_libraries": {}, "frame.adapter": {}, "frame.vk_sanitize": {}},
+           "source": "user", "status": "unsupported", "notes": "32-bit only; no AArch32.", "overport": True}
+
+    def game(pkg, **kw):
+        return {"package": pkg, "analysis": _analysis(package=pkg, **kw).to_dict(), "recipe": {"package": pkg, **old}}
+    games = {"com.x.old": game("com.x.old"), "com.x.removed": game("com.x.removed"),
+             "com.x.arm64": game("com.x.arm64", abis=["arm64-v8a"])}
+    (tmp_path / "library.json").write_text(json.dumps({"games": games, "settings": {}}))
+
+    r = library.recipe_from_dict(library.game("com.x.old")["recipe"])
+    assert {"frame.a32_bridge", "frame.adapter", "device.text_input_window"} <= set(r.patches)
+    assert not r.overport and not {"patch_copy_libraries", "frame.vk_sanitize"} & set(r.patches)
+    assert r.status == "unknown" and r.source == "user"
+    assert "frame.a32_bridge" not in library.game("com.x.removed")["recipe"]["patches"]  # the catalog says no
+    assert library.game("com.x.arm64")["recipe"]["overport"]  # 64-bit games: untouched
+    assert "a32_bridge_on" in library.setting("migrations")
+    r.patches.pop("frame.a32_bridge")  # the user switches it off: not turned on again
+    pipeline.set_recipe("com.x.old", r)
+    assert "frame.a32_bridge" not in library.game("com.x.old")["recipe"]["patches"]

@@ -329,7 +329,9 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
   patches work there = `base.works_on_a32` (`Patch.a32`; overport/frame off unless `a32 = True`, adapter settings in
   `settings.XRSHIM_SETTINGS` off); `build.check_a32` refuses anything else, `engine.warnings(recipe, analysis)` says
   so; a catalog entry for a 32-bit game that neither names nor removes the bridge predates it: bridge kept, status
-  unknown; parity gives bridge builds without a bridge known-good "new build (no baseline)").
+  unknown; parity gives bridge builds without a bridge known-good "new build (no baseline)"; library migration
+  `a32_bridge_on` turned the bridge on once in every 32-bit recipe, user ones too, unless the catalog's frame_remove
+  names it).
   Analysis `extra.headset` (ANALYSIS_VERSION 15): gearvr / go / quest → "Gear VR" / "Oculus Go" platform + Steam tag.
   Catalog: `headset:` field; com.fallen.affected, net.mobilemischief.spunkydungeon, com.ccpgames.gunjack (works, 2026-10-12). Learned: Unity 2019 contexts
   have no EGLConfig (EGL_KHR_no_config_context: the VrApi bridge takes the window's or an RGBA8 ES3 config); Unity's

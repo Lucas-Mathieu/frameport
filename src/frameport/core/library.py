@@ -340,7 +340,44 @@ def _migrate(data: dict) -> bool:
                 r["reasons"].setdefault("adapter.surface_native", "Shows its cutscenes as stereo panoramas.")
         done.append("batman_video_patches")
         changed = True
+    if "a32_bridge_on" not in done:
+        # 32-bit games get the 32-bit bridge, also recipes the user edited before it existed (without it they can't
+        # be built at all), unless their catalog entry removes it; what the bridge replaces goes (OVRPort, the 64-bit
+        # fixes, e.g. quest_binary_fixes_v2's frame.vk_sanitize above). Once only: switched off later, it stays off
+        for g in (data.get("games") or {}).values():
+            if _a32_bridge_on(g):
+                changed = True
+        done.append("a32_bridge_on")
+        changed = True
     return changed
+
+
+def _a32_bridge_on(g: dict) -> bool:
+    """The a32_bridge_on migration for one library entry; True when its recipe changed."""
+    from ..patches import base
+    from ..recommend import catalog, engine
+
+    a, r = g.get("analysis") or {}, g.get("recipe")
+    if (not isinstance(r, dict) or r.get("as_is") or g.get("kind") in ("rift", "linux")
+            or (a.get("extra") or {}).get("kind") == "rift"):
+        return False
+    try:
+        an, rec = analysis_from_dict(a), recipe_from_dict(r)
+    except Exception:  # noqa: BLE001 - a malformed entry keeps its recipe
+        return False
+    if not an.only_32bit:
+        return False
+    newly = "frame.a32_bridge" not in rec.patches
+    if newly:
+        entry = catalog.lookup(an.package)
+        if entry and "frame.a32_bridge" in entry.frame_remove:
+            return False
+        rec.patches["frame.a32_bridge"] = {}
+        rec.reasons["frame.a32_bridge"] = base.get("frame.a32_bridge").detect(an).reason
+    if not engine.a32_recipe(an, rec, newly=newly) and not newly:
+        return False
+    g["recipe"] = recipe_to_dict(rec)
+    return True
 
 
 BATMAN = "com.camouflaj.manta"
