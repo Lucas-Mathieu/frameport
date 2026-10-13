@@ -1,14 +1,75 @@
 --- runtime.cpp.orig
 +++ runtime.cpp
-@@ -2,6 +2,7 @@
+@@ -1,8 +1,11 @@
+ // SPDX-License-Identifier: GPL-3.0-only
  #include "runtime.h"
++#include "fov_cache.h"
  #include <algorithm>
  #include <chrono>
 +#include <utility>
  #include <cmath>
++#include <cstdio>
  #include <cstring>
  #include <dlfcn.h>
-@@ -52,6 +53,27 @@
+ #include <thread>
+@@ -45,6 +48,56 @@
+     auto& s = runtime();
+     return xrOk(s.xr.xrGetInstanceProcAddr(s.instance, name, target), name) && *target;
+ }
++// FramePort: the live FOV of earlier sessions for games that read it before any session (see fov_cache.h)
++static bool savedFovPath(char* buffer, size_t size) {
++    char cmdline[256] = {0};
++    if (FILE* f = std::fopen("/proc/self/cmdline", "r")) {
++        cmdline[std::fread(cmdline, 1, sizeof(cmdline) - 1, f)] = 0;
++        std::fclose(f);
++    }
++    return fovcache::path(cmdline, buffer, size);
++}
++static void loadSavedFov() {
++    auto& s = runtime();
++    char path[512], text[256] = {0};
++    if (!savedFovPath(path, sizeof(path))) return;
++    FILE* f = std::fopen(path, "r");
++    if (!f) return;
++    text[std::fread(text, 1, sizeof(text) - 1, f)] = 0;
++    std::fclose(f);
++    float fov[2];
++    if (!fovcache::parse(text, fov)) return;
++    s.savedFovDegrees = {fov[0], fov[1]};
++    s.savedFovValid = true;
++    OVP_LOG("FOV of an earlier session: %.2f x %.2f degrees", fov[0], fov[1]);
++}
++static void saveLiveFov() {
++    auto& s = runtime();
++    const float now[2] = {s.locatedFovDegrees[0], s.locatedFovDegrees[1]};
++    const float saved[2] = {s.savedFovDegrees[0], s.savedFovDegrees[1]};
++    if (!s.locatedFovValid || !fovcache::plausible(now[0], now[1]) || !fovcache::changed(s.savedFovValid, saved, now))
++        return;
++    // Only the private foveation bridge opts in; ordinary games retain their cache policy.
++    static double lastCacheWrite = -10.0;
++    const double cacheTime = secondsNow();
++    const char* limitCache = std::getenv("FRAMEPORT_VRAPI_KEEP_FOCUSED_IMAGE");
++    if (limitCache && std::strcmp(limitCache, "1") == 0 && s.savedFovValid && cacheTime - lastCacheWrite < 10.0)
++        return;
++    lastCacheWrite = cacheTime;
++    s.savedFovDegrees = {now[0], now[1]};  // also when it can't be written: tried once per change, not every frame
++    s.savedFovValid = true;
++    char path[512], tmp[540], text[96];
++    if (!savedFovPath(path, sizeof(path))) return;
++    std::snprintf(tmp, sizeof(tmp), "%s.tmp", path);
++    FILE* f = std::fopen(tmp, "w");
++    if (!f) return;
++    const int n = fovcache::format(text, sizeof(text), now);
++    const bool ok = n > 0 && std::fwrite(text, 1, static_cast<size_t>(n), f) == static_cast<size_t>(n);
++    if (std::fclose(f) == 0 && ok && std::rename(tmp, path) == 0)
++        OVP_LOG("live FOV %.2f x %.2f degrees saved for the next start", now[0], now[1]);
++    else
++        std::remove(tmp);
++}
+ static bool referenceSpace(XrReferenceSpaceType type, const XrPosef& pose, XrSpace& space) {
+     auto& s = runtime();
+     XrReferenceSpaceCreateInfo info{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+@@ -52,6 +105,27 @@
      info.poseInReferenceSpace = pose;
      return xrOk(s.xr.xrCreateReferenceSpace(s.session, &info, &space), "xrCreateReferenceSpace");
  }
@@ -36,7 +97,42 @@
  static void destroySession() {
      auto& s = runtime();
      if (!s.session) return;
-@@ -176,9 +198,44 @@
+@@ -75,6 +149,7 @@
+     s.timeMapped = false;
+     s.locatedFovValid = false;
+     s.initialRecenterPending = false;
++    s.recenterPending = false;
+     s.timeOffset = 0;
+ }
+ static void shutdown() {
+@@ -94,6 +169,9 @@
+     s.locatedFovValid = false;
+     s.recommendedFovDegrees = {};
+     s.locatedFovDegrees = {};
++    s.savedFovValid = false;
++    s.savedFovDegrees = {};
++    s.loggedFovSource = -1;
+     s.recenterCount = 0;
+     s.loggedDisplayRefreshRateSource = DisplayRefreshRateSource::Unqueried;
+     s.loggedDisplayRefreshRate = 0;
+@@ -145,6 +223,16 @@
+                     return false;
+                 }
+             }
++        } else if (event.type == XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING) {
++            // The app space is LOCAL plus the head's yaw at the last recenter. The runtime's recenter moves LOCAL to
++            // the head, so that offset would turn the view by the old yaw (e.g. 90 degrees to the side) unless the
++            // origin is taken again from the head.
++            const auto& change = reinterpret_cast<const XrEventDataReferenceSpaceChangePending&>(event);
++            if (change.session == s.session && change.referenceSpaceType == XR_REFERENCE_SPACE_TYPE_LOCAL) {
++                OVP_LOG("runtime recenter (LOCAL change pending, time %lld)", (long long)change.changeTime);
++                s.recenterPending = true;
++                s.recenterTime = change.changeTime;
++            }
+         } else if (event.type == XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {
+             s.running = false;
+             return false;
+@@ -176,9 +264,44 @@
      }
      return true;
  }
@@ -81,7 +177,7 @@
      if (!s.instance || !s.vk.Device) return false;
      VkPhysicalDevice expected = VK_NULL_HANDLE;
      if (!xrOk(s.xr.xrGetVulkanGraphicsDeviceKHR(s.instance, s.system, s.vk.Instance, &expected), "xrGetVulkanGraphicsDeviceKHR") || expected != s.vk.PhysicalDevice) {
-@@ -246,12 +303,24 @@
+@@ -246,12 +369,41 @@
          // OpenXR LOCAL need not be eye-level. Establish VrApi's initial yaw/position
          // origin from a tracked, visible head before exposing it to the application.
          XrSpaceLocation head{XR_TYPE_SPACE_LOCATION};
@@ -94,6 +190,23 @@
 +        // Steam Frame reports poses as VALID without the TRACKED bits here, so only validity is required.
 +        constexpr XrSpaceLocationFlags tracked = XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT;
 +        const bool visible = s.sessionState == XR_SESSION_STATE_VISIBLE || s.sessionState == XR_SESSION_STATE_FOCUSED;
++        if (!s.locatedFovValid) {
++            // The views' FOV doesn't depend on tracking: take it as soon as the session runs (also headless, without
++            // anyone wearing the headset), so it is saved for games that ask before their next session.
++            XrViewLocateInfo fovInfo{XR_TYPE_VIEW_LOCATE_INFO};
++            fovInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
++            fovInfo.displayTime = s.frame.predictedDisplayTime;
++            fovInfo.space = s.viewSpace;
++            XrViewState fovState{XR_TYPE_VIEW_STATE};
++            uint32_t fovCount = 0;
++            if (XR_SUCCEEDED(s.xr.xrLocateViews(s.session, &fovInfo, &fovState, 2, &fovCount, s.views.data())) &&
++                fovCount == 2 && symmetricFovDegrees(s.views[0].fov, s.views[1].fov, s.locatedFovDegrees)) {
++                s.locatedFovValid = true;
++                OVP_LOG("FOV located before tracking: %.2f x %.2f degrees (view state 0x%llx)", s.locatedFovDegrees[0],
++                        s.locatedFovDegrees[1], (unsigned long long)fovState.viewStateFlags);
++                saveLiveFov();
++            }
++        }
 +        const bool located = visible &&
 +            xrOk(s.xr.xrLocateSpace(s.viewSpace, s.localSpace, s.frame.predictedDisplayTime, &head), "initial eye-level origin");
 +        static int logged;
@@ -112,7 +225,7 @@
              endFrame(nullptr, 0);
              return false;
          }
-@@ -263,14 +332,10 @@
+@@ -263,17 +415,32 @@
              return false;
          }
          const XrPosef origin{{0, std::sin(yaw/2), 0, std::cos(yaw/2)}, p};
@@ -126,9 +239,39 @@
 -        s.appSpace = next;
 -        s.centerEyeTransform = s.trackingTransform = fromXrPose(origin);
          s.initialRecenterPending = false;
++        s.recenterPending = false;  // the origin was just taken from the head
          ++s.recenterCount;
      }
-@@ -409,11 +474,14 @@
++    if (s.recenterPending && s.frame.predictedDisplayTime >= s.recenterTime) {
++        // A later recenter: same origin as the first (head yaw + position in LOCAL), but without a tracked head the
++        // frame goes on with the old origin and the next frame tries again
++        XrSpaceLocation head{XR_TYPE_SPACE_LOCATION};
++        constexpr XrSpaceLocationFlags valid = XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT;
++        if (XR_SUCCEEDED(s.xr.xrLocateSpace(s.viewSpace, s.localSpace, s.frame.predictedDisplayTime, &head)) &&
++            (head.locationFlags & valid) == valid) {
++            const auto& q = head.pose.orientation;
++            const auto& p = head.pose.position;
++            const float yaw = std::atan2(2*(q.w*q.y + q.x*q.z), 1-2*(q.x*q.x+q.y*q.y));
++            if (std::isfinite(yaw) && std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z) &&
++                appSpaceFor(XrPosef{{0, std::sin(yaw/2), 0, std::cos(yaw/2)}, p})) {
++                s.recenterPending = false;
++                ++s.recenterCount;
++                OVP_LOG("recentered: head yaw %.1f deg in LOCAL, pos=%.3f,%.3f,%.3f", yaw * 57.29578f, p.x, p.y, p.z);
++            }
++        }
++    }
+     XrViewLocateInfo info{XR_TYPE_VIEW_LOCATE_INFO};
+     info.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+     info.displayTime = s.frame.predictedDisplayTime;
+@@ -286,6 +453,7 @@
+     }
+     s.locatedFovValid = symmetricFovDegrees(
+         s.views[0].fov, s.views[1].fov, s.locatedFovDegrees);
++    saveLiveFov();
+     input::sync();
+     return true;
+ }
+@@ -409,11 +577,14 @@
  VRAPI int vrapi_Initialize(const ovrInitParms* parms) {
      LOCK_STATE;
      if (s.instance) return -3;
@@ -145,7 +288,7 @@
      s.activity = parms->Java.Env->NewGlobalRef(parms->Java.ActivityObject);
      if (!s.activity) { shutdown(); return -1; }
      s.loader = dlopen("libopenxr_loader.so", RTLD_NOW | RTLD_LOCAL);
-@@ -435,10 +503,13 @@
+@@ -435,10 +606,13 @@
      if (!xrOk(s.xr.xrEnumerateInstanceExtensionProperties(nullptr, count, &count, supported.data()), "enumerate extensions")) { shutdown(); return -4; }
      auto has = [&](const char* name) { return std::any_of(supported.begin(), supported.end(), [&](const auto& e) { return std::strcmp(e.extensionName, name) == 0; }); };
      std::vector<const char*> extensions;
@@ -163,7 +306,15 @@
      s.viewConfigurationFovExtension = has(XR_EPIC_VIEW_CONFIGURATION_FOV_EXTENSION_NAME);
      if (s.viewConfigurationFovExtension) extensions.push_back(XR_EPIC_VIEW_CONFIGURATION_FOV_EXTENSION_NAME);
      s.systemDisplayRefreshRateExtension = has(SystemDisplayRefreshRateExtension);
-@@ -482,7 +553,9 @@
+@@ -474,6 +648,7 @@
+         symmetricFovDegrees(s.viewConfigFov[0].recommendedFov,
+                             s.viewConfigFov[1].recommendedFov,
+                             s.recommendedFovDegrees);
++    if (!s.recommendedFovValid) loadSavedFov();
+     s.colorSpaceExtension = has(XR_FB_COLOR_SPACE_EXTENSION_NAME);
+     s.performanceExtension = has(XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME);
+     s.threadExtension = has(XR_KHR_ANDROID_THREAD_SETTINGS_EXTENSION_NAME);
+@@ -482,7 +657,9 @@
      if (s.threadExtension) load("xrSetAndroidApplicationThreadKHR", reinterpret_cast<PFN_xrVoidFunction*>(&s.setThread));
      if (s.systemDisplayRefreshRateExtension) load("xrGetSystemDisplayRefreshRateAXRB", reinterpret_cast<PFN_xrVoidFunction*>(&s.getSystemDisplayRefreshRate));
      if (s.displayRefreshRateExtension) load("xrGetDisplayRefreshRateFB", reinterpret_cast<PFN_xrVoidFunction*>(&s.getDisplayRefreshRate));
@@ -174,7 +325,7 @@
      return 0;
  }
  VRAPI void vrapi_Shutdown() { LOCK_STATE; shutdown(); }
-@@ -518,18 +591,51 @@
+@@ -518,18 +695,51 @@
  }
  VRAPI ovrMobile* vrapi_EnterVrMode(const ovrModeParms* parms) {
      LOCK_STATE;
@@ -232,7 +383,7 @@
          std::this_thread::sleep_for(std::chrono::milliseconds(5));
      }
      ++s.mobile.generation;
-@@ -539,7 +645,19 @@
+@@ -539,7 +749,19 @@
  }
  VRAPI void vrapi_LeaveVrMode(ovrMobile* mobile) {
      LOCK_STATE;
@@ -253,7 +404,7 @@
  }
  VRAPI double vrapi_GetPredictedDisplayTime(ovrMobile* mobile, int64_t index) {
      LOCK_STATE;
-@@ -607,7 +725,12 @@
+@@ -607,7 +829,12 @@
          case 128: return 1; // Stereo array texture path.
          case 129: return 1; // sRGB VkFormats retain their color encoding.
          case 130: return 0; // No foveation image implementation is advertised.
@@ -267,7 +418,32 @@
      }
  }
  VRAPI float vrapi_GetSystemPropertyFloat(const ovrJava*, int property) {
-@@ -626,7 +749,9 @@
+@@ -615,10 +842,20 @@
+     if (property == 4) return queryDisplayRefreshRate();
+     if (property == 7 || property == 8) {
+         const size_t axis = static_cast<size_t>(property - 7);
+-        // Live optical FOV supersedes a provisional startup recommendation.
+-        if (s.locatedFovValid) return s.locatedFovDegrees[axis];
+-        if (s.recommendedFovValid) return s.recommendedFovDegrees[axis];
+-        return 90.0f;
++        // Live optical FOV supersedes a provisional startup recommendation; before any session (no runtime
++        // recommendation): the live FOV saved by an earlier session, else 90 degrees.
++        static const char* const sources[] = {"live", "runtime recommendation", "saved by an earlier session",
++                                              "default, nothing known before tracking"};
++        int source = 3;
++        std::array<float, 2> fov{90.0f, 90.0f};
++        if (s.locatedFovValid) { source = 0; fov = s.locatedFovDegrees; }
++        else if (s.recommendedFovValid) { source = 1; fov = s.recommendedFovDegrees; }
++        else if (s.savedFovValid) { source = 2; fov = s.savedFovDegrees; }
++        if (source != s.loggedFovSource) {
++            s.loggedFovSource = source;
++            OVP_LOG("FOV properties: %.2f x %.2f degrees (%s)", fov[0], fov[1], sources[source]);
++        }
++        return fov[axis];
+     }
+     OVP_LOG("Unsupported float system property %d", property);
+     return 0;
+@@ -626,7 +863,9 @@
  VRAPI int vrapi_GetSystemStatusInt(const ovrJava*, int status) {
      LOCK_STATE;
      if (status == 0) return s.instance != XR_NULL_HANDLE;
@@ -278,7 +454,7 @@
      if (status == 13) return static_cast<int>(s.recenterCount);
      if (status == 14) return s.running && s.sessionState != XR_SESSION_STATE_FOCUSED;
      if (status == 130) return 1;
-@@ -665,3 +790,48 @@
+@@ -665,3 +904,52 @@
      if (!s.setColorSpace) return color->ColorSpace == 0 ? Success : Unsupported;
      return xrOk(s.setColorSpace(s.session, static_cast<XrColorSpaceFB>(color->ColorSpace)), "xrSetColorSpaceFB") ? Success : InvalidParameter;
  }
@@ -311,9 +487,13 @@
 +    return 1002;  // ovrSuccess_EventUnavailable
 +}
 +VRAPI void vrapi_RecenterPose(ovrMobile* mobile) {
-+    // Deprecated in VrApi; OpenXR has no application recenter (the runtime's own recenter is reported via status 13).
-+    (void)mobile;
-+    OVP_LOG("vrapi_RecenterPose ignored");
++    // Deprecated in VrApi, but older games call it. OpenXR has no application recenter: the app space's origin is
++    // taken from the head again at the next frame (as for the runtime's own recenter; both count in status 13).
++    LOCK_STATE;
++    if (!validMobile(mobile)) return;
++    s.recenterPending = true;
++    s.recenterTime = 0;
++    OVP_LOG("vrapi_RecenterPose");
 +}
 +VRAPI ovrResult vrapi_SetDisplayRefreshRate(ovrMobile* mobile, float rate) {
 +    LOCK_STATE;

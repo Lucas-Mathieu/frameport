@@ -14,8 +14,8 @@ e8c0965c188665a4e565e4a3af983ef1866d1cf9225665cc90d8df286bc96ef3  ./arm64-v8a/li
 19ba5ed3c4b780f5ae46251f6958f552acfc5f13c8bb39f995579593fa8990c6  ./arm64-v8a/libglshim.so
 e44ded778758de33ad87bb31398281d7ec94c1ecd43dcf55b1dc99311f011859  ./arm64-v8a/libopenxr_loader_generic.so
 1feaeafad467c4cafdf2b018a4d84b0bee200c3f711697b4ce97e66a3ba256ca  ./arm64-v8a/libovrplatformcompat.so
-b9b4d079f51b42b81278a5211cf77fc807bf7ed25a3462662f349c9ede0c1cee  ./arm64-v8a/libvrapi.so
-b9b4d079f51b42b81278a5211cf77fc807bf7ed25a3462662f349c9ede0c1cee  ./arm64-v8a/libvrapi_foveation.so
+6d766fd87488fc487d465dcb79f7b462f0c863934414e416746b7c1841fb4130  ./arm64-v8a/libvrapi.so
+6d766fd87488fc487d465dcb79f7b462f0c863934414e416746b7c1841fb4130  ./arm64-v8a/libvrapi_foveation.so
 d2361ee8b6ff62d2ff6b3f59f7b15730b95bdbe0e9dcee469ffa1117411e7288  ./armeabi-v7a/libopenxr_loader_generic.so
 1871eae093432d277da4bc751bf5f3269dfcf11f9168260b0c3caadb0dedb19d  ./dex/oculusos-stubs.dex
 b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe  ./hevc/COPYING.FFmpeg

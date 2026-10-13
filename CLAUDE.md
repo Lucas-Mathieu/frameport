@@ -365,7 +365,7 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
   overrides) passes the 64-bit bridge's Touch controllers through (enumerate/caps/state/tracking/haptics, struct
   tails per VrApi minor) and starts no synthetic input. It also needed AAsset_getBuffer (guest copy, freed in
   AAsset_close), AKeyEvent_getFlags and the other AConfiguration getters. Headset (owner, 2026-10-13): plays,
-  both controllers work. Next: the other 32-bit catalog games (Journey of the Gods, Shadow Point: still "unsupported" until
+  both controllers work. Recenter (holding the Frame's menu button) turned VrApi games ~90-120 degrees aside: the bridge's app space is LOCAL + the start yaw and the runtime moves LOCAL to the head → the bridge now takes the origin from the head again on XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING (LOCAL) and on vrapi_RecenterPose (owner-verified with Gunjack, 2026-10-13). Next: the other 32-bit catalog games (Journey of the Gods, Shadow Point: still "unsupported" until
   tested), translator speed. Profiled on the Frame
   (2026-10-12, `A32_PERFMAP` + perf): FPCR switches are negligible (8 of 86k samples); the cost was the run loop
   (a mutex + hash-chain walk on every dispatch, a contended counter, inline-lookup slots never refilled: Gunjack

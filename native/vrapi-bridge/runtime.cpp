@@ -149,6 +149,7 @@ static void destroySession() {
     s.timeMapped = false;
     s.locatedFovValid = false;
     s.initialRecenterPending = false;
+    s.recenterPending = false;
     s.timeOffset = 0;
 }
 static void shutdown() {
@@ -221,6 +222,16 @@ bool pollEvents() {
                     s.running = false;
                     return false;
                 }
+            }
+        } else if (event.type == XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING) {
+            // The app space is LOCAL plus the head's yaw at the last recenter. The runtime's recenter moves LOCAL to
+            // the head, so that offset would turn the view by the old yaw (e.g. 90 degrees to the side) unless the
+            // origin is taken again from the head.
+            const auto& change = reinterpret_cast<const XrEventDataReferenceSpaceChangePending&>(event);
+            if (change.session == s.session && change.referenceSpaceType == XR_REFERENCE_SPACE_TYPE_LOCAL) {
+                OVP_LOG("runtime recenter (LOCAL change pending, time %lld)", (long long)change.changeTime);
+                s.recenterPending = true;
+                s.recenterTime = change.changeTime;
             }
         } else if (event.type == XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {
             s.running = false;
@@ -409,7 +420,26 @@ bool beginFrame(int64_t index) {
             return false;
         }
         s.initialRecenterPending = false;
+        s.recenterPending = false;  // the origin was just taken from the head
         ++s.recenterCount;
+    }
+    if (s.recenterPending && s.frame.predictedDisplayTime >= s.recenterTime) {
+        // A later recenter: same origin as the first (head yaw + position in LOCAL), but without a tracked head the
+        // frame goes on with the old origin and the next frame tries again
+        XrSpaceLocation head{XR_TYPE_SPACE_LOCATION};
+        constexpr XrSpaceLocationFlags valid = XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT;
+        if (XR_SUCCEEDED(s.xr.xrLocateSpace(s.viewSpace, s.localSpace, s.frame.predictedDisplayTime, &head)) &&
+            (head.locationFlags & valid) == valid) {
+            const auto& q = head.pose.orientation;
+            const auto& p = head.pose.position;
+            const float yaw = std::atan2(2*(q.w*q.y + q.x*q.z), 1-2*(q.x*q.x+q.y*q.y));
+            if (std::isfinite(yaw) && std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z) &&
+                appSpaceFor(XrPosef{{0, std::sin(yaw/2), 0, std::cos(yaw/2)}, p})) {
+                s.recenterPending = false;
+                ++s.recenterCount;
+                OVP_LOG("recentered: head yaw %.1f deg in LOCAL, pos=%.3f,%.3f,%.3f", yaw * 57.29578f, p.x, p.y, p.z);
+            }
+        }
     }
     XrViewLocateInfo info{XR_TYPE_VIEW_LOCATE_INFO};
     info.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
@@ -903,9 +933,13 @@ VRAPI ovrResult vrapi_PollEvent(ovrEventHeader* event) {
     return 1002;  // ovrSuccess_EventUnavailable
 }
 VRAPI void vrapi_RecenterPose(ovrMobile* mobile) {
-    // Deprecated in VrApi; OpenXR has no application recenter (the runtime's own recenter is reported via status 13).
-    (void)mobile;
-    OVP_LOG("vrapi_RecenterPose ignored");
+    // Deprecated in VrApi, but older games call it. OpenXR has no application recenter: the app space's origin is
+    // taken from the head again at the next frame (as for the runtime's own recenter; both count in status 13).
+    LOCK_STATE;
+    if (!validMobile(mobile)) return;
+    s.recenterPending = true;
+    s.recenterTime = 0;
+    OVP_LOG("vrapi_RecenterPose");
 }
 VRAPI ovrResult vrapi_SetDisplayRefreshRate(ovrMobile* mobile, float rate) {
     LOCK_STATE;
