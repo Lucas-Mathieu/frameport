@@ -744,10 +744,26 @@ class GameView:
                 r = state["recipe"]
                 value = e.control.value or ""
                 if value:  # a non-default choice is stored as the patch's parameter
-                    r.patches[pid] = {key: value}
+                    if pid == "device.foveation" and value in ("tracked", "fixed"):
+                        r.patches.setdefault(pid, {})[key] = value
+                    else:
+                        r.patches[pid] = {key: value}
                     r.reasons[pid] = tr("Chosen by you.")
                 else:
                     r.patches.pop(pid, None)
+                save(r)
+                if pid == "device.foveation":
+                    app.open_game(package, advanced=True, show_all=self.show_all)
+            return handler
+
+        def foveation_param(key):
+            def handler(e):
+                r = state["recipe"]
+                params = r.patches.setdefault("device.foveation", {})
+                if params.get("mode") not in ("tracked", "fixed"):
+                    params["mode"] = "tracked"
+                params[key] = bool(e.control.value) if key == "test" else float(e.control.value or 0)
+                r.reasons["device.foveation"] = tr("Chosen by you.")
                 save(r)
             return handler
 
@@ -803,12 +819,33 @@ class GameView:
                     keys = [k for k, _label in choices]
                     if current not in keys:  # a tool name typed under technical details
                         choices = (*choices, (current, current))
+                    picker = C.dropdown(value=current, width=T.px(280),
+                                        options=[ft.DropdownOption(key=k, text=tr(label)) for k, label in choices],
+                                        on_select=choose(p.id, p.params[0].key))
+                    controls = [picker]
+                    if p.id == "device.foveation" and current in ("tracked", "fixed"):
+                        params = recipe.params(p.id)
+                        radius = f"{float(params.get('radius') or 0):g}"
+                        sizes = list(p.RADIUS_CHOICES)
+                        if radius not in dict(sizes):
+                            sizes.append((radius, f"{float(radius):.0%} radius"))
+                        controls += [C.meta(tr("Full-resolution area size")),
+                                     C.dropdown(value=radius, width=T.px(280),
+                                                options=[ft.DropdownOption(key=k, text=tr(label))
+                                                         for k, label in sizes],
+                                                on_select=foveation_param("radius")),
+                                     ft.Switch(label=tr("Darken lower-resolution regions (test)"),
+                                               value=bool(params.get("test", False)),
+                                               on_change=foveation_param("test"), active_color=T.ACCENT),
+                                     C.meta(tr("Apply with Update on Frame."))]
                     rows.append(ft.Container(ft.Row([
-                        ft.Column([C.body(C.patch_title(p.title, technical), T.TEXT, weight=ft.FontWeight.W_500), *sub],
+                        ft.Column([ft.Row([C.body(C.patch_title(p.title, technical), T.TEXT,
+                                                 weight=ft.FontWeight.W_500)]
+                                          + ([C.pill(tr("experimental"), T.WARN,
+                                                     tooltip=C.tip(HELP["experimental"]))]
+                                             if p.experimental else []), spacing=T.S2, wrap=True), *sub],
                                   spacing=T.px(3), expand=True),
-                        C.dropdown(value=current, width=T.px(280),
-                                   options=[ft.DropdownOption(key=k, text=tr(label)) for k, label in choices],
-                                   on_select=choose(p.id, p.params[0].key)),
+                        ft.Column(controls, spacing=T.S2, width=T.px(340 if p.id == "device.foveation" else 280)),
                     ], spacing=T.S3), padding=ft.Padding(T.S4, T.px(10), T.S4, T.px(10)), border=ft.Border(
                         top=ft.BorderSide(1, T.BORDER))))
                     continue

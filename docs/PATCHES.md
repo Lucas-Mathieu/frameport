@@ -165,7 +165,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Keep the game's saved resolution in step](#device-config_sync) | `device.config_sync` | Files and settings on the Frame | 1 |
 | [Show as VR or as a flat window](#device-display_mode) | `device.display_mode` | Files and settings on the Frame |  |
 | [Settings files for the game](#device-files) | `device.files` | Files and settings on the Frame | 2 |
-| [Eye-tracked foveation (Valve)](#device-foveation) | `device.foveation` | Files and settings on the Frame |  |
+| [Foveated rendering (Valve)](#device-foveation) | `device.foveation` | Files and settings on the Frame |  |
 | [Hide Android's navigation bar](#device-hide_navbar) | `device.hide_navbar` | Files and settings on the Frame |  |
 | [Extra Lepton settings](#device-lepton_env) | `device.lepton_env` | Files and settings on the Frame | 3 |
 | [Controllers as a gamepad (Steam Input)](#device-steam_gamepad) | `device.steam_gamepad` | Files and settings on the Frame |  |
@@ -1958,7 +1958,7 @@ Shows videos that games play on a flat panel (for example an intro video).
 
 Shows Batman: Arkham Shadow's cutscenes; set by that game's recipe.
 
-- `adapter.surface_native`
+- `adapter.surface_native` · revision 4
 - **Changes:** Game setting: stored in the build and on the Frame (settings.conf); can be changed without a rebuild.
 - **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
 - **Options:**
@@ -2184,17 +2184,20 @@ Puts settings files next to the game on the Frame, for example to turn off an un
 
 > Writes config files into the game's Android/data/&lt;package&gt;/files/ on the Frame, to turn off engine features the Frame doesn't support (for example a CryEngine user.cfg with r_variable_rate_shading = 0, as The Climb 2 needs).
 
-### <a id="device-foveation"></a>Eye-tracked foveation (Valve)
+### <a id="device-foveation"></a>Foveated rendering (Valve)
 
-Try Fixed or Off if one eye shimmers or jitters while menus look fine.
+Render less detail outside your gaze; adjust the full-resolution area or darken coarse regions to test it.
 
-- `device.foveation`
-- **Changes:** Install only: written on the Frame when the game is installed; the APK isn't changed.
+- `device.foveation` · experimental · revision 3
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
-- **Options:** `mode`: str, default empty — fixed or off (empty = Valve's default)
+- **Options:**
+  - `mode`: str, default empty — tracked, fixed or off (empty = Valve's default)
+  - `radius`: float, default `0.0`, 0–0.45 — Full-resolution radius; 0 keeps the current runtime default
+  - `test`: bool, default `False` — Darken lower-resolution regions (diagnostic)
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
-> Valve's foveation layer (VALVE_fdm_injection) lowers the image density away from where you look, following each eye's gaze. In some games one eye then shimmers or jitters while menus look fine (the right eye's gaze filter restarts often). "Fixed" keeps the foveation but stops it following the gaze (FDM_DEBUG=disable_offsets); "Off" loads none of Valve's Vulkan layers (VK_INSTANCE_LAYERS=""; costs GPU time in heavy games).
+> Reduces shading away from the full-resolution area, following each eye's gaze. Default area size keeps the runtime's current profile unchanged. Custom radius is a fraction of the shorter eye-image dimension; the transition ends at twice that radius. Larger areas retain more detail but save less GPU work. Fixed stops the area following your eyes. The optional test darkens actual coarse-shaded fragments; rebuild/reinstall to toggle it. Tested on RE4, Deadpool and Asgard's Wrath 2. The Climb 2 gets a version-guarded private bridge at 1.0 scale; Batman gets its hash-verified allocation fix (unsupported OVRPlugin versions are refused). Other games may need additional fixes; turn this off if artifacts appear.
 
 ### <a id="device-hide_navbar"></a>Hide Android's navigation bar
 

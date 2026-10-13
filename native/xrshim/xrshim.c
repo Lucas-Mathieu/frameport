@@ -25,6 +25,9 @@
 
 #define TAG "FrameBridge"
 #define EXPORT __attribute__((visibility("default")))
+#ifndef FRAMEBRIDGE_DISPATCH_LIBRARY
+#define FRAMEBRIDGE_DISPATCH_LIBRARY "libopenxr_loader.so"
+#endif
 
 typedef PFN_xrVoidFunction (*PFN_extension_proc)(const char *name);
 
@@ -32,8 +35,8 @@ static PFN_xrGetInstanceProcAddr overport_gipa;
 static pthread_once_t once = PTHREAD_ONCE_INIT;
 
 static void resolve_overport(void) {
-    void *h = dlopen("libopenxr_loader.so", RTLD_NOW | RTLD_NOLOAD);
-    if (!h) h = dlopen("libopenxr_loader.so", RTLD_NOW);
+    void *h = dlopen(FRAMEBRIDGE_DISPATCH_LIBRARY, RTLD_NOW | RTLD_NOLOAD);
+    if (!h) h = dlopen(FRAMEBRIDGE_DISPATCH_LIBRARY, RTLD_NOW);
     if (h) overport_gipa = (PFN_xrGetInstanceProcAddr)dlsym(h, "xrGetInstanceProcAddr");
     __android_log_print(ANDROID_LOG_INFO, TAG, "extension shim: overport xrGetInstanceProcAddr %s",
                         overport_gipa ? "OK" : "MISSING");

@@ -44,7 +44,9 @@ class CatalogEntry:
     # device.config_sync: settings file (relative to files/) -> {setting: w | h | expression of the eye-buffer size}
     config_sync: dict = field(default_factory=dict)
     lepton_env: dict = field(default_factory=dict)
-    foveation: str = ""  # device.foveation: fixed / off (Valve's eye-tracked foveation layer)
+    foveation: str = ""  # device.foveation: tracked / fixed / off
+    foveation_radius: float = 0.0  # zero preserves the runtime default
+    foveation_test: bool = False
     pcvr_alternative: str | None = None
     # Rift (PC VR) recipes: package is "rift.<slug>"; kind "rift"
     kind: str = "quest"
@@ -353,7 +355,9 @@ def entry_from_library(g: dict, status: str | None = None, notes: str | None = N
         adapter={p.split(".", 1)[1]: v.get("value") for p, v in r.patches.items() if p.startswith("adapter.")},
         device_files=r.params("device.files").get("files", {}),
         config_sync=r.params("device.config_sync").get("files", {}),
-        foveation=r.params("device.foveation").get("mode") or "")
+        foveation=r.params("device.foveation").get("mode") or "",
+        foveation_radius=float(r.params("device.foveation").get("radius") or 0),
+        foveation_test=bool(r.params("device.foveation").get("test", False)))
 
 
 def generic_source_hint(name: str) -> str:

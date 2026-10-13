@@ -3,7 +3,8 @@ static void fixture_upload_image_pattern(surf_swapchain *s,VkImage image,uint32_
     VkImageLayout old,VkImageLayout final,const unsigned char colors[2][4],int rows) {
     unsigned char *pixels=s->staging_map;
     for(uint32_t layer=0;layer<layers;layer++)for(uint32_t y=0;y<height;y++)for(uint32_t x=0;x<width;x++)
-        memcpy(pixels+4*((size_t)layer*width*height+y*width+x),colors[rows?(y>=height/2):(layers>1?layer:(x>=width/2))],4);
+        memcpy(pixels+4*((size_t)layer*width*height+y*width+x),
+            colors[rows==2?(x&1):rows?(y>=height/2):(layers>1?layer:(x>=width/2))],4);
     VK_OK(vkResetCommandBuffer(s->cmd,0));
     VkCommandBufferBeginInfo begin={VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};VK_OK(vkBeginCommandBuffer(s->cmd,&begin));
     sc_barrier(s->cmd,image,layers,old,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -151,6 +152,80 @@ static void test_composite(surf_swapchain *base) {
     }
     assert(abs(transformed[3]-191)<=1 && abs(transformed[7]-191)<=1);
     puts("PASS: Batman scene colour/layout chain, vertical orientation, RGB/alpha scale and bias; unsupported chains retain fallback.");
+    // A 1-pixel video pattern must retain detail across both eyes, including
+    // the periphery. Matching cameras make the video mapping exactly 1:1.
+    color.colorScale=(XrColor4f){1,1,1,1};color.colorBias=(XrColor4f){0};layout.flags=0;
+    s->video_job=job;
+    for(int e=0;e<2;e++) {
+        views[e].pose=job.views[e].pose;views[e].fov=job.views[e].fov;
+        // Production removes the current view's guard before composition.
+        for(int k=8;k<12;k++)s->video_job.params[e][k]*=SURF_VIDEO_GUARD;
+    }
+    const unsigned char stripes[2][4]={{0,0,0,255},{255,255,255,255}};
+    fixture_upload_image_pattern(s,p->video_cache,2*p->size,p->size,1,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,stripes,2);
+    sc_capture_until=monotonic_ns()+1000000000ll;surf_scene_capture(&game,0);surf_scene_release_commit(game.handle);
+    assert(surf_composite_frame((XrSession)(uintptr_t)1,&frame,&scene,(const void*)&p->layer)==(const void*)&c->layer);
+    VK_OK(vkQueueWaitIdle(vk.queue));
+    VK_OK(vkResetCommandBuffer(s->cmd,0));
+    VkCommandBufferBeginInfo read_begin={VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    VK_OK(vkBeginCommandBuffer(s->cmd,&read_begin));
+    sc_barrier(s->cmd,c->images[c->index],1,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        VK_ACCESS_TRANSFER_WRITE_BIT,VK_ACCESS_TRANSFER_READ_BIT);
+    VkBufferImageCopy read_copy={0,0,0,{VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},{0,0,0},{2*p->size,p->size,1}};
+    vkCmdCopyImageToBuffer(s->cmd,c->images[c->index],VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,s->staging,1,&read_copy);
+    sc_barrier(s->cmd,c->images[c->index],1,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_ACCESS_TRANSFER_READ_BIT,VK_ACCESS_COLOR_ATTACHMENT_READ_BIT);
+    VK_OK(vkEndCommandBuffer(s->cmd));
+    VkSubmitInfo read_submit={VK_STRUCTURE_TYPE_SUBMIT_INFO,NULL,0,NULL,NULL,1,&s->cmd};
+    VK_OK(vkQueueSubmit(vk.queue,1,&read_submit,VK_NULL_HANDLE));VK_OK(vkQueueWaitIdle(vk.queue));
+    const unsigned char *detail=s->staging_map;
+    for(uint32_t y=0;y<p->size;y+=31)for(uint32_t x=0;x<2*p->size;x++) {
+        const unsigned char *pixel=detail+4*((size_t)y*2*p->size+x);
+        // Linear sampler subtexel precision can produce a small sRGB error on black. Coarse shading would erase this alternating contrast.
+        for(int k=0;k<3;k++)if(abs(pixel[k]-stripes[x&1][k])>24){printf("DETAIL %u,%u channel %d got %u expected %u\n",x,y,k,pixel[k],stripes[x&1][k]);fflush(stdout);assert(0);}
+        assert(pixel[3]==255);
+    }
+    puts("PASS: single-pixel video detail preserved at centre, edges and corners in both eyes.");
+    // Exercise the real GLES hardware-buffer -> Vulkan sampler handoff, not
+    // just an ordinary Vulkan image standing in for the cache.
+    GLuint direct_fbo;glGenFramebuffers(1,&direct_fbo);
+    for(int trial=0;trial<4;trial++) {
+        surf_native_slot *slot=&s->native_slots[trial];
+        assert(surf_native_allocate(slot,eglGetCurrentDisplay(),2*p->size,p->size,1));
+        assert(slot->srgb_view);
+        glBindFramebuffer(GL_FRAMEBUFFER,direct_fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,slot->texture,0);
+        assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
+        glDisable(GL_SCISSOR_TEST);glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
+        glClearColor(.5f,.25f,.75f,1);glClear(GL_COLOR_BUFFER_BIT);glFinish();
+        frame.displayTime++;job.time=frame.displayTime;job.space=scene.space;
+        s->video_job=job;slot->video=job;slot->projected=1;
+        slot->seq=++s->seq;slot->state=2;
+        int previous=s->native_current;
+        VkImageView saved_view=slot->srgb_view;
+        if(trial==3)slot->srgb_view=VK_NULL_HANDLE; // unsupported-view fallback
+
+        assert(surf_video_present((XrSession)(uintptr_t)1,&frame,(const void*)&movie,s,p));
+        assert(s->native_current==(trial==3?-1:trial) && slot->state==3);
+        slot->srgb_view=saved_view;
+        if(previous>=0)assert(s->native_slots[previous].state==4);
+        sc_capture_until=monotonic_ns()+1000000000ll;
+        surf_scene_capture(&game,0);surf_scene_release_commit(game.handle);
+        assert(surf_composite_frame((XrSession)(uintptr_t)1,&frame,&scene,(const void*)&p->layer));
+        VK_OK(vkQueueWaitIdle(vk.queue));
+        // Keep command buffer lifetime valid before the readback uses it.
+        VK_OK(vkResetFences(vk.device,1,&s->fence));s->in_flight=0;surf_native_complete(s);
+        assert(slot->state==(trial==3?0:3));
+        if(previous>=0)assert(s->native_slots[previous].state==0);
+        fixture_composite_pixels(s,c,p->size);
+        const unsigned char *direct_pixels=s->staging_map;
+        const int expected_direct[3]={128,64,191};
+        for(int eye=0;eye<2;eye++)for(int ch=0;ch<3;ch++)
+            assert(abs(direct_pixels[4*eye+ch]-expected_direct[ch])<=2);
+    }
+    glDeleteFramebuffers(1,&direct_fbo);
+    puts("PASS: direct shared-buffer stereo colour, retained reader and fence-delayed slot recycling.");
     surf_scene_destroy(game.handle);fake_destroy(game.handle);surf_projection_destroy(s);
     assert(!c->ready && !c->output);memset(s,0,sizeof(*s));
     puts("PASS: composition timeout retry, held-camera metadata and GPU-reader teardown.");

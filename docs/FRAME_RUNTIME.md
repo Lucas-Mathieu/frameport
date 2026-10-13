@@ -85,6 +85,23 @@
   the session stays below FOCUSED.
 
 ## Graphics stack
+- Explicit foveation injection probe (SteamOS 0.4.5, 20261007.6125817, Lepton 3.0.5, 2026-10-11):
+  Batman's normal Steam environment requested the FDM Vulkan layer but supplied no `FDM_DEBUG` flag.
+  Appending `debug` while preserving inherited flags showed `fdm_injection_CreateInstance: skipped`.
+  A temporary `FDM_DEBUG=enable,debug` launch created the Unity/Manta Vulkan instance and device,
+  detected a 54x54 two-layer density map for 1728x1728 eye buffers, and logged render passes with
+  `fdm 1`, `already_has_fdm=1`, and changing offsets for both eyes. This verifies the injection path,
+  not visual quality, gaze calibration, sustained gameplay stability, or an FPS/power improvement.
+  `device.foveation` mode `tracked` now explicitly loads the layer and sets `FDM_DEBUG=enable` without
+  debug spam. It is opt-in; do not enable it globally or assume all GLES/Zink and Vulkan renderers work.
+  Follow-up wearer test on 2026-10-11 FAILED in Batman: large rainbow glitches outside the gaze region
+  and jitter even in clear regions. Restoring the original launcher and restarting removed BOTH symptoms,
+  confirmed by the wearer. Do not recommend forced injection for this Batman build. Reaching foveated
+  render passes was only a technical probe, not a working visual implementation. Eye-tracking logs also
+  showed left-eye filter resets, but they do not establish the rendering bug's root cause.
+  Keep `adapter.foveation_fix` separate: hiding the game's Quest extensions does not prevent the
+  independent Valve injection path. A swapchain sample count of 1 also does not prove the absence of
+  internal MSAA: the enabled Batman render-pass trace reported `samples 2`.
 - Vulkan: freedreno (Mesa Turnip); Valve injects `VK_LAYER_VALVE_rpo` and `VALVE_fdm_injection` via
   VK_INSTANCE_LAYERS (set `VK_INSTANCE_LAYERS=""` through `device.lepton_env` to test without them).
   The FDM layer follows each eye's gaze; one-eye jitter in some games (GitHub #69) is fixed per game with
@@ -323,6 +340,45 @@ over Quest games.
   one everywhere (FramePort's "Type on Frame", agent `_keyboard`).
 - Unity text fields close without a system keyboard; see `frame.unity_text_input` in PLAYBOOK.md.
 
+
+## Shared foveation controls (tested 2026-10-12)
+
+Under a Quest game's Advanced patches, choose **Foveated rendering → Eye-tracked**, then **Update on Frame**.
+The full-resolution area selector defaults to **Default (30% radius)**: no radius override, preserving the
+runtime profile used in the headset experiments. Larger radii retain more detail and save less shading work.
+Custom radii set `FOVE_INNER`; `FOVE_OUTER` is twice that value, matching the runtime's profile proportions.
+The inspected runtime's built-in inner/outer pairs are 0.30/0.60, 0.25/0.50 and 0.20/0.40.
+The shared-texture injection path selects profile 1: 0.30 inner radius and 0.60 outer radius.
+
+`device.foveation` enables Valve's shared Vulkan injection and suppresses competing native foveation through
+`foveation_fix=1`. Recipes and shared catalog entries preserve mode, radius and test selection. This remains
+experimental: complete images were confirmed in RE4, Batman, Deadpool, The Climb 2 and Asgard's Wrath 2,
+not all Quest games or renderers. RE4 and Batman checks include title/calibration scenes; these are not
+equivalent to extended gameplay coverage. Asgard gameplay was visually confirmed, without an on/off benchmark.
+Batman additionally receives the verified ordinary shared-allocation patch, guarded by the full original
+OVRPlugin hash; unknown Batman versions fail explicitly rather than receiving unchecked binary offsets.
+
+The Climb 2 uses a private `libvrapi_foveation.so` bridge, installed only into that game's APK after the
+standard bridge patch. It retains images during held-focus visibility dips, separates mono overlay output
+storage from stereo density-map storage, and rate-limits its view-cache writes. Its process-local Valve layer
+correction supplies both eye offsets and avoids the invalid subpass mask-table reads seen during Alps loading;
+`yflip` corrects vertical gaze direction. The renderer SHA-256 and 1.0 resolution scale are checked before
+installation. The runtime correction additionally checks the exact Valve library SHA-256 and all four original
+instructions before touching executable memory; unsupported libraries request injection be disabled and log
+the reason. No system library is changed. A SteamOS update requires revalidation of this compatibility path.
+Both-eye gaze following was confirmed in Climb's darkening diagnostic, but long-session stability remains
+experimental. Off rebuilds from the source APK and removes this private support, including its visibility fix.
+
+**Darken lower-resolution regions (test)** adds an optional Vulkan shader diagnostic. It dims RGB where the
+actual `FragSizeEXT` footprint exceeds one pixel; alpha is unchanged. Deadpool's shaded regions were confirmed
+to follow gaze in the headset. Unsupported shader output interfaces are skipped, and multiple passes may
+compound darkening, so this is a diagnostic rather than a precise composited mask. Do not benchmark with it on.
+Uncheck it and update from the original source APK to remove the diagnostic library, except in Climb where
+the same library also carries the compatibility correction. Darkening stays dormant without its launcher opt-in.
+
+High-resolution Deadpool samples crossed from about 45 to 90 FPS with injection enabled, but temperatures and
+power rose as it rendered twice as many frames. Foveation does not guarantee lower temperature at uncapped FPS.
+The new configurable radii have configuration/build coverage; each radius has not been separately play-tested.
 
 ## Monitoring sources (probed 2026-10-07, SteamOS 0.4.3, kernel 6.18; used by the Monitor tab, agent `_monitor`)
 

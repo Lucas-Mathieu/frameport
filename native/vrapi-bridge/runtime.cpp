@@ -76,6 +76,13 @@ static void saveLiveFov() {
     const float saved[2] = {s.savedFovDegrees[0], s.savedFovDegrees[1]};
     if (!s.locatedFovValid || !fovcache::plausible(now[0], now[1]) || !fovcache::changed(s.savedFovValid, saved, now))
         return;
+    // Only the private foveation bridge opts in; ordinary games retain their cache policy.
+    static double lastCacheWrite = -10.0;
+    const double cacheTime = secondsNow();
+    const char* limitCache = std::getenv("FRAMEPORT_VRAPI_KEEP_FOCUSED_IMAGE");
+    if (limitCache && std::strcmp(limitCache, "1") == 0 && s.savedFovValid && cacheTime - lastCacheWrite < 10.0)
+        return;
+    lastCacheWrite = cacheTime;
     s.savedFovDegrees = {now[0], now[1]};  // also when it can't be written: tried once per change, not every frame
     s.savedFovValid = true;
     char path[512], tmp[540], text[96];

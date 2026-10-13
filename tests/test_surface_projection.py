@@ -32,3 +32,21 @@ def test_projection_shader_validates(tmp_path):
     subprocess.run([compiler, "-V", "--target-env", "vulkan1.0",
                     str(root / "native/adapter/surface_projection.comp"), "-o", str(binary)], check=True)
     subprocess.run([validator, "--target-env", "vulkan1.0", str(binary)], check=True)
+
+
+def test_video_compositor_revision_outdates_video_clients_only():
+    from frameport.patches.base import get, recipe_fingerprint
+
+    patch = get("adapter.surface_native")
+    current = patch.revision
+    assert current == 4
+    video = {"patches": {"frame.adapter": {}, "adapter.surface_native": {"value": 1}}}
+    ordinary = {"patches": {"frame.adapter": {}}}
+    new_video = recipe_fingerprint(video, "test.video")
+    new_ordinary = recipe_fingerprint(ordinary, "test.game")
+    try:
+        patch.revision = 3
+        assert recipe_fingerprint(video, "test.video") != new_video
+        assert recipe_fingerprint(ordinary, "test.game") == new_ordinary
+    finally:
+        patch.revision = current
