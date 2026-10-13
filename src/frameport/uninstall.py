@@ -18,7 +18,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .core import applog, paths
+from .core import applog, instance, paths
 from .core.events import Reporter
 from .core.paths import user_data_dir
 
@@ -209,6 +209,7 @@ def run(reporter: Reporter, frame=None, keep_frame_saves: bool = True, backup_di
     reporter.stage("Removing FramePort's data")
     data = user_data_dir()
     applog.shutdown()     # the open log file would block the delete on Windows
+    instance.release()    # so would the running app's own gui.lock (Reddit 2026-10-12: uninstall stopped on it)
     paths.mark_removed()  # from now on nothing writes into the data folder (job logs, library, caches)
     left = remove_data_dir(data)
     reporter.check("FramePort data", not left, str(data) if not left else
@@ -234,8 +235,14 @@ def remove_data_dir(data: Path) -> list[str]:
         if entry.is_dir() and not entry.is_symlink():
             shutil.rmtree(entry, ignore_errors=True)
         else:
-            entry.unlink(missing_ok=True)
+            try:
+                entry.unlink(missing_ok=True)
+            except OSError:  # in use (Windows): reported as left over, the rest still goes
+                pass
     left = sorted(e.name for e in data.iterdir()) if data.is_dir() else []
     if not left:
-        data.rmdir()
+        try:
+            data.rmdir()
+        except OSError:
+            pass
     return left

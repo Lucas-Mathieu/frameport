@@ -112,3 +112,37 @@ def test_app_data_on_the_frame_stays_out_of_the_agents_folder(monkeypatch, tmp_p
     assert paths.user_data_dir() == tmp_path / "frameport-app"  # the agent owns (and purges) .../frameport
     monkeypatch.setattr(local, "on_frame", lambda: False)
     assert paths.user_data_dir() == tmp_path / "frameport"
+
+
+def test_changed_host_key_is_its_own_error_and_can_be_trusted(fake_ssh, monkeypatch, tmp_path):
+    """Reddit 2026-10-12: "Host key for server '<ip>' does not match" after SteamOS was set up again. FramePort says
+    what happened (not "can't reach"), and forgetting the saved key lets the next connection keep the new one."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    def key():
+        raw = ed25519.Ed25519PrivateKey.generate().private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.OpenSSH, serialization.NoEncryption())
+        path = tmp_path / f"k{len(list(tmp_path.iterdir()))}"
+        path.write_bytes(raw)
+        return paramiko.Ed25519Key.from_private_key_file(str(path))
+
+    got, expected = key(), key()
+    fake_ssh.script = {"app_key": paramiko.BadHostKeyException("10.0.0.2", got, expected)}
+    monkeypatch.setattr(C.Frame, "relocate", lambda self: None)
+    with pytest.raises(C.HostKeyChanged) as err:
+        C.Frame(C.FrameTarget("10.0.0.2")).connect()
+    assert fake_ssh.tried == ["app_key"] and err.value.host == "10.0.0.2"
+    from frameport.errors import is_connection_error
+
+    assert not is_connection_error(err.value) and "Trust the new key" in explain(err.value)
+    known = tmp_path / "ssh"
+    known.mkdir()
+    monkeypatch.setattr(C, "ssh_dir", lambda: known)
+    keys = paramiko.HostKeys()
+    keys.add("10.0.0.2", expected.get_name(), expected)
+    keys.add("10.0.0.9", expected.get_name(), expected)
+    keys.save(str(known / "known_hosts"))
+    assert C.forget_host_key("10.0.0.2") is True and C.forget_host_key("10.0.0.2") is False
+    left = paramiko.HostKeys(str(known / "known_hosts"))
+    assert "10.0.0.2" not in left and "10.0.0.9" in left

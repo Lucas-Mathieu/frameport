@@ -58,6 +58,44 @@ class FrameNotPaired(ConnectionError):
                          "Start setup)." + (f" ({'; '.join(details)})" if details else ""))
 
 
+class HostKeyChanged(ConnectionError):
+    """The device at this address has a different SSH host key than the one FramePort saved when it first connected
+    (SteamOS reset or reinstalled, or another device got that address). FramePort doesn't connect until the user
+    trusts the new key (forget_host_key): a silent switch would let any device on the network pose as the Frame."""
+
+    def __init__(self, host: str, port: int, got: str = "", expected: str = ""):
+        self.host, self.port, self.got, self.expected = host, port, got, expected
+        super().__init__(f"the SSH key of {host} changed since FramePort last connected (got {got}, expected "
+                         f"{expected})")
+
+
+def _fingerprint(key) -> str:
+    import base64
+    import hashlib
+
+    try:
+        return "SHA256:" + base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode().rstrip("=")
+    except Exception:  # noqa: BLE001 - only for the message
+        return "?"
+
+
+def forget_host_key(host: str, port: int = 22) -> bool:
+    """Drop the saved SSH host key of host[:port] from FramePort's known_hosts (the next connection saves the new
+    one). True if there was one."""
+    path = ssh_dir() / "known_hosts"
+    keys = paramiko.HostKeys()
+    try:
+        keys.load(str(path))
+    except OSError:
+        return False
+    name = host if port == 22 else f"[{host}]:{port}"
+    if name not in keys:
+        return False
+    del keys[name]
+    keys.save(str(path))
+    return True
+
+
 def _no_auth_methods(exc: BaseException) -> bool:
     """paramiko ends a key/agent attempt that had nothing to offer (no SSH keys on this PC, no agent) with a plain
     SSHException, not an AuthenticationException: it's a failed login all the same, not a network problem."""
@@ -436,6 +474,10 @@ class Frame:
                 else:
                     client.connect(password=self.password, allow_agent=False, look_for_keys=False, **kwargs)
                 break
+            except paramiko.BadHostKeyException as exc:
+                client.close()
+                raise HostKeyChanged(self.target.host, self.target.port, _fingerprint(exc.key),
+                                     _fingerprint(exc.expected_key)) from None
             except paramiko.AuthenticationException as exc:
                 client.close()
                 errors.append(f"{attempt}: {exc}")

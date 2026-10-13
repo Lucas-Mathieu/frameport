@@ -2640,13 +2640,15 @@ class FramePortApp:
                 if not quiet:
                     self.toast(tr("Connected to {label}").format(label=target.label))
                 self._not_paired = False
+                self._host_key_changed = None
             except Exception as exc:  # noqa: BLE001
-                from ..frame.connection import FrameNotPaired
+                from ..frame.connection import FrameNotPaired, HostKeyChanged
 
                 self.frame_state = "offline"
                 self.frame_info = self.frame_drives = None
                 # reachable, but it doesn't let FramePort in: the Frame page points at the first-time setup
                 self._not_paired = isinstance(exc, FrameNotPaired)
+                self._host_key_changed = exc if isinstance(exc, HostKeyChanged) else None
                 if not isinstance(exc, (FrameNotPaired, OSError)):  # unexpected: keep the traceback for reports
                     applog.log.exception("connect to %s failed", target.label)
                 if not quiet:
@@ -2656,6 +2658,15 @@ class FramePortApp:
             else:
                 self._refresh_sidebar()
         self.page.run_thread(work)
+
+    def trust_new_host_key(self, target) -> None:
+        """The Frame's SSH key changed (SteamOS reset): forget the saved one, connect again and keep the new one."""
+        from ..frame.connection import forget_host_key
+
+        forget_host_key(target.host, target.port)
+        applog.log.info("trusted the new SSH host key of %s", target.host)
+        self._host_key_changed = None
+        self.connect(target)
 
     def connect_manual(self, address: str, password: str | None):
         from ..frame.connection import parse_target

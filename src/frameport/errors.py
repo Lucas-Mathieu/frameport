@@ -23,6 +23,8 @@ def _paramiko():
 
 def is_connection_error(exc: BaseException) -> bool:
     """The Frame can't be reached (off, asleep, out of Wi-Fi), as opposed to a command that failed on it."""
+    if type(exc).__name__ == "HostKeyChanged":  # reachable, but not trusted: retrying won't help
+        return False
     paramiko, no_valid = _paramiko()
     if no_valid and isinstance(exc, no_valid):
         return True
@@ -44,6 +46,10 @@ def explain(exc: BaseException) -> str:
     paramiko, _ = _paramiko()
     msg = " ".join(str(exc).split()).removeprefix("[Errno None] ")
     low = msg.lower()
+    if type(exc).__name__ == "HostKeyChanged":
+        return tr("This Frame's SSH key changed since FramePort last connected (SteamOS was reset, or another "
+                  "device now has its address). If it's your Frame, choose Trust the new key on the Steam Frame "
+                  "page.")
     if paramiko and isinstance(exc, paramiko.ChannelException):
         return tr("The connection to the Frame is busy. Try again in a moment.")
     if "authentication failed" in low or "no authentication methods available" in low:

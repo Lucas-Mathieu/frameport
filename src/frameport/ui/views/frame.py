@@ -473,7 +473,17 @@ class FrameView:
             C.update(by_address)
         saved = saved_targets()
         offline = None
-        if getattr(app, "_not_paired", False):  # it answered, but doesn't know FramePort yet
+        changed = getattr(app, "_host_key_changed", None)
+        if changed is not None and saved:  # it answered with another SSH key than when it was paired
+            target = next((t for t in saved if t.host == changed.host), saved[0])
+            offline = C.callout(ft.Row([
+                C.body(tr("{label}'s SSH key changed since FramePort last connected ({host}). That happens after "
+                          "SteamOS is reset or reinstalled, or when another device gets its address. Trust the new "
+                          "key only if this is your Frame.").format(label=target.label, host=changed.host), T.TEXT,
+                       expand=True),
+                C.primary(tr("Trust the new key"), ft.Icons.KEY_ROUNDED,
+                          lambda e: app.trust_new_host_key(target))]), "warn")
+        elif getattr(app, "_not_paired", False):  # it answered, but doesn't know FramePort yet
             offline = C.callout(ft.Row([
                 C.body(tr("This Frame isn't set up for FramePort yet. Run the setup once."), T.TEXT,
                        expand=True),

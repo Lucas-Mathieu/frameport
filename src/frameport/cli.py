@@ -686,6 +686,21 @@ def frame_info(frame: Optional[str] = typer.Option(None, help=FRAME_HELP)):
     typer.echo(json.dumps(_target(frame).describe(), indent=1, default=str))
 
 
+@frame_app.command("trust-key")
+def frame_trust_key(frame: Optional[str] = typer.Option(None, help=FRAME_HELP)):
+    """Forget the Frame's saved SSH key and keep its new one (after SteamOS was reset or reinstalled). Only for your
+    own Frame: a changed key can also mean another device has its address."""
+    from .frame.connection import forget_host_key, parse_target, saved_targets
+
+    t = parse_target(frame) if frame else next(iter(saved_targets()), None)
+    if t is None:
+        raise typer.BadParameter("no Frame given and none remembered; use --frame steamos@<host>")
+    typer.echo(f"forgot the saved key of {t.host}" if forget_host_key(t.host, t.port)
+               else f"no saved key for {t.host}")
+    info = _target(frame).describe()
+    typer.echo(f"connected: {info.get('hostname') or t.host} (new key saved)")
+
+
 @frame_app.command("usb-check")
 def frame_usb_check(frame: Optional[str] = typer.Option(None, help=FRAME_HELP),
                     no_speed: bool = typer.Option(False, help="skip the upload speed test (2 × 128 MB)")):

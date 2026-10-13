@@ -60,6 +60,29 @@ def acquire(path: Path | None = None) -> bool:
     return True
 
 
+def release() -> None:
+    """Give up the GUI lock and delete its file (uninstall removes the data folder from the running app: Windows
+    can't delete a file this process keeps open and locked)."""
+    global _held
+    f, _held = _held, None
+    if f is None:
+        return
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+    except OSError:
+        pass
+    path = Path(f.name)
+    f.close()
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def holder(path: Path | None = None) -> int | None:
     try:
         return int((path or lock_file()).read_text().strip() or 0) or None
