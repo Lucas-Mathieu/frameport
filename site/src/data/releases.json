@@ -1,6 +1,14 @@
 {
- "updated": "2026-10-12",
+ "updated": "2026-10-13",
  "releases": [
+  {
+   "tag": "v1.1.0",
+   "name": "FramePort v1.1.0",
+   "date": "2026-10-13",
+   "url": "https://github.com/spoopyghosty0/frameport/releases/tag/v1.1.0",
+   "dev": false,
+   "notes": "FramePort v1.1.0: Windows (x64), macOS (Apple Silicon) and Linux (x64, ARM64).\n\n## What's new\n\n- **Games on an SD card whose name has a space start again** (they got no storage before).\n- **Experimental eye-tracked foveation** per game, through Valve's foveation layer (thanks Lucas-Mathieu, #247).\n- **Game menu: \"Update with a newer APK…\" and \"Update app only\"** (keeps modded game data on the Frame).\n- **Game fixes:** Wander 0.3570, Vermillion, Star Wars: Tales from the Galaxy's Edge, The Climb, Jurassic World Aftermath backups, Yupitergrad, Beyond Sandbox, and an optional fade fix for Batman's loading screens (thanks nleach7 and Klownicle).\n- **Controllers switched on after a 2D app started** now reach it as a gamepad.\n- **Fixes:** a changed Frame SSH key can be trusted with one click, uninstalling no longer stops on its own lock file, file pickers work without a desktop portal on Linux, separate desktop-icon switch for Linux apps, and the low-space warning checks the right drive.\n\nAlready have FramePort? It offers this update itself (Library → **Update now**).\n\n## Install\n\nDownload the file for your PC, unpack it and start FramePort. Guide:\n[Install and first steps](https://frameport.app/docs/install/).\n"
+  },
   {
    "tag": "v1.0.4",
    "name": "FramePort v1.0.4",

@@ -286,7 +286,7 @@ const builds = DOWNLOADS.map((d) => ({ os: d.os, label: d.label, detail: d.detai
   .arrive { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px; display: grid; place-items: center; border-radius: 50%;
     background: var(--accent); color: var(--on-accent); font: 800 24px/1 var(--font-display); box-shadow: 0 0 40px rgba(255, 138, 31, .7);
     transform: translateX(clamp(175px, 22vw, 300px)) scale(0); opacity: 0; z-index: 2; }
-  [data-state="sent"] .arrive { animation: arrive 700ms 780ms var(--ease-spring) forwards; }
+  [data-state="sent"] .arrive { animation: arrive 700ms 780ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }  /* the original overshoot (1.0.3) */
   .flare { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px; border-radius: 50%; opacity: 0; z-index: 1;
     background: radial-gradient(circle, #fff, rgba(255, 138, 31, .8) 30%, transparent 70%); }
   [data-state="sent"] .flare { animation: flare 900ms 560ms ease-out forwards; }

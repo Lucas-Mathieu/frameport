@@ -1,14 +1,14 @@
 {
- "updated": "2026-10-12",
+ "updated": "2026-10-13",
  "people": [
   {
    "login": "spoopyghosty0",
    "avatar": "https://avatars.githubusercontent.com/u/336754034?v=4",
    "url": "https://github.com/spoopyghosty0",
-   "commits": 542,
+   "commits": 578,
    "issues": 5,
    "prs": 3,
-   "total": 572
+   "total": 608
   },
   {
    "login": "Klownicle",
@@ -47,6 +47,24 @@
    "total": 33
   },
   {
+   "login": "Lucas-Mathieu",
+   "avatar": "https://avatars.githubusercontent.com/u/184943223?v=4",
+   "url": "https://github.com/Lucas-Mathieu",
+   "commits": 9,
+   "issues": 0,
+   "prs": 4,
+   "total": 29
+  },
+  {
+   "login": "UnicronNL",
+   "avatar": "https://avatars.githubusercontent.com/u/1267745?v=4",
+   "url": "https://github.com/UnicronNL",
+   "commits": 5,
+   "issues": 6,
+   "prs": 1,
+   "total": 28
+  },
+  {
    "login": "inseend",
    "avatar": "https://avatars.githubusercontent.com/u/11666993?v=4",
    "url": "https://github.com/inseend",
@@ -65,31 +83,22 @@
    "total": 24
   },
   {
-   "login": "UnicronNL",
-   "avatar": "https://avatars.githubusercontent.com/u/1267745?v=4",
-   "url": "https://github.com/UnicronNL",
-   "commits": 5,
-   "issues": 6,
-   "prs": 0,
-   "total": 23
-  },
-  {
-   "login": "Lucas-Mathieu",
-   "avatar": "https://avatars.githubusercontent.com/u/184943223?v=4",
-   "url": "https://github.com/Lucas-Mathieu",
-   "commits": 7,
-   "issues": 0,
+   "login": "nleach7",
+   "avatar": "https://avatars.githubusercontent.com/u/1406346?v=4",
+   "url": "https://github.com/nleach7",
+   "commits": 3,
+   "issues": 2,
    "prs": 3,
-   "total": 22
+   "total": 24
   },
   {
    "login": "jim2011",
    "avatar": "https://avatars.githubusercontent.com/u/15848374?v=4",
    "url": "https://github.com/jim2011",
    "commits": 0,
-   "issues": 6,
+   "issues": 7,
    "prs": 0,
-   "total": 18
+   "total": 21
   },
   {
    "login": "Jmckenzie84",
@@ -110,6 +119,15 @@
    "total": 15
   },
   {
+   "login": "eepykith",
+   "avatar": "https://avatars.githubusercontent.com/u/338898488?v=4",
+   "url": "https://github.com/eepykith",
+   "commits": 0,
+   "issues": 5,
+   "prs": 0,
+   "total": 15
+  },
+  {
    "login": "Scoota23",
    "avatar": "https://avatars.githubusercontent.com/u/27732436?v=4",
    "url": "https://github.com/Scoota23",
@@ -119,13 +137,13 @@
    "total": 15
   },
   {
-   "login": "eepykith",
-   "avatar": "https://avatars.githubusercontent.com/u/338898488?v=4",
-   "url": "https://github.com/eepykith",
+   "login": "ssgod101",
+   "avatar": "https://avatars.githubusercontent.com/u/49173466?v=4",
+   "url": "https://github.com/ssgod101",
    "commits": 0,
-   "issues": 4,
+   "issues": 5,
    "prs": 0,
-   "total": 12
+   "total": 15
   },
   {
    "login": "nickwilde77555",
@@ -209,6 +227,15 @@
    "total": 9
   },
   {
+   "login": "greggray24",
+   "avatar": "https://avatars.githubusercontent.com/u/255593097?v=4",
+   "url": "https://github.com/greggray24",
+   "commits": 0,
+   "issues": 3,
+   "prs": 0,
+   "total": 9
+  },
+  {
    "login": "m4ddh7jm7c-bit",
    "avatar": "https://avatars.githubusercontent.com/u/338352097?v=4",
    "url": "https://github.com/m4ddh7jm7c-bit",
@@ -260,6 +287,15 @@
    "commits": 1,
    "issues": 0,
    "prs": 1,
+   "total": 6
+  },
+  {
+   "login": "Loafmeister",
+   "avatar": "https://avatars.githubusercontent.com/u/60628625?v=4",
+   "url": "https://github.com/Loafmeister",
+   "commits": 0,
+   "issues": 2,
+   "prs": 0,
    "total": 6
   },
   {
@@ -317,6 +353,24 @@
    "total": 6
   },
   {
+   "login": "alicecatpaw",
+   "avatar": "https://avatars.githubusercontent.com/u/7423859?v=4",
+   "url": "https://github.com/alicecatpaw",
+   "commits": 0,
+   "issues": 0,
+   "prs": 1,
+   "total": 5
+  },
+  {
+   "login": "Akimya49",
+   "avatar": "https://avatars.githubusercontent.com/u/46827872?v=4",
+   "url": "https://github.com/Akimya49",
+   "commits": 0,
+   "issues": 1,
+   "prs": 0,
+   "total": 3
+  },
+  {
    "login": "AlexanderCowell",
    "avatar": "https://avatars.githubusercontent.com/u/225416878?v=4",
    "url": "https://github.com/AlexanderCowell",
@@ -335,9 +389,36 @@
    "total": 3
   },
   {
+   "login": "astromaddie",
+   "avatar": "https://avatars.githubusercontent.com/u/5488456?v=4",
+   "url": "https://github.com/astromaddie",
+   "commits": 0,
+   "issues": 1,
+   "prs": 0,
+   "total": 3
+  },
+  {
    "login": "bcain2005-gif",
    "avatar": "https://avatars.githubusercontent.com/u/258048498?v=4",
    "url": "https://github.com/bcain2005-gif",
+   "commits": 0,
+   "issues": 1,
+   "prs": 0,
+   "total": 3
+  },
+  {
+   "login": "chaseflow",
+   "avatar": "https://avatars.githubusercontent.com/u/235484785?v=4",
+   "url": "https://github.com/chaseflow",
+   "commits": 0,
+   "issues": 1,
+   "prs": 0,
+   "total": 3
+  },
+  {
+   "login": "coah80",
+   "avatar": "https://avatars.githubusercontent.com/u/100182500?v=4",
+   "url": "https://github.com/coah80",
    "commits": 0,
    "issues": 1,
    "prs": 0,
@@ -452,18 +533,18 @@
    "total": 3
   },
   {
-   "login": "leoloopfiets",
-   "avatar": "https://avatars.githubusercontent.com/u/215600281?v=4",
-   "url": "https://github.com/leoloopfiets",
+   "login": "JMQuehl",
+   "avatar": "https://avatars.githubusercontent.com/u/110048375?v=4",
+   "url": "https://github.com/JMQuehl",
    "commits": 0,
    "issues": 1,
    "prs": 0,
    "total": 3
   },
   {
-   "login": "Loafmeister",
-   "avatar": "https://avatars.githubusercontent.com/u/60628625?v=4",
-   "url": "https://github.com/Loafmeister",
+   "login": "leoloopfiets",
+   "avatar": "https://avatars.githubusercontent.com/u/215600281?v=4",
+   "url": "https://github.com/leoloopfiets",
    "commits": 0,
    "issues": 1,
    "prs": 0,
@@ -524,15 +605,6 @@
    "total": 3
   },
   {
-   "login": "ssgod101",
-   "avatar": "https://avatars.githubusercontent.com/u/49173466?v=4",
-   "url": "https://github.com/ssgod101",
-   "commits": 0,
-   "issues": 1,
-   "prs": 0,
-   "total": 3
-  },
-  {
    "login": "TainakaRitsu",
    "avatar": "https://avatars.githubusercontent.com/u/12560774?v=4",
    "url": "https://github.com/TainakaRitsu",
@@ -545,6 +617,15 @@
    "login": "Tazzash",
    "avatar": "https://avatars.githubusercontent.com/u/42785850?v=4",
    "url": "https://github.com/Tazzash",
+   "commits": 0,
+   "issues": 1,
+   "prs": 0,
+   "total": 3
+  },
+  {
+   "login": "tirehabitat",
+   "avatar": "https://avatars.githubusercontent.com/u/97759168?v=4",
+   "url": "https://github.com/tirehabitat",
    "commits": 0,
    "issues": 1,
    "prs": 0,
@@ -572,6 +653,15 @@
    "login": "WhoPlaysTheFool",
    "avatar": "https://avatars.githubusercontent.com/u/26016667?v=4",
    "url": "https://github.com/WhoPlaysTheFool",
+   "commits": 0,
+   "issues": 1,
+   "prs": 0,
+   "total": 3
+  },
+  {
+   "login": "xenon2",
+   "avatar": "https://avatars.githubusercontent.com/u/4399658?v=4",
+   "url": "https://github.com/xenon2",
    "commits": 0,
    "issues": 1,
    "prs": 0,
