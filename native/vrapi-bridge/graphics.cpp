@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <new>
 
@@ -446,6 +447,17 @@ bool ensureOutput(ovrTextureSwapChain* chain) {
     create.faceCount = 1;
     create.arraySize = chain->arrayLayers;
     create.mipCount = chain->levels;
+    // Per-game opt-in: Valve's injection caches density maps by maximum extent.
+    // Keep mono overlays from replacing the stereo map at the same extent.
+    // Only output storage is padded; copies and submitted subrects retain the
+    // original dimensions, and all application-owned images remain unchanged.
+    const char* isolate = std::getenv("FRAMEPORT_VRAPI_FDM_ISOLATE_MONO");
+    if (isolate && std::strcmp(isolate, "1") == 0 && chain->arrayLayers == 1) {
+        create.width += 32;
+        create.height += 32;
+        OVP_LOG("Foveation separate mono output %ux%u -> %ux%u", chain->width, chain->height,
+                create.width, create.height);
+    }
     result = s.xr.xrCreateSwapchain(s.session, &create, &chain->output);
     if (XR_FAILED(result)) {
         ovp::xrOk(result, "xrCreateSwapchain");
@@ -1205,9 +1217,20 @@ VRAPI ovrResult vrapi_SubmitFrame2(ovrMobile* mobile,
     if (!ovp::ensureSession(s.queue) || !ovp::beginFrame(static_cast<int64_t>(description->FrameIndex))) {
         return failFrame(DeviceUnavailable);
     }
-    if (!s.frame.shouldRender) {
+    // A short runtime visibility dip can be held by FrameBridge's focus_hold.
+    // Continue supplying the real image while the application still has focus;
+    // otherwise an empty submission replaces it with the runtime's black image.
+    // shouldRender is an advisory; actual focus loss keeps the ordinary path.
+    const char* keepFocused = std::getenv("FRAMEPORT_VRAPI_KEEP_FOCUSED_IMAGE");
+    const bool retainImage = keepFocused && std::strcmp(keepFocused, "1") == 0 &&
+                             s.sessionState == XR_SESSION_STATE_FOCUSED;
+    if (!s.frame.shouldRender && !retainImage) {
         const XrResult result = ovp::endFrame(nullptr, 0);
         return XR_SUCCEEDED(result) ? Success : DeviceUnavailable;
+    }
+    if (!s.frame.shouldRender && retainImage) {
+        static unsigned held = 0;
+        if (held++ % 72 == 0) OVP_LOG("CLIMB visibility: retaining image during held focus dip (%u)", held);
     }
 
     std::array<CopyJob, kMaxCopyJobs> jobs{};

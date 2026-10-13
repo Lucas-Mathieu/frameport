@@ -112,6 +112,25 @@ static void surf_projection_destroy(surf_swapchain *s) {
     }
     memset(p,0,sizeof(*p));
 }
+// Only adapter-owned video swapchains receive this profile. Application eye
+// buffers retain their selected foveation and gaze tracking.
+static void surf_video_full_rate(XrSession session, XrSwapchain output) {
+    PFN_xrCreateFoveationProfileFB create = (PFN_xrCreateFoveationProfileFB)lookup(active_instance,"xrCreateFoveationProfileFB");
+    PFN_xrDestroyFoveationProfileFB destroy = (PFN_xrDestroyFoveationProfileFB)lookup(active_instance,"xrDestroyFoveationProfileFB");
+    PFN_xrUpdateSwapchainFB update = (PFN_xrUpdateSwapchainFB)lookup(active_instance,"xrUpdateSwapchainFB");
+    if (!create || !destroy || !update) return;
+    XrFoveationLevelProfileCreateInfoFB level = {XR_TYPE_FOVEATION_LEVEL_PROFILE_CREATE_INFO_FB,
+        NULL,XR_FOVEATION_LEVEL_NONE_FB,0,XR_FOVEATION_DYNAMIC_DISABLED_FB};
+    XrFoveationProfileCreateInfoFB ci = {XR_TYPE_FOVEATION_PROFILE_CREATE_INFO_FB,&level};
+    XrFoveationProfileFB profile = XR_NULL_HANDLE;
+    XrResult result = create(session,&ci,&profile);
+    if (XR_SUCCEEDED(result)) {
+        XrSwapchainStateFoveationFB state = {XR_TYPE_SWAPCHAIN_STATE_FOVEATION_FB,NULL,0,profile};
+        result = update(output,(const XrSwapchainStateBaseHeaderFB *)&state);
+        destroy(profile);
+    }
+    LOG("surface_video: full-rate runtime profile result=%d",result);
+}
 static int surf_projection_setup(XrSession session,surf_swapchain *s,surf_projection *p,uint32_t width,uint32_t height) {
     if(p->pipeline || (s->native_project && p->output))return 1;
     if(!surf_vk_ready() || !surf_staging(s) || !surf_projection_functions())return 0;
@@ -131,6 +150,7 @@ static int surf_projection_setup(XrSession session,surf_swapchain *s,surf_projec
         if(create_failures++<5)LOG("surface_projection: swapchain creation result=%d",xr_result);
         goto fail;
     }
+    surf_video_full_rate(session,p->output);
     stage="runtime image enumeration";
     XrSwapchainImageVulkanKHR images[MAX_IMAGES];
     for(int i=0;i<MAX_IMAGES;i++)images[i]=(XrSwapchainImageVulkanKHR){XR_TYPE_SWAPCHAIN_IMAGE_VULKAN_KHR,NULL,VK_NULL_HANDLE};
@@ -322,6 +342,8 @@ static const XrCompositionLayerBaseHeader *surf_video_present(XrSession session,
     PFN_xrReleaseSwapchainImage release=(PFN_xrReleaseSwapchainImage)lookup(active_instance,"xrReleaseSwapchainImage");
     int compose=surf_composite_candidate(info,layer);
     int cached_only=compose && surf_composite_cached_only(info,p,&native->video,&current);
+    int direct=cached_only && native->srgb_view;
+    int previous=s->native_current;
     XrSwapchainImageAcquireInfo ai={XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
     XrSwapchainImageWaitInfo wi={XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO,NULL,0};
     XrSwapchainImageReleaseInfo ri={XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};uint32_t index;
@@ -338,25 +360,32 @@ static const XrCompositionLayerBaseHeader *surf_video_present(XrSession session,
     if(!cached_only && index>=p->count){release(p->output,&ri);p->acquired=0;goto unused;}
     VkCommandBufferBeginInfo begin={VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,NULL,VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     vk.ResetCommandBuffer(s->cmd,0);vk.BeginCommandBuffer(s->cmd,&begin);
+    native->sampled=direct;
     surf_native_ownership(s->cmd,native,1);
     if(!cached_only)surf_barrier(s->cmd,p->images[index],VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,0,VK_ACCESS_TRANSFER_WRITE_BIT);
     VkImageCopy copy={{VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},{0,0,0},{VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},{0,0,0},{2*p->size,p->size,1}};
     if(!cached_only)spvk.CmdCopyImage(s->cmd,native->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,p->images[index],VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
-    if(compose){
+    if(compose && !direct){
         surf_barrier(s->cmd,p->video_cache,p->cache_ready?VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,p->cache_ready?VK_ACCESS_SHADER_READ_BIT:0,VK_ACCESS_TRANSFER_WRITE_BIT);
     spvk.CmdCopyImage(s->cmd,native->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,p->video_cache,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
     surf_barrier(s->cmd,p->video_cache,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_ACCESS_TRANSFER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT);
     }
-    surf_native_ownership(s->cmd,native,0);
+    if(!direct)surf_native_ownership(s->cmd,native,0);
+    if(previous>=0)surf_native_ownership(s->cmd,&s->native_slots[previous],0);
     if(!cached_only)surf_barrier(s->cmd,p->images[index],VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_ACCESS_TRANSFER_WRITE_BIT,VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
     vk.EndCommandBuffer(s->cmd);
     VkSubmitInfo submit={VK_STRUCTURE_TYPE_SUBMIT_INFO,NULL,0,NULL,NULL,1,&s->cmd};
     int ok=vk.QueueSubmit(vk.queue,1,&submit,s->fence)==VK_SUCCESS;
     if(!cached_only){release(p->output,&ri);p->acquired=0;}if(!ok)goto unused;
-    s->native_pending=slot;s->in_flight=1;s->uploads++;if(compose){p->cache_ready=1;p->cached_job=native->video;}
+    pthread_mutex_lock(&surf_lock);
+    if(previous>=0)s->native_slots[previous].state=4; // reusable only after the handoff fence
+    s->native_current=direct?slot:-1;
+    pthread_mutex_unlock(&surf_lock);
+    s->native_pending=direct?-1:slot;s->in_flight=1;s->uploads++;
+    if(direct && s->uploads%300==2)LOG("surface_video: direct shared-buffer sampling; cache copy skipped");if(compose){p->cache_ready=1;p->cached_job=native->video;}
     p->width=native->source_width;p->height=native->source_height;p->source_seq=native->seq;p->source_ready=1;
     for(int eye=0;eye<2;eye++)p->eyes[eye]=(XrCompositionLayerProjectionView){XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW,NULL,
         native->video.views[eye].pose,native->video.views[eye].fov,

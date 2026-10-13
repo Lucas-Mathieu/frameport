@@ -11,6 +11,14 @@ signatures:
     severity: fatal
     diagnosis: The VrApi bridge rejected the game's frame options, so no picture reaches the headset even though frame pacing can appear in the log. Rebuild and reinstall with the updated bridge; it accepts the old texture-density debug flag used by The Climb (GitHub #238). Other unsupported options are logged with their flags and swap interval.
     suggest: [frame.vrapi_bridge]
+  - id: foveation-instance-skipped
+    pattern: 'fdm_injection_CreateInstance: skipped'
+    severity: info
+    diagnosis: Valve's foveation layer skipped a Vulkan instance. This may be a helper instance; it does not prove
+      that every game render pass lacks foveation. Compare with instance-created and render-pass diagnostics.
+      For a compatible renderer, Customize > Eye-tracked foveation > Eye-tracked explicitly enables injection.
+      Verify image quality and GPU time before retaining it; a loaded layer alone is not proof of active foveation.
+    suggest: []
   - id: no-launcher
     pattern: 'APP_ACTIVITY is empty'
     severity: fatal

@@ -6,6 +6,8 @@ The GL shim reads framebridge.conf too (gl_hide_multiview), as does the multivie
 """
 from __future__ import annotations
 
+import math
+
 from .base import InstallContext, Param, Patch, Suggestion, register
 
 # Always written (in this order) so every build carries explicit values.
@@ -245,7 +247,7 @@ SETTINGS = [
 # vk_query_slots and vk_spec_fixes in 0.10.0. haptic_fix stays at 2 although the shim also converts PCM vibrations
 # since 0.12.1: no game is known to need that, and a bump would mark every OVRPlugin game's build outdated
 REVISIONS = {"vk_shader_fix": 2, "vk_query_slots": 3, "vk_spec_fixes": 2, "haptic_fix": 2, "pose_consistency": 2,
-             "gl_int_attribs": 2, "gl_highp_markers": 2}  # the GL shim learned these in 1.0.1
+             "gl_int_attribs": 2, "gl_highp_markers": 2, "surface_native": 4}
 
 # Settings a game's recipe sets that the Game settings dialog doesn't show (engine-specific, not user choices)
 HIDDEN = {"surface_native", "gl_int_attribs"}
@@ -553,6 +555,8 @@ def adapter_settings(recipe_patches: dict) -> dict:
             elif spec and spec[1] == "int":
                 value = int(value)
             out[key] = value
+    if (recipe_patches.get("device.foveation") or {}).get("mode") in ("tracked", "fixed"):
+        out["foveation_fix"] = 1  # shared injection must not compete with the game's native foveation
     return out
 
 
@@ -673,23 +677,85 @@ class SteamGamepad(Patch):
         pass  # the launcher line (agent: GAMEPAD_LINE) exports SDL's hint and puts the Podman wrapper on PATH
 
 
+def foveation_options(params):
+    mode = params.get("mode") or ""
+    if mode not in ("", "tracked", "fixed", "off"):
+        raise ValueError("Unknown foveation mode")
+    radius = float(params.get("radius") or 0)
+    if not math.isfinite(radius) or (radius != 0 and not 0.05 <= radius <= 0.45):
+        raise ValueError("Full-resolution radius must be Default (0), or 0.05–0.45")
+    test = params.get("test", False)
+    if not isinstance(test, bool):
+        raise ValueError("Foveation test mode must be a boolean")
+    if (test or radius) and mode not in ("tracked", "fixed"):
+        raise ValueError("Choose Eye-tracked or Fixed before configuring foveation size or test mode")
+    return mode, radius, test
+
+
 class Foveation(Patch):
     id = "device.foveation"
-    title = "Eye-tracked foveation (Valve)"
-    description = ("Valve's foveation layer (VALVE_fdm_injection) lowers the image density away from where you look, "
-                   "following each eye's gaze. In some games one eye then shimmers or jitters while menus look fine "
-                   "(the right eye's gaze filter restarts often). \"Fixed\" keeps the foveation but stops it "
-                   "following the gaze (FDM_DEBUG=disable_offsets); \"Off\" loads none of Valve's Vulkan layers "
-                   "(VK_INSTANCE_LAYERS=\"\"; costs GPU time in heavy games).")
+    title = "Foveated rendering (Valve)"
+    description = ("Reduces shading away from the full-resolution area, following each eye's gaze. "
+                   "Default area size keeps the runtime's current profile unchanged. Custom radius is a fraction "
+                   "of the shorter eye-image dimension; the transition ends at twice that radius. Larger areas "
+                   "retain more detail but save less GPU work. Fixed stops the area following your eyes. "
+                   "The optional test darkens actual coarse-shaded fragments; rebuild/reinstall to toggle it. "
+                   "Tested on RE4, Deadpool and Asgard's Wrath 2. "
+                   "The Climb 2 gets a version-guarded private bridge at 1.0 scale; Batman gets its "
+                   "hash-verified allocation fix (unsupported OVRPlugin versions are refused). Other games may "
+                   "need additional fixes; turn this off if artifacts appear.")
     category = "device"
-    stage = "install"
-    params = [Param("mode", "str", "", "fixed or off (empty = Valve's default)")]
-    CHOICES = (("", "Default"), ("fixed", "Fixed (doesn't follow the eyes)"), ("off", "Off"))
-    ENV = {"fixed": {"FDM_DEBUG": "disable_offsets"}, "off": {"VK_INSTANCE_LAYERS": ""}}
+    # This feature has both APK support (allocation fix / optional diagnostic) and launcher settings.
+    stage = "apk"
+    revision = 3
+    order = 95  # after renderer/bridge replacements
+    experimental = True
+    params = [Param("mode", "str", "", "tracked, fixed or off (empty = Valve's default)"),
+              Param("radius", "float", 0.0, "Full-resolution radius; 0 keeps the current runtime default", 0, 0.45),
+              Param("test", "bool", False, "Darken lower-resolution regions (diagnostic)")]
+    CHOICES = (("", "Default"), ("tracked", "Eye-tracked"),
+               ("fixed", "Fixed (doesn't follow the eyes)"), ("off", "Off"))
+    RADIUS_CHOICES = (("0", "Default (30% radius)"), ("0.1", "10% radius"), ("0.15", "15% radius"),
+                      ("0.2", "20% radius"), ("0.25", "25% radius"), ("0.3", "30% radius"),
+                      ("0.35", "35% radius"), ("0.4", "40% radius"), ("0.45", "45% radius"))
+
+    def apply(self, ctx):
+        from .frame.foveation import apply
+        return apply(ctx)
+
+    def validate(self, ctx):
+        from .frame.foveation import validate
+        return validate(ctx)
 
     def install(self, ctx: InstallContext) -> None:
         # runs after device.lepton_env (install_context), so this choice wins over a recipe's VK_INSTANCE_LAYERS
-        ctx.env.update(self.ENV.get(ctx.params.get("mode") or "", {}))
+        mode, radius, test = foveation_options(ctx.params)
+        if not mode:
+            return
+        for key in ("FDM_DEBUG", "ENABLE_VULKAN_FDM_INJECTION_LAYER",
+                    "LEPTON_ENV_DISABLE_VULKAN_FDM_INJECTION_LAYER", "FOVE_INNER", "FOVE_OUTER",
+                    "LEPTON_ENV_FRAMEPORT_FOVEATION_TEST", "LEPTON_ENV_FRAMEPORT_CLIMB_STEREO_OFFSETS",
+                    "LEPTON_ENV_FRAMEPORT_VRAPI_FDM_ISOLATE_MONO",
+                    "LEPTON_ENV_FRAMEPORT_VRAPI_KEEP_FOCUSED_IMAGE"):
+            ctx.env.pop(key, None)
+        if mode == "off":
+            ctx.env.update(VK_INSTANCE_LAYERS="", LEPTON_ENV_DISABLE_VULKAN_FDM_INJECTION_LAYER="1")
+            return
+        if ctx.env.get("VK_INSTANCE_LAYERS") == "":
+            ctx.env.pop("VK_INSTANCE_LAYERS")
+        ctx.env.update(ENABLE_VULKAN_FDM_INJECTION_LAYER="1",
+                       FDM_DEBUG="enable,disable_offsets" if mode == "fixed" else "enable")
+        if ctx.package == "com.crytek.climb2":
+            if float(ctx.adapter_settings.get("scale", 1)) != 1:
+                raise ValueError("The Climb 2 foveation is verified only at 1.0 resolution scale")
+            ctx.env["FDM_DEBUG"] += ",yflip"
+            ctx.env.update(LEPTON_ENV_FRAMEPORT_CLIMB_STEREO_OFFSETS="1",
+                           LEPTON_ENV_FRAMEPORT_VRAPI_FDM_ISOLATE_MONO="1",
+                           LEPTON_ENV_FRAMEPORT_VRAPI_KEEP_FOCUSED_IMAGE="1")
+        if radius:
+            ctx.env.update(FOVE_INNER=f"{radius:g}", FOVE_OUTER=f"{2 * radius:g}")
+        if test:
+            ctx.env["LEPTON_ENV_FRAMEPORT_FOVEATION_TEST"] = "1"
 
 
 class DisplayMode(Patch):

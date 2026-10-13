@@ -10,7 +10,7 @@ timefix OpenXR layer for Proton games (linux-arm64, glibc; the NDK's clang build
 OculusHMDConnected helper for Rift games under Proton (win-x64 PE; the NDK's clang + lld-link, no Windows SDK), the
 live view's hardware H.264 encoder fp_venc (linux-arm64-bin, static freestanding executable), and rewrites artifacts/SHA256SUMS. Run `frameport parity` afterwards to see which games change.
 
-    python native/build.py [--only adapter,bridge,compat,langpack,glshim,eglfmt,glmv,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,zinkfix,ovrpshim,tlskeys,vrsettings,venc,vroverlay_probe] [--ndk PATH]
+    python native/build.py [--only adapter,bridge,compat,langpack,glshim,eglfmt,glmv,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,zinkfix,foveation,ovrpshim,tlskeys,vrsettings,venc,vroverlay_probe] [--ndk PATH]
 """
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ import platform
 import re
 import shutil
 import subprocess
+import struct
 import sys
 import urllib.request
 import zipfile
@@ -133,6 +134,20 @@ def exe(tc: Path, name: str) -> Path:
 
 def build_adapter(tc: Path):
     src = HERE / "adapter"
+    shader_tools = tc.parents[3] / "shader-tools" / tc.name
+    suffix = ".exe" if os.name == "nt" else ""
+    sections = ["// Generated from surface_composite.vert and surface_composite.frag.\n"]
+    for stage in ("vert", "frag"):
+        binary = CACHE / f"surface_composite_{stage}.spv"
+        run([shader_tools / ("glslc" + suffix), "--target-env=vulkan1.0", "-O",
+             src / f"surface_composite.{stage}", "-o", binary])
+        run([shader_tools / ("spirv-val" + suffix), "--target-env", "vulkan1.0", binary])
+        data = binary.read_bytes()
+        words = struct.unpack(f"<{len(data)//4}I", data)
+        sections.append(f"static const uint32_t surface_composite_{stage}_spv[] = {{\n" +
+                        "\n".join("    " + ",".join(f"0x{v:08x}" for v in words[i:i+8]) + ","
+                                  for i in range(0, len(words), 8)) + "\n};\n")
+    (src / "surface_composite_spv.h").write_text("".join(sections), encoding="utf-8")
     run([sys.executable, src / "gen_forwarders.py"])
     inc = openxr_include("adapter")
     common = ["-shared", "-fPIC", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-gnu-conditional-omitted-operand",
@@ -246,7 +261,7 @@ def build_vroverlay_probe(tc: Path):
          f"/out:{work / 'fp_vroverlay_probe.exe'}"])
 
 
-def build_bridge(tc: Path):
+def build_bridge(tc: Path, output="libvrapi.so"):
     src = HERE / "vrapi-bridge"
     inc = openxr_include("bridge")
     run([tc / "bin/clang++", "--target=aarch64-linux-android29", f"--sysroot={tc / 'sysroot'}", "-std=c++17", "-O2", "-g",
@@ -257,7 +272,7 @@ def build_bridge(tc: Path):
          "-DXR_USE_GRAPHICS_API_VULKAN", "-DXR_USE_GRAPHICS_API_OPENGL_ES", "-DXR_USE_TIMESPEC", f"-I{inc}", "-shared",
          "-static-libstdc++", "runtime.cpp", "graphics.cpp", "input.cpp", "-Wl,--no-undefined",
          "-Wl,-z,max-page-size=16384", "-Wl,--version-script=exports.map", "-llog", "-landroid", "-lvulkan", "-lEGL",
-         "-lGLESv3", "-ldl", "-o", ART / "arm64-v8a/libvrapi.so"], cwd=src)
+         "-lGLESv3", "-ldl", "-o", ART / f"arm64-v8a/{output}"], cwd=src)
 
 
 def build_compat(tc: Path):
@@ -339,6 +354,16 @@ def build_zinkfix(tc: Path):
          "-ldl", "-llog", "-o", ART / "arm64-v8a/libVkLayer_fp_shaderfix.so"], cwd=src)
 
 
+def build_foveation(tc: Path):
+    """Optional coarse-fragment visualization, injected into a game's renderer."""
+    build_bridge(tc, "libvrapi_foveation.so")
+    src = HERE / "foveation"
+    run([exe(tc, "aarch64-linux-android29-clang"), "-shared", "-fPIC", "-O2", "-Wall", "-Wextra", "-Werror",
+         "-fvisibility=hidden", f"-ffile-prefix-map={src}=native/foveation",
+         "-Wl,-soname,libVkLayer_fdm_darken.so", "-Wl,-z,max-page-size=16384", "darken.c",
+         "-ldl", "-llog", "-o", ART / "arm64-v8a/libVkLayer_fdm_darken.so"], cwd=src)
+
+
 def build_ovrpshim(tc: Path):
     """OVRPlugin frame-loop shim (see ovrpshim/ovrpshim.c) for Unity 2017-2018 built-in Oculus support."""
     src = HERE / "ovrpshim"
@@ -399,7 +424,7 @@ def write_sums():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", default="adapter,bridge,compat,langpack,glshim,eglfmt,glmv,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,zinkfix,ovrpshim,tlskeys,vrsettings,venc")
+    ap.add_argument("--only", default="adapter,bridge,compat,langpack,glshim,eglfmt,glmv,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,zinkfix,foveation,ovrpshim,tlskeys,vrsettings,venc")
     ap.add_argument("--ndk")
     args = ap.parse_args()
     parts = set(args.only.split(","))
@@ -411,10 +436,11 @@ def main():
              "glshim": lambda: build_glshim(tc), "eglfmt": lambda: build_eglfmt(tc), "glmv": lambda: build_glmv(tc), "ovrtrace": lambda: build_ovrtrace(tc), "xrshim": lambda: build_xrshim(tc), "dex": build_dex, "xrlayer": lambda: build_xrlayer(tc),
              "oculushmd": lambda: build_oculushmd(tc), "vkshim": lambda: build_vkshim(tc),
              "zinkfix": lambda: build_zinkfix(tc),
+             "foveation": lambda: build_foveation(tc),
              "ovrpshim": lambda: build_ovrpshim(tc), "tlskeys": lambda: build_tlskeys(tc),
              "vrsettings": lambda: build_vrsettings(tc), "venc": lambda: build_venc(tc),
              "vroverlay_probe": lambda: build_vroverlay_probe(tc)}
-    for name in ("adapter", "bridge", "compat", "langpack", "glshim", "eglfmt", "glmv", "ovrtrace", "xrshim", "vkshim", "zinkfix", "ovrpshim", "tlskeys", "dex", "xrlayer", "oculushmd", "vrsettings", "venc",
+    for name in ("adapter", "bridge", "compat", "langpack", "glshim", "eglfmt", "glmv", "ovrtrace", "xrshim", "vkshim", "zinkfix", "foveation", "ovrpshim", "tlskeys", "dex", "xrlayer", "oculushmd", "vrsettings", "venc",
                  "vroverlay_probe"):
         if name in parts:
             log(f"build {name}")

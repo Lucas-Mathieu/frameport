@@ -39,7 +39,7 @@ static struct {VkInstance instance;VkPhysicalDevice physical;VkDevice device;VkQ
 static struct {PFN_vkAllocateMemory AllocateMemory;PFN_vkGetPhysicalDeviceMemoryProperties GetPhysicalDeviceMemoryProperties;
     PFN_vkGetFenceStatus GetFenceStatus;PFN_vkCmdCopyBufferToImage CmdCopyBufferToImage;} svk;
 #define SURF_NATIVE_SLOTS 4
-typedef struct {AHardwareBuffer *buffer;VkImage image;VkImageView view;VkDeviceMemory memory;EGLImageKHR egl_image;GLuint texture;uint32_t width,height;int state;uint64_t seq;uint32_t source_width,source_height;int64_t source_time;surf_video_job video;int projected;} surf_native_slot;
+typedef struct {AHardwareBuffer *buffer;VkImage image;VkImageView view, srgb_view;VkDeviceMemory memory;EGLImageKHR egl_image;GLuint texture;uint32_t width,height;int state;uint64_t seq;uint32_t source_width,source_height;int64_t source_time;surf_video_job video;int projected, sampled;} surf_native_slot;
 typedef struct {XrSwapchain handle;uint32_t width,height;int in_flight,uploads,native_mode,native_pending,native_current,native_project;surf_video_job video_job;uint64_t seq;
     int stop,ready,failed;int64_t frames;
     surf_native_slot native_slots[SURF_NATIVE_SLOTS];
@@ -93,7 +93,7 @@ static uint32_t memory_type(uint32_t mask,VkMemoryPropertyFlags flags) {
     for(uint32_t i=0;i<props.memoryTypeCount;i++)if((mask&(1u<<i)) && (props.memoryTypes[i].propertyFlags&flags)==flags)return i;
     assert(0);return 0;
 }
-static struct {VkImage image;VkDeviceMemory memory;int used;} runtime_images[16];
+static struct {VkImage image;VkDeviceMemory memory;int used,full_rate;} runtime_images[16];
 static int fixture_image_slot(XrSwapchain sc){int n=(int)(uintptr_t)sc-2;assert(n>=0&&n<16&&runtime_images[n].used);return n;}
 static XrResult fake_create(XrSession session,const XrSwapchainCreateInfo *ci,XrSwapchain *out) {
     (void)session;
@@ -106,10 +106,27 @@ static XrResult fake_create(XrSession session,const XrSwapchainCreateInfo *ci,Xr
     VK_OK(vkAllocateMemory(vk.device,&alloc,NULL,&destination_memory));VK_OK(vkBindImageMemory(vk.device,destination,destination_memory,0));
     assert(ci->format==VK_FORMAT_R8G8B8A8_SRGB);
     assert(!(ci->usageFlags&XR_SWAPCHAIN_USAGE_UNORDERED_ACCESS_BIT));
-    runtime_images[slot].image=destination;runtime_images[slot].memory=destination_memory;runtime_images[slot].used=1;
+    runtime_images[slot].image=destination;runtime_images[slot].memory=destination_memory;runtime_images[slot].used=1;runtime_images[slot].full_rate=0;
     *out=(XrSwapchain)(uintptr_t)(slot+2);return XR_SUCCESS;
 }
+static XrResult fake_profile_create(XrSession session,const XrFoveationProfileCreateInfoFB *ci,XrFoveationProfileFB *out) {
+    (void)session;assert(ci->type==XR_TYPE_FOVEATION_PROFILE_CREATE_INFO_FB);
+    const XrFoveationLevelProfileCreateInfoFB *level=ci->next;
+    assert(level && level->type==XR_TYPE_FOVEATION_LEVEL_PROFILE_CREATE_INFO_FB);
+    assert(level->level==XR_FOVEATION_LEVEL_NONE_FB && level->dynamic==XR_FOVEATION_DYNAMIC_DISABLED_FB);
+    *out=(XrFoveationProfileFB)(uintptr_t)1;return XR_SUCCESS;
+}
+static XrResult fake_profile_update(XrSwapchain sc,const XrSwapchainStateBaseHeaderFB *base) {
+    assert(base->type==XR_TYPE_SWAPCHAIN_STATE_FOVEATION_FB);
+    const XrSwapchainStateFoveationFB *state=(const void*)base;
+    assert(state->profile==(XrFoveationProfileFB)(uintptr_t)1);
+    runtime_images[fixture_image_slot(sc)].full_rate=1;return XR_SUCCESS;
+}
+static XrResult fake_profile_destroy(XrFoveationProfileFB profile) {
+    assert(profile==(XrFoveationProfileFB)(uintptr_t)1);return XR_SUCCESS;
+}
 static XrResult fake_enumerate(XrSwapchain sc,uint32_t cap,uint32_t *count,XrSwapchainImageBaseHeader *images) {
+    assert(runtime_images[fixture_image_slot(sc)].full_rate);
     (void)sc;(void)cap;*count=1;((XrSwapchainImageVulkanKHR*)images)->image=runtime_images[fixture_image_slot(sc)].image;return XR_SUCCESS;
 }
 static XrResult fake_destroy(XrSwapchain sc){int slot=fixture_image_slot(sc);vkDestroyImage(vk.device,runtime_images[slot].image,NULL);vkFreeMemory(vk.device,runtime_images[slot].memory,NULL);runtime_images[slot].used=0;return XR_SUCCESS;}
@@ -124,6 +141,7 @@ static XrResult fake_locate(XrSession session,const XrViewLocateInfo *info,XrVie
 static PFN_xrVoidFunction lookup(XrInstance instance,const char *name) {
     (void)instance;
 #define FN(n,f) if(!strcmp(name,n))return (PFN_xrVoidFunction)f;
+    FN("xrCreateFoveationProfileFB",fake_profile_create) FN("xrUpdateSwapchainFB",fake_profile_update) FN("xrDestroyFoveationProfileFB",fake_profile_destroy)
     FN("xrCreateSwapchain",fake_create) FN("xrEnumerateSwapchainImages",fake_enumerate) FN("xrDestroySwapchain",fake_destroy)
     FN("xrAcquireSwapchainImage",fake_acquire) FN("xrWaitSwapchainImage",fake_wait) FN("xrReleaseSwapchainImage",fake_release) FN("xrLocateViews",fake_locate)
     return NULL;
@@ -334,7 +352,7 @@ int main(int argc,char **argv) {
     assert(surf_native_load());GLuint framebuffer;glGenFramebuffers(1,&framebuffer);glBindFramebuffer(GL_FRAMEBUFFER,framebuffer);
     puts("fixture: EGL/native bridge ready");fflush(stdout);
     for(int i=0;i<SURF_NATIVE_SLOTS;i++){
-        assert(surf_native_allocate(&s->native_slots[i],display,8192,4096));
+        assert(surf_native_allocate(&s->native_slots[i],display,8192,4096,1));
         glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,s->native_slots[i].texture,0);
         assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
         glEnable(GL_SCISSOR_TEST);glScissor(0,0,4096,4096);glClearColor(1,0,0,1);glClear(GL_COLOR_BUFFER_BIT);
@@ -366,7 +384,7 @@ int main(int argc,char **argv) {
             glDeleteTextures(1,&s->native_slots[slot].texture);
             sn.destroy(display,s->native_slots[slot].egl_image);
             surf_native_slot_destroy(&s->native_slots[slot]);
-            assert(surf_native_allocate(&s->native_slots[slot],display,width,height));
+            assert(surf_native_allocate(&s->native_slots[slot],display,width,height,1));
         }
         // Emulate the producer writing only after Vulkan returns ownership.
         glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,s->native_slots[slot].texture,0);
@@ -395,7 +413,7 @@ int main(int argc,char **argv) {
     // Fused path: GLES samples an external decoder image at the final eye
     // resolution and Vulkan only copies that finished view. Exercise an older
     // worker pose arriving during a newer app frame, plus repeated stereo calls.
-    surf_native_slot input={0};assert(surf_native_allocate(&input,display,8192,4096));
+    surf_native_slot input={0};assert(surf_native_allocate(&input,display,8192,4096,1));
     const char *vertex="#version 300 es\nout vec2 uv;void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));uv=p;gl_Position=vec4(p*2.-1.,0.,1.);}";
     glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,input.texture,0);
     GLuint gradient=glCreateProgram();glAttachShader(gradient,fixture_shader(GL_VERTEX_SHADER,vertex));
@@ -417,7 +435,7 @@ int main(int argc,char **argv) {
     GLint uniforms[8];for(int i=0;i<8;i++)uniforms[i]=glGetUniformLocation(program,surf_video_uniforms[i]);
     for(int i=0;i<SURF_NATIVE_SLOTS;i++){
         surf_native_slot *slot=&s->native_slots[i];if(slot->texture)glDeleteTextures(1,&slot->texture);if(slot->egl_image)sn.destroy(display,slot->egl_image);surf_native_slot_destroy(slot);
-        assert(surf_native_allocate(slot,display,4096,2048));
+        assert(surf_native_allocate(slot,display,4096,2048,1));
     }
     s->native_project=1;double milliseconds=0;
     for(int i=0;i<120;i++){

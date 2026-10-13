@@ -56,6 +56,9 @@ def from_data() -> dict:
         for t in (p.title, p.description, p.summary):
             if t:
                 texts[t] = ""
+        for attr in ("CHOICES", "RADIUS_CHOICES"):
+            for _, label in getattr(p, attr, ()):
+                texts[label] = ""
     for _, title in GROUPS:  # the Game settings dialog
         texts[title] = ""
     for ui in UI.values():

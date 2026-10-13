@@ -73,6 +73,42 @@ panoramas retain their layer rotation and have no translational parallax.
 
 ## Stable composition
 
+Adapter-owned video outputs explicitly request a static
+`XR_FOVEATION_LEVEL_NONE_FB` runtime profile before image enumeration. This
+prevents shared Valve foveation from coarsening the side-by-side video output.
+The profile applies only to those outputs; application eye swapchains retain
+foveation and gaze tracking. The runtime result is logged as
+`surface_video: full-rate runtime profile result=...`.
+
+Composition retains the original raster pipeline, linear-light blending and
+sRGB colour attachment. A compute compositor was also tested, but did not alone
+fix pixelation and added a private full-size image copy. The full-rate runtime
+profile fixed pixelation in the headset; the restored raster path was confirmed sharp and improved in-game presentation
+from roughly 40–44 to 65–71 FPS in the sampled cutscene. It still needs further
+performance work. Fully opaque video pixels skip the invisible scene texture
+sample and colour transform; partially transparent pixels retain the full blend. The next live cutscene run reported about 84 FPS across its first five post-startup samples, versus about 69 in the preceding run, with decoding steady at 60 FPS. These separate samples do not control for head motion or temperature; smooth playback is not yet fully established. The video surface patch revision marks affected
+recipes for rebuilding without forcing unrelated game updates.
+
+Once native video composition is active, the compositor can sample an sRGB view
+of the worker's shared hardware buffer directly. The renderer retains the slot
+across repeated frames; replacement queues a foreign-queue ownership handoff
+behind earlier compositor reads, and only its signalled fence makes the old slot
+reusable by the worker. Missing compatible views and initial/fallback presentation
+retain the copy path. The full-rate video profile and output resolution are
+unchanged. Deployment/performance validation is initially limited to Batman.
+The headset playback check confirmed good performance, and the live log confirms
+`direct shared-buffer sampling; cache copy skipped`. During active video,
+recorded application pacing was approximately 105–107 FPS, with decoding around
+60 FPS and visible-view GPU waits around 4.0–4.8 ms, versus roughly 6 ms in the
+preceding copy-path run. These are separate live runs, not a thermally controlled
+benchmark. The 8192x4096 decoded input and 2560x2560-per-eye output are retained;
+other games have not been redeployed or performance-tested with this change.
+
+The native GPU fixture checks stereo pixels, fades, image orientation, colour
+transforms, held frames and teardown, plus single-pixel alternating detail across
+both eyes including edges and corners. This is a compositor regression check;
+in-game playback with injection still needs visual confirmation on the headset.
+
 A separately submitted projected video layer can alternate with the main game
 projection as opaque coverage changes during head movement. That presentation
 path exhibited snap-back/doubled video in headset tests even when rendering
@@ -103,6 +139,19 @@ timeouts retain acquisition for retry. Missing snapshots retain the previous
 combined output with the exact camera that produced it; old pixels are never
 relabelled with a newer pose. Teardown retires snapshot writers and compositor
 readers. Depth/motion-vector images from another render are not attached.
+
+## Loading-screen blackout
+
+The native video adapter also preserves Batman's fully black loading state.
+When the first opaque projection requests zero RGB scale, unit alpha scale and
+zero bias, it omits that scene projection so the opaque runtime background stays
+black. Later loading UI layers retain their order. This avoids displaying assets
+as they stream in, without adding a GPU pass or changing the video resolution.
+Partially faded scenes, alpha-blended projections and composed video retain their
+existing paths. This fallback is limited to the native video adapter setting;
+other games do not gain it automatically. In-headset testing confirmed the black
+loading screen is restored. Revision 4 requests a rebuild of older native-video
+installs while leaving ordinary game recipes unchanged.
 
 ## Building and validation
 

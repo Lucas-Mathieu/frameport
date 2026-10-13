@@ -33,7 +33,7 @@ def install_context(recipe: Recipe) -> base.InstallContext:
     # device.foveation last: the player's explicit choice beats a recipe's lepton_env VK_INSTANCE_LAYERS
     for pid, params in sorted(recipe.patches.items(), key=lambda kv: kv[0] == "device.foveation"):
         patch = base.get(pid)
-        if patch.stage == "install" and patch.category == "device":
+        if patch.category == "device" and (patch.stage == "install" or pid == "device.foveation"):
             ctx.params = params or {}
             patch.install(ctx)
     return ctx
