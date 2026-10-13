@@ -314,6 +314,45 @@ def test_unity_data_missing_fails_the_launch_test():
     assert "unity-data-missing" in [f.id for f in r.findings] and r.verdict == "fail"
 
 
+def test_external_fmod_banks_missing_fails_even_with_frames():
+    """GitHub #239: Aftermath renders its error screen at 72 fps with no data installed."""
+    for root in ("/storage/emulated/0", "/sdcard"):
+        log = LOG_OK + (
+            f'10-12 17:41:17.092  1147  1174 E Unity   : Error loading FMOD bank "{root}/Android/obb/'
+            'com.coatsink.alone/Master.bank": ERROR\n'
+            f'10-12 17:41:17.189  1147  1174 E Unity   : Error loading FMOD bank "{root}/Android/obb/'
+            'com.coatsink.alone/Master.strings.bank": ERROR\n')
+        r = triage(log, "RUNNING", "com.example.game")
+        f = next(f for f in r.findings if f.id == "fmod-bank-missing")
+        assert f.severity == "fatal" and f.suggest == []
+        assert "Master.bank" in f.evidence
+        assert r.fps and r.verdict == "fail"
+        assert sum(f.id == "fmod-bank-missing" for f in r.findings) == 1
+
+
+def test_fmod_bank_diagnosis_requires_an_external_data_path():
+    log = LOG_OK + 'E Unity : Error loading FMOD bank "Master.bank": ERROR\n'
+    assert "fmod-bank-missing" not in {f.id for f in triage(log, "RUNNING").findings}
+
+
+def test_cloud_save_exception_during_startup_fails_with_frames():
+    log = LOG_OK + (
+        '10-12 19:25:05.325  1147  1174 E Unity : UnauthorizedAccessException: Access to the path '
+        '"/sdcard/Android/data/com.coatsink.alone/files/cloud/data" is denied.\n\n'
+        '10-12 19:25:05.325  1147  1174 E Unity : at System.IO.Directory.CreateDirectoriesInternal (String path)\n\n'
+        '10-12 19:25:05.325  1147  1174 E Unity : at SaveLoad.GetSlotPaths (String dataPath)\n\n'
+        '10-12 19:25:05.325  1147  1174 E Unity : at StartupLoading+<Start>d__11.MoveNext ()\n')
+    r = triage(log, "RUNNING", "com.example.game")
+    assert r.fps and r.verdict == "fail"
+    assert "startup-save-permission" in {f.id for f in r.findings}
+    assert "save-folder-permission" not in {f.id for f in r.findings}
+    # A save error later in gameplay remains an error, rather than claiming that startup stopped.
+    later = log.replace("StartupLoading+<Start>d__11", "SaveLoad+<Save>d__12")
+    r = triage(later, "RUNNING", "com.example.game")
+    assert "startup-save-permission" not in {f.id for f in r.findings}
+    assert next(f for f in r.findings if f.id == "save-folder-permission").severity == "error"
+
+
 def test_webview_helper_exit_is_not_a_force_quit():
     """GitHub #179: Android's WebView helper exits at every container boot; the game itself never started."""
     log = """

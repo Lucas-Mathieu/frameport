@@ -375,6 +375,11 @@ signatures:
     severity: fatal
     diagnosis: The game can't read its own data files (OBB/data folder) - they are incomplete or from another version of the game than the APK. Copy the whole data folder again from the same install as the APK, add the game again and reinstall.
     suggest: []
+  - id: fmod-bank-missing
+    pattern: 'Error loading FMOD bank "/(sdcard|storage/emulated/\d+)/Android/obb/[^"\r\n]+\.bank": (ERROR|ERR_[A-Z_]+)\b'
+    severity: fatal
+    diagnosis: The game can't load its external sound banks, so it may show a file-loading error even while rendering frames. Copy the whole obb folder from the same backup as the APK, including the .bank files (not just .obb files). Keep apk/ and obb/ beside each other, add the backup folder again and reinstall.
+    suggest: []
   - id: permission-denied-save
     pattern: 'Permission denied.*(Android/data|/sdcard)|EACCES.*Android/data'
     severity: warning
@@ -480,6 +485,12 @@ signatures:
     severity: error
     diagnosis: The game can't write to a folder it created, so it may quit at start (for example SUPERHOT's cloud/data, mode 1700). FramePort's launcher (agent 41 or newer) gives such folders owner and group write permission before and during every launch; reinstall the game to get the new launcher. A folder the game creates and checks in the same moment on its very first start can't be repaired in time, so start the game again.
     suggest: []
+  - id: startup-save-permission
+    pattern: '(?s)UnauthorizedAccessException: Access to the path "/(?:sdcard|storage/emulated/0)/Android/data/[^"\r\n]+/files/cloud/data" is denied\.[^\n]*(?:\n[^\n]*){0,25}?StartupLoading\+<Start>'
+    severity: fatal
+    diagnosis: The startup routine stopped because it couldn't create the cloud-save directory, so the game stays on its loading screen even while rendering frames (Jurassic World Aftermath). The launcher's permission repair happens after this first-start error; close the game and start it again without uninstalling. Agent 84 prepares the cloud-save directory before startup to avoid this race on fresh installs.
+    suggest: []
+    supersedes: [save-folder-permission]
   - id: surface-swapchain-emulated
     pattern: 'surface_emul: emulated Android surface swapchain'
     severity: info

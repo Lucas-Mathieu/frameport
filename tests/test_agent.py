@@ -66,6 +66,39 @@ def test_launcher_repairs_save_folder_permissions(monkeypatch, tmp_path):
     assert os.stat(saves).st_mode & 0o770 == 0o770
 
 
+def test_launcher_prepares_cloud_storage_before_startup(monkeypatch, tmp_path):
+    """GitHub #239: the startup routine fails before the 2 s watchdog can repair a new cloud folder."""
+    a = load_agent(monkeypatch, tmp_path)
+    anchor = tmp_path / "anchor"
+    anchor.mkdir()
+    a.write_launcher(str(anchor), "/games/com.x.y", "com.x.y", "T", 1, "/lepton/lepton", {})
+    text = (anchor / "launch.sh").read_text()
+    line = a.cloud_dirs_line("com.x.y")
+    assert text.count(line) == 1
+    assert text.index(line) < text.index("\nfix_perms\n") < text.index("\nsetsid ")
+
+
+def test_upgrade_launchers_prepares_cloud_storage_once(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    anchors = tmp_path / "anchors"
+    monkeypatch.setattr(a, "ANCHORS", str(anchors))
+    anchor = anchors / "com.x.y"
+    anchor.mkdir(parents=True)
+    a.write_launcher(str(anchor), str(anchor), "com.x.y", "T", 1, "/lepton/lepton", {})
+    line = a.cloud_dirs_line("com.x.y")
+    path = anchor / "launch.sh"
+    old = path.read_text().replace(line + "\n", "")
+    path.write_text(old)
+    saves = anchor / "lepton-data/external/Android/data/com.x.y/files/cloud/data/slot.dat"
+    saves.parent.mkdir(parents=True)
+    saves.write_bytes(b"progress")
+    assert a.upgrade_launchers() == ["com.x.y"]
+    text = path.read_text()
+    assert text.count(line) == 1 and text.index(line) < text.index("\nfix_perms\n")
+    assert a.upgrade_launchers() == []
+    assert saves.read_bytes() == b"progress"
+
+
 def test_cli_protocol(tmp_path):
     p = subprocess.run([sys.executable, str(AGENT), "nope"], capture_output=True, text=True)
     assert p.returncode == 2 and json.loads(p.stdout)["ok"] is False

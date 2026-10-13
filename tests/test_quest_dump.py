@@ -93,6 +93,72 @@ def test_package_folder_without_obb_files_is_ignored_when_searched(tmp_path):
     assert quest_dump.from_path(game / "apk").data_dir is None
 
 
+@pytest.mark.parametrize("apk_folder", ["apk", "apks", "APK"])
+@pytest.mark.parametrize("data_folder", ["obb", "OBB", "obbs", "obb/com.coatsink.alone"])
+def test_sidequest_raw_assets_without_expansion_files(tmp_path, apk_folder, data_folder):
+    """GitHub #239: Aftermath's SideQuest backup has raw FMOD banks, no .obb file or package subfolder."""
+    game = tmp_path / "com.coatsink.alone" / "2026-10-12T17-31-23-687Z"
+    a = apk(game / apk_folder / "com.coatsink.alone.apk")
+    data = game / data_folder
+    data.mkdir(parents=True)
+    (data / "Master.bank").write_bytes(b"bank")
+    (data / "Master.strings.bank").write_bytes(b"strings")
+    (game / "manifest.json").write_text("{}")
+    found = quest_dump.scan(tmp_path)
+    assert len(found) == 1
+    g = found[0]
+    assert (g.name, g.origin, g.apk, g.data_dir, g.data_files) == (
+        "com.coatsink.alone", game, a, data, None)
+    assert g.data_bytes() == 11
+    assert quest_dump.from_path(a).data_dir == data
+
+
+def test_raw_assets_in_a_neighbouring_backup_are_not_taken(tmp_path):
+    game = tmp_path / "com.coatsink.alone"
+    a = apk(game / "backup1" / "apk" / "com.coatsink.alone.apk")
+    apk(game / "backup2" / "apk" / "com.coatsink.alone.apk")
+    data = game / "backup2" / "obb"
+    data.mkdir()
+    (data / "Master.bank").write_bytes(b"bank")
+    assert quest_dump.from_path(a).data_dir is None
+
+
+@pytest.mark.parametrize("data_folder", ["obb", "obbs"])
+def test_sibling_expansion_files_keep_package_and_version_selection(tmp_path, data_folder):
+    from frameport import pipeline
+    from frameport.core import library
+    from frameport.install.installer import local_data_manifest
+
+    a = apk(tmp_path / "apks" / "com.x.game_7.apk")
+    data = tmp_path / data_folder
+    for name in ("main.5.com.x.game.obb", "main.7.com.x.game.obb", "main.8.com.x.game.obb",
+                 "patch.6.com.x.game.obb", "patch.8.com.x.game.obb", "main.7.com.y.other.obb"):
+        obb(data, name)
+    (data / "readme.txt").write_text("keep")
+    g = quest_dump.from_path(a)
+    assert g.data_dir == data
+    assert g.data_files == ["main.7.com.x.game.obb", "patch.6.com.x.game.obb"]
+    assert local_data_manifest(g.data_dir, g.data_files) == {
+        "main.7.com.x.game.obb": 1, "patch.6.com.x.game.obb": 1}
+    # The other game has not been added: deletion must protect its files through selection, not library sharing.
+    library.upsert_game("com.x.game", apk=str(a), data_dir=str(g.data_dir), data_files=g.data_files)
+    assert set(pipeline.local_game_files("com.x.game")) == {
+        a, data / "main.7.com.x.game.obb", data / "patch.6.com.x.game.obb"}
+    assert tmp_path.resolve() in data.resolve().parents
+    pipeline.delete_local_files("com.x.game")
+    assert not a.exists() and not (data / "main.7.com.x.game.obb").exists()
+    assert not (data / "patch.6.com.x.game.obb").exists()
+    assert {f.name for f in data.iterdir()} == {
+        "main.5.com.x.game.obb", "main.8.com.x.game.obb", "patch.8.com.x.game.obb",
+        "main.7.com.y.other.obb", "readme.txt"}
+
+
+def test_sibling_expansion_files_of_another_package_are_ignored(tmp_path):
+    a = apk(tmp_path / "apk" / "com.x.game.apk")
+    obb(tmp_path / "obb", "main.1.com.y.other.obb")
+    assert quest_dump.from_path(a).data_dir is None
+
+
 # ------------------------------------------------------------------ expansion files found by name (GitHub #85/#91)
 def test_obbs_next_to_the_apk_are_sent_alone(tmp_path):
     """APK and OBBs in one folder: one game; only its own .obb files are its data (the APK, notes and other packages'
