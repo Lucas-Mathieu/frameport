@@ -95,6 +95,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Sniper Elite VR: Winter Warrior | Quest | ✅ Works |  |
 | Space Pirate Trainer Quest | Quest | ✅ Works |  |
 | Star Wars Pinball VR | Quest | ✅ Works |  |
+| Star Wars: Tales from the Galaxy's Edge | Quest | ✅ Works |  |
 | Stremio | Quest | ✅ Works |  |
 | Superfly | Quest | ✅ Works |  |
 | SUPERHOT VR | PC VR | ✅ Works |  |

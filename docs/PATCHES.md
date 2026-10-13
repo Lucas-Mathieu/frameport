@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 160 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 162 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -11,7 +11,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 ## Groups
 
 - [Patches from OVRPort](#group-overport) (25)
-- [Steam Frame patches](#group-frame) (48)
+- [Steam Frame patches](#group-frame) (50)
 - [Game settings](#group-adapter) (66)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
@@ -82,10 +82,12 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Unity: share thread keys (games that run out of them)](#frame-unity_tls_key_pool) | `frame.unity_tls_key_pool` | Steam Frame patches | 1 |
 | [Unity: headset always counts as worn](#frame-unity_user_presence) | `frame.unity_user_presence` | Steam Frame patches | 1 |
 | [GL shim for Unreal (no multisampled render-to-texture)](#frame-unreal_gl_shim) | `frame.unreal_gl_shim` | Steam Frame patches | 1 |
+| [Unreal: match multiview depth to the eye size](#frame-unreal_multiview_depth) | `frame.unreal_multiview_depth` | Steam Frame patches | 1 |
 | [Unreal: stand-ins for OVRPlugin functions OVRPort lacks](#frame-unreal_ovrp_entrypoints) | `frame.unreal_ovrp_entrypoints` | Steam Frame patches | 1 |
 | [Unreal: Quest controller bindings (RPOC key map)](#frame-unreal_quest_keymap) | `frame.unreal_quest_keymap` | Steam Frame patches | 3 |
 | [Unreal: don't wait for the Quest shader precompile](#frame-unreal_quest_precompile) | `frame.unreal_quest_precompile` | Steam Frame patches | 3 |
 | [Unreal: start without the OBB check](#frame-unreal_skip_obb_check) | `frame.unreal_skip_obb_check` | Steam Frame patches | 3 |
+| [Unreal: bypass the stalled loading splash](#frame-unreal_splash_bypass) | `frame.unreal_splash_bypass` | Steam Frame patches | 1 |
 | [Unreal: thumb follows the capacitive touches](#frame-unreal_thumb_touch) | `frame.unreal_thumb_touch` | Steam Frame patches | 7 |
 | [Vermillion: paint canvases in the scene](#frame-vermillion_scene_canvas) | `frame.vermillion_scene_canvas` | Steam Frame patches | 1 |
 | [Vivox voice chat: skip Android 12 audio routing](#frame-vivox_audio_route) | `frame.vivox_audio_route` | Steam Frame patches | 1 |
@@ -970,6 +972,20 @@ Stops a crash a few seconds after start in some Unreal games with anti-aliasing 
 
 > Loads the GL shim into an Unreal GLES game and hides GL_EXT_multisampled_render_to_texture. Unreal's mobile MSAA renders through multisampled render-to-texture, and the Frame's GL driver (Mesa/Zink) can crash on it: SIGSEGV with fault address 0x10000 in libgallium_dri.so on the RHIThread a few seconds after start (Zink looks up a render-pass cache slot past its end, for example Star Wars Pinball VR). Hidden, Unreal renders without that path. Unreal's multiview stays on: Unreal only uses it when GL_OVR_multiview_multisampled_render_to_texture is listed too, so for Unreal the shim keeps that one visible and draws its multiview MSAA attachments single-sampled (glFramebufferTextureMultiviewOVR).
 
+### <a id="frame-unreal_multiview_depth"></a>Unreal: match multiview depth to the eye size
+
+Shows the full environment when its upper part is clipped but menu panels look correct.
+
+- `frame.unreal_multiview_depth`
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
+- **Catalog games (1):** Star Wars: Tales from the Galaxy's Edge.
+- **Suggested by launch-test signatures:**
+  - `unreal-multiview-depth-size` (warning): The measured multiview depth attachment keeps the initial Android window dimensions and clips the taller eye color target (Tales from the Galaxy's Edge, issue 61).
+- **Source:** [patches/frame/unreal_multiview_depth.py](../src/frameport/patches/frame/unreal_multiview_depth.py)
+
+> Some UE4 games keep the initial Android window size for their stereo depth buffer, clipping the upper part of the environment while menu panels look correct. Refreshes the cached depth dimensions from the current eye render target before allocation. Preserves multiview and multisampling. Verified in Tales from the Galaxy's Edge 1.1.9; changes one branch only when the function size and surrounding code match.
+
 ### <a id="frame-unreal_ovrp_entrypoints"></a>Unreal: stand-ins for OVRPlugin functions OVRPort lacks
 
 Lets older Unreal games start VR on the Frame (for example Star Wars Pinball VR).
@@ -1019,6 +1035,20 @@ Starts Unreal games without re-checking their data file (they'd seem to hang on 
 - **Source:** [patches/frame/unreal_obb_check.py](../src/frameport/patches/frame/unreal_obb_check.py)
 
 > Unreal games can check their whole data file (.obb) before starting (bVerifyOBBOnStartUp). On the Frame that check's progress and error screens are invisible (Lepton runs VR games without an Android window), so the game seems to hang on its DownloaderActivity, for example Contractors. This turns the check off in the manifest; Unreal still checks that the OBB is there with the right size, so a missing or wrong-version OBB still stops the game.
+
+### <a id="frame-unreal_splash_bypass"></a>Unreal: bypass the stalled loading splash
+
+Lets the game finish loading when its separate loading splash stalls the render thread.
+
+- `frame.unreal_splash_bypass`
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
+- **Catalog games (1):** Star Wars: Tales from the Galaxy's Edge.
+- **Suggested by launch-test signatures:**
+  - `unreal-splash-frame-stall` (error): Unreal's map loading waits for rendering while its separate Oculus splash waits for an unbegun VR frame (Tales from the Galaxy's Edge, issue 61).
+- **Source:** [patches/frame/unreal_splash.py](../src/frameport/patches/frame/unreal_splash.py)
+
+> Some UE4 Oculus games stall during map loading: the game waits for the render thread, and the separate loading splash waits for an unbegun VR frame. Bypasses the splash renderer so loading finishes; the last image stays visible during loading. The normal environment and menu rendering continue. Verified in Tales from the Galaxy's Edge 1.1.9; changes one instruction only when the function size and prologue match.
 
 ### <a id="frame-unreal_thumb_touch"></a>Unreal: thumb follows the capacitive touches
 

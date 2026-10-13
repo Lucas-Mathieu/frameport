@@ -9,13 +9,14 @@ from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
-from .models import Analysis, Recipe
+from .models import Analysis, Recipe, data_manifest
 from .paths import localize, user_data_dir, write_atomic
 
 # One lock for every read-modify-write of library.json: jobs, the poll thread and the UI all change it, and a change
 # made between another thread's load() and save() would be lost. Re-entrant so edit() can call load()/save().
 _lock = threading.RLock()
 _last_retry = 0.0  # when migrations waiting for a game folder were last retried
+_last_data_retry = 0.0  # unavailable SideQuest backups: retry at most every 10 minutes
 
 
 def _path() -> Path:
@@ -71,7 +72,8 @@ REFRESH_ON_UPDATE = True  # (tests switch it off: their hand-made libraries have
 def _follow_catalog(data: dict) -> bool:
     """Recipes FramePort derived (not ones the user edited) stay current: when their catalog entry is new or changed,
     and once after every app update (new automatic fixes and suggestions in FramePort's code), the game's recipe is
-    derived again; a changed recipe shows Update on Frame."""
+    derived again; a changed recipe shows Update on Frame. Data recovery skipped for unavailable backups is retried
+    on later reads, at most every ten minutes."""
     from .. import __version__
     from ..recommend import catalog, engine
 
@@ -79,12 +81,17 @@ def _follow_catalog(data: dict) -> bool:
     app_updated = REFRESH_ON_UPDATE and settings.get("recipes.app_version") != __version__
     changed = app_updated
     settings["recipes.app_version"] = __version__
+    global _last_data_retry
+    retry_data = time.time() - _last_data_retry > 600
     for pkg, g in (data.get("games") or {}).items():
         r, a = g.get("recipe"), g.get("analysis")
         if g.get("kind") == "linux":  # installed as it is: no recipe to derive
             continue
-        if app_updated and isinstance(a, dict):
-            changed |= _refresh_data_fields(g, a)
+        data_refreshed = False
+        if isinstance(a, dict) and (app_updated or (retry_data and g.get("data_refresh_pending"))):
+            _last_data_retry = time.time()
+            data_refreshed = _refresh_data_fields(g, a)
+            changed |= data_refreshed
         if not isinstance(r, dict) or not isinstance(a, dict):
             continue
         if r.get("source") == "user":
@@ -102,7 +109,7 @@ def _follow_catalog(data: dict) -> bool:
         if g.pop("catalog_update", None) is not None:  # no longer the user's recipe (reset): nothing to offer
             changed = True
         entry = catalog.lookup(pkg)
-        if not app_updated and (entry is None or r.get("catalog_rev") == entry.rev()):
+        if not app_updated and not data_refreshed and (entry is None or r.get("catalog_rev") == entry.rev()):
             continue
         try:
             g["recipe"] = recipe_to_dict(engine.suggest(analysis_from_dict(a)))
@@ -113,12 +120,45 @@ def _follow_catalog(data: dict) -> bool:
 
 
 def _refresh_data_fields(g: dict, a: dict) -> bool:
-    """Analysis fields read from the game's data folder (cheap, no APK analysis) that newer FramePort versions added:
+    """Analysis fields read from the game's data folder (without full APK analysis) that newer FramePort versions added:
     filled in for games already in the library, so their patches are offered without a re-analysis."""
     extra = a.setdefault("extra", {})
-    if ("lang_packs" in extra and "asset_files" in extra) or a.get("package", "").startswith("rift."):
+    if a.get("package", "").startswith("rift."):
         return False
     from ..analysis import langpacks
+    from ..sources import quest_dump
+
+    repaired = False
+    files = g.get("data_files")
+    apk = Path(g.get("apk") or "")
+    if (files and g.get("data_dir") and apk.parent.name.lower() in quest_dump.APK_FOLDERS
+            and Path(g["data_dir"]).name.lower() in quest_dump.OBB_FOLDERS
+            and Path(g["data_dir"]).parent.resolve() == apk.parent.parent.resolve()
+            and all(quest_dump.OBB_NAME.match(name) for name in files)):
+        # Older scans kept only named OBBs from SideQuest's sibling obb folder, dropping PAKs/language packs.
+        # Recover only that same folder; keep manually selected data paths and shared folders as they were.
+        if not apk.is_file() or not Path(g["data_dir"]).is_dir():
+            return _defer_data_refresh(g)
+        _, version_code = quest_dump._apk_ids(apk)
+        try:
+            data, selected = quest_dump.find_data(apk.parent, a.get("package"), version_code, strict=True)
+        except OSError:
+            return _defer_data_refresh(g)
+        if data is not None and selected is None and data.resolve() == Path(g["data_dir"]).resolve():
+            try:
+                size = sum(data_manifest(data).values())
+                tags = langpacks.find_tags(data)
+                assets = langpacks.find_content_files(data)
+            except OSError:
+                return _defer_data_refresh(g)
+            g["data_files"] = None
+            g["data_bytes"] = size
+            extra["data_bytes"] = size
+            extra["lang_packs"] = tags
+            extra["asset_files"] = assets
+            repaired = True
+    if "lang_packs" in extra and "asset_files" in extra:
+        return bool(g.pop("data_refresh_pending", False)) or repaired
 
     data = g.get("data_dir") if g.get("data_files") is None else None  # expansion files only: no packs
     try:
@@ -126,7 +166,14 @@ def _refresh_data_fields(g: dict, a: dict) -> bool:
         extra.setdefault("asset_files", langpacks.find_content_files(data))
     except OSError:
         return False
+    g.pop("data_refresh_pending", None)
     return True
+
+
+def _defer_data_refresh(g: dict) -> bool:
+    changed = not g.get("data_refresh_pending")
+    g["data_refresh_pending"] = True
+    return changed
 
 
 def _migrate(data: dict) -> bool:

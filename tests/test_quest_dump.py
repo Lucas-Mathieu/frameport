@@ -215,6 +215,251 @@ def test_versionless_obbs_select_only_the_package_and_prefer_usable_versions(tmp
     assert quest_dump.find_data(tmp_path, "com.x.game", None)[1] == ["main.8.com.x.game.obb", "patch.com.x.game.obb"]
 
 
+@pytest.mark.parametrize("apk_folder,obb_folder", [("apk", "obb"), ("APKs", "OBBs")])
+def test_sidequest_backup_keeps_asset_files_and_language_packs(tmp_path, apk_folder, obb_folder):
+    from frameport import pipeline
+    from frameport.analysis import langpacks
+    from frameport.install.installer import local_data_manifest
+
+    backup = tmp_path / "com.x.game" / "2026-10-12T16-35-27-760Z"
+    a = apk(backup / apk_folder / "com.x.game_7.apk")
+    data = obb(backup / obb_folder, "main.7.com.x.game.obb")
+    (data / "Season1Taco-Android_ASTC.pak").write_bytes(b"content")
+    (data / "WwiseBanksCoreTaco-Android_ASTC.pak").write_bytes(b"audio")
+    (data / "de.lang").write_bytes(b"language")
+    for g in (quest_dump.from_path(a), *quest_dump.scan(tmp_path)):
+        assert g.data_dir == data and g.data_files is None
+        assert g.data_bytes() == 21
+        assert local_data_manifest(g.data_dir, g.data_files) == {
+            "main.7.com.x.game.obb": 1, "Season1Taco-Android_ASTC.pak": 7,
+            "WwiseBanksCoreTaco-Android_ASTC.pak": 5, "de.lang": 8,
+        }
+        assert langpacks.find_content_files(pipeline._data_folder(g)) == [
+            "Season1Taco-Android_ASTC.pak", "WwiseBanksCoreTaco-Android_ASTC.pak",
+        ]
+        assert langpacks.find_tags(pipeline._data_folder(g)) == ["de"]
+
+
+@pytest.mark.parametrize("other_folder", [".", "com.y.other", "nested/com.y.other"])
+def test_shared_sibling_obb_folder_keeps_other_games_assets_out(tmp_path, other_folder):
+    from frameport.install.installer import local_data_manifest
+
+    a = apk(tmp_path / "apk" / "com.x.game_7.apk")
+    data = obb(tmp_path / "obb", "main.7.com.x.game.obb")
+    other = obb(data / other_folder, "main.3.com.y.other.obb")
+    (other / "other.pak").write_bytes(b"other game's content")
+    g = quest_dump.from_path(a)
+    assert g.data_dir == data and g.data_files == ["main.7.com.x.game.obb"]
+    assert local_data_manifest(g.data_dir, g.data_files) == {"main.7.com.x.game.obb": 1}
+
+
+@pytest.mark.parametrize("nested_obb", ["main.6.com.x.game.obb", "main.7.com.x.game.obb"])
+def test_sibling_obb_folder_does_not_include_nested_expansion_files(tmp_path, nested_obb):
+    a = apk(tmp_path / "apk" / "com.x.game_7.apk")
+    data = obb(tmp_path / "obb", "main.7.com.x.game.obb")
+    obb(data / "old", nested_obb)
+    assert quest_dump.from_path(a).data_files == ["main.7.com.x.game.obb"]
+
+
+def test_sidequest_backup_keeps_nested_assets(tmp_path):
+    from frameport.install.installer import local_data_manifest
+
+    a = apk(tmp_path / "apk" / "com.x.game_7.apk")
+    data = obb(tmp_path / "obb", "main.7.com.x.game.obb")
+    (data / "content").mkdir()
+    (data / "content" / "extra.pak").write_bytes(b"content")
+    g = quest_dump.from_path(a)
+    assert g.data_files is None
+    assert local_data_manifest(g.data_dir, g.data_files) == {"main.7.com.x.game.obb": 1, "content/extra.pak": 7}
+
+
+def test_app_update_recovers_assets_for_an_old_sidequest_entry(tmp_path):
+    from frameport.core import library
+
+    a = apk(tmp_path / "apk" / "com.x.game_7.apk")
+    data = obb(tmp_path / "obb", "main.7.com.x.game.obb")
+    (data / "Season1Taco-Android_ASTC.pak").write_bytes(b"content")
+    g = {"apk": str(a), "data_dir": str(data), "data_files": ["main.7.com.x.game.obb"], "data_bytes": 1,
+         "recipe": {"source": "user", "patches": {"adapter.scale": {"value": 0.8}}}}
+    analysis = {"package": "com.x.game", "extra": {"lang_packs": [], "asset_files": []}}
+    assert library._refresh_data_fields(g, analysis)
+    assert g["data_files"] is None and g["data_bytes"] == 8
+    assert analysis["extra"]["data_bytes"] == 8
+    assert analysis["extra"]["asset_files"] == ["Season1Taco-Android_ASTC.pak"]
+    assert g["recipe"] == {"source": "user", "patches": {"adapter.scale": {"value": 0.8}}}
+    assert not library._refresh_data_fields(g, analysis)
+
+
+@pytest.mark.parametrize("other_folder", [".", "com.y.other"])
+def test_app_update_does_not_expand_a_shared_or_manual_data_selection(tmp_path, other_folder):
+    from frameport.core import library
+
+    a = apk(tmp_path / "apk" / "com.x.game_7.apk")
+    data = obb(tmp_path / "obb", "main.7.com.x.game.obb")
+    obb(data / other_folder, "main.3.com.y.other.obb")
+    g = {"apk": str(a), "data_dir": str(data), "data_files": ["main.7.com.x.game.obb"]}
+    analysis = {"package": "com.x.game", "extra": {"lang_packs": [], "asset_files": []}}
+    assert not library._refresh_data_fields(g, analysis)
+    assert g["data_files"] == ["main.7.com.x.game.obb"]
+    other = obb(tmp_path / "manual", "main.7.com.x.game.obb")
+    g["data_dir"] = str(other)
+    assert not library._refresh_data_fields(g, analysis)
+    assert g["data_files"] == ["main.7.com.x.game.obb"]
+
+
+@pytest.mark.parametrize("unavailable", ["apk", "data", "both"])
+@pytest.mark.parametrize("recipe_source", ["user", "heuristics"])
+def test_app_update_retries_asset_recovery_after_backup_returns(tmp_path, monkeypatch, unavailable, recipe_source):
+    from copy import deepcopy
+
+    from frameport import __version__
+    from frameport.core import library
+    from frameport.recommend import catalog
+
+    monkeypatch.setattr(library, "REFRESH_ON_UPDATE", True)
+    monkeypatch.setattr(catalog, "lookup", lambda _: None)
+    clock = [1_800_000_000.0]
+    monkeypatch.setattr(library.time, "time", lambda: clock[0])
+    monkeypatch.setattr(library, "_last_data_retry", 0.0)
+    a = tmp_path / "apk" / "com.x.game_7.apk"
+    data = tmp_path / "obb"
+    if unavailable == "data":
+        apk(a)
+    if unavailable == "apk":
+        obb(data, "main.7.com.x.game.obb")
+    recipe = {"package": "com.x.game", "source": recipe_source,
+              "patches": {"adapter.scale": {"value": 0.8}}}
+    g = {"apk": str(a), "data_dir": str(data), "data_files": ["main.7.com.x.game.obb"], "data_bytes": 1,
+         "recipe": recipe, "analysis": {"package": "com.x.game", "engine": "Unreal", "abis": ["arm64-v8a"],
+                                        "libs": ["libovrplatformloader.so"],
+                                        "extra": {"lang_packs": [], "asset_files": [], "asset_file_api": True}}}
+    stored = {"settings": {"recipes.app_version": "0.0.1"}, "games": {"com.x.game": g}}
+    assert library._follow_catalog(stored)
+    assert stored["settings"]["recipes.app_version"] == __version__
+    assert g["data_refresh_pending"] and g["data_files"] == ["main.7.com.x.game.obb"]
+    # Persist the pending state, as an update followed by another app start would.
+    library.save(stored)
+    stored = library.load()
+    g = stored["games"]["com.x.game"]
+    assert g["data_refresh_pending"]
+    recipe_before_retry = deepcopy(g["recipe"])
+    apk(a)
+    obb(data, "main.7.com.x.game.obb")
+    (data / "content.pak").write_bytes(b"content")
+    (data / "de.lang").write_bytes(b"language")
+    assert not library._follow_catalog(stored)  # frequent library reads don't repeatedly probe the drive
+    clock[0] += 601
+    assert library._follow_catalog(stored)
+    assert g["data_files"] is None and g["data_bytes"] == 16
+    assert g["analysis"]["extra"]["asset_files"] == ["content.pak"]
+    assert g["analysis"]["extra"]["lang_packs"] == ["de"]
+    assert "data_refresh_pending" not in g
+    if recipe_source == "user":
+        assert g["recipe"] == recipe_before_retry
+        assert g["recipe"]["patches"]["adapter.scale"] == {"value": 0.8}
+    else:
+        assert "frame.asset_files" in g["recipe"]["patches"]
+    clock[0] += 601
+    assert not library._follow_catalog(stored)  # completed recovery is not repeated
+
+
+@pytest.mark.parametrize("pending", [False, True])
+def test_asset_recovery_retries_a_directory_discovery_failure(tmp_path, monkeypatch, pending):
+    from frameport.core import library
+
+    a = apk(tmp_path / "apk" / "com.x.game_7.apk")
+    data = obb(tmp_path / "obb", "main.7.com.x.game.obb")
+    (data / "content.pak").write_bytes(b"content")
+    (data / "de.lang").write_bytes(b"language")
+    g = {"apk": str(a), "data_dir": str(data), "data_files": ["main.7.com.x.game.obb"]}
+    if pending:
+        g["data_refresh_pending"] = True
+    analysis = {"package": "com.x.game", "extra": {"lang_packs": [], "asset_files": []}}
+    scandir = quest_dump.os.scandir
+
+    def unreadable(path):
+        if Path(path) == data:
+            raise PermissionError("backup directory temporarily unreadable")
+        return scandir(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(quest_dump.os, "scandir", unreadable)
+        assert library._refresh_data_fields(g, analysis) is (not pending)
+        assert g["data_refresh_pending"] and g["data_files"] == ["main.7.com.x.game.obb"]
+        assert analysis["extra"] == {"lang_packs": [], "asset_files": []}
+        assert not library._refresh_data_fields(g, analysis)
+        # Ordinary scans stay tolerant of unreadable backup folders.
+        assert quest_dump.find_data(a.parent, "com.x.game", 7) == (None, None)
+    assert library._refresh_data_fields(g, analysis)
+    assert g["data_files"] is None and "data_refresh_pending" not in g
+    assert g["data_bytes"] == 16
+    assert analysis["extra"]["asset_files"] == ["content.pak"]
+    assert analysis["extra"]["lang_packs"] == ["de"]
+
+
+@pytest.mark.parametrize("shared", [False, True])
+@pytest.mark.parametrize("pending", [False, True])
+def test_asset_recovery_retries_an_unreadable_nested_folder(tmp_path, monkeypatch, shared, pending):
+    from frameport.core import library
+
+    a = apk(tmp_path / "apk" / "com.x.game_7.apk")
+    data = obb(tmp_path / "obb", "main.7.com.x.game.obb")
+    # Below the bounded OBB discovery search: the whole-folder check must still read this directory.
+    nested = data / "a" / "b" / "c"
+    nested.mkdir(parents=True)
+    (nested / "content.pak").write_bytes(b"content")
+    if shared:
+        obb(nested, "main.3.com.y.other.obb")
+    files = ["main.7.com.x.game.obb"]
+    g = {"apk": str(a), "data_dir": str(data), "data_files": files, "data_bytes": 1}
+    if pending:
+        g["data_refresh_pending"] = True
+    analysis = {"package": "com.x.game", "extra": {"lang_packs": [], "asset_files": []}}
+    scandir = quest_dump.os.scandir
+
+    def unreadable(path):
+        if Path(path) == nested:
+            raise PermissionError("nested backup directory temporarily unreadable")
+        return scandir(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(quest_dump.os, "scandir", unreadable)
+        with pytest.raises(PermissionError):
+            quest_dump.find_data(a.parent, "com.x.game", 7, strict=True)
+        assert quest_dump.find_data(a.parent, "com.x.game", 7) == (data, files)
+        assert library._refresh_data_fields(g, analysis) is (not pending)
+        assert g["data_refresh_pending"] and g["data_files"] == files and g["data_bytes"] == 1
+        assert analysis["extra"] == {"lang_packs": [], "asset_files": []}
+        assert not library._refresh_data_fields(g, analysis)
+    assert library._refresh_data_fields(g, analysis)
+    assert "data_refresh_pending" not in g
+    assert g["data_files"] == (files if shared else None)
+    assert g["data_bytes"] == (1 if shared else 8)
+    assert analysis["extra"]["asset_files"] == ([] if shared else ["content.pak"])
+
+
+def test_asset_recovery_retries_a_transient_read_failure(tmp_path, monkeypatch):
+    from frameport.core import library
+
+    a = apk(tmp_path / "apk" / "com.x.game_7.apk")
+    data = obb(tmp_path / "obb", "main.7.com.x.game.obb")
+    (data / "content.pak").write_bytes(b"content")
+    g = {"apk": str(a), "data_dir": str(data), "data_files": ["main.7.com.x.game.obb"]}
+    analysis = {"package": "com.x.game", "extra": {"lang_packs": [], "asset_files": []}}
+
+    def unreadable(_):
+        raise PermissionError("backup temporarily unreadable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(library, "data_manifest", unreadable)
+        assert library._refresh_data_fields(g, analysis)
+        assert g["data_refresh_pending"] and g["data_files"] == ["main.7.com.x.game.obb"]
+        assert not library._refresh_data_fields(g, analysis)
+    assert library._refresh_data_fields(g, analysis)
+    assert g["data_files"] is None and "data_refresh_pending" not in g
+    assert analysis["extra"]["asset_files"] == ["content.pak"]
+
+
 @pytest.mark.parametrize("obb_at", ["obbs", "obb/2026-10-07T21-11-04.426Z", "Android/obb/com.x.game", "."])
 def test_sidequest_backup_with_timestamped_apks(tmp_path, obb_at):
     """SideQuest backups name APKs <timestamp>_<versionCode>.apk; where the OBB sits varies."""
@@ -243,13 +488,42 @@ def test_two_versions_side_by_side(tmp_path):
     assert quest_dump.find_data(folder, "com.x.game", None)[1] == ["main.6.com.x.game.obb", "patch.6.com.x.game.obb"]
 
 
-def test_the_folder_with_the_apks_own_version_wins(tmp_path):
+@pytest.mark.parametrize("older_folder", ["old", "obb", "OBBs"])
+def test_the_folder_with_the_apks_own_version_wins(tmp_path, older_folder):
     game = tmp_path / "Game"
     apk(game / "apk" / "com.x.game_2.apk")
-    obb(game / "old", "main.1.com.x.game.obb")
+    old = obb(game / older_folder, "main.1.com.x.game.obb")
+    (old / "old.pak").write_bytes(b"old content")
     obb(game / "new", "main.2.com.x.game.obb")
     g = quest_dump.from_path(game / "apk")
     assert (g.data_dir, g.data_files) == (game / "new", None)
+    assert quest_dump.from_path(g.apk).data_dir == game / "new"
+
+
+def test_selected_sibling_obb_folder_keeps_assets_without_unselected_versions(tmp_path):
+    a = apk(tmp_path / "apk" / "com.x.game_2.apk")
+    obb(tmp_path / "old", "main.1.com.x.game.obb")
+    data = obb(tmp_path / "obb", "main.2.com.x.game.obb")
+    (data / "content.pak").write_bytes(b"content")
+    g = quest_dump.from_path(a)
+    assert (g.data_dir, g.data_files) == (data, None)
+    # Retaining the entire folder must not reinclude expansion files for a different version.
+    obb(data, "main.3.com.x.game.obb")
+    g = quest_dump.from_path(a)
+    assert (g.data_dir, g.data_files) == (data, ["main.2.com.x.game.obb"])
+
+
+def test_app_update_does_not_expand_an_outdated_sibling_obb_folder(tmp_path):
+    from frameport.core import library
+
+    a = apk(tmp_path / "apk" / "com.x.game_2.apk")
+    data = obb(tmp_path / "obb", "main.1.com.x.game.obb")
+    (data / "old.pak").write_bytes(b"old content")
+    obb(tmp_path / "new", "main.2.com.x.game.obb")
+    g = {"apk": str(a), "data_dir": str(data), "data_files": ["main.1.com.x.game.obb"]}
+    analysis = {"package": "com.x.game", "extra": {"lang_packs": [], "asset_files": []}}
+    assert not library._refresh_data_fields(g, analysis)
+    assert (g["data_dir"], g["data_files"]) == (str(data), ["main.1.com.x.game.obb"])
 
 
 @pytest.mark.parametrize("name", ["main.2.com.x.game.obb", "main.com.x.game.obb"])

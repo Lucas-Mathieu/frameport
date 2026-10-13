@@ -37,6 +37,29 @@ def test_vrapi_rejected_frames_fail_even_with_pacing_and_a_headless_end():
     assert finding.severity == "fatal" and finding.suggest == ["frame.vrapi_bridge"]
 
 
+def test_whole_log_unreal_signatures_only_search_from_the_start():
+    import re
+
+    from frameport.validate.triage import database
+
+    traces = {
+        "unreal-splash-frame-stall":
+            "FlushRenderingCommands\nCSxrSession::WaitFrame\nFSplash::RenderFrame_RenderThread\n",
+        "unreal-multiview-depth-size":
+            "ViewLog: attachment 8d00 renderbuffer=1920x1016\n"
+            "ViewLog: attachment 8ce0 renderbuffer=1728x1728\n",
+    }
+    for sig in database()["signatures"]:
+        if sig["id"] not in traces:
+            continue
+        pattern = re.compile(sig["pattern"])
+        log = "ordinary log line\n" * 6000 + traces[sig["id"]]
+        assert pattern.search(log).start() == 0
+        # Whole-log lookaheads must not be retried at every character when a marker is missing.
+        assert pattern.search(log, 1) is None
+        assert pattern.search("ordinary log line\n" * 6000) is None
+
+
 def test_failures_map_to_patches():
     r = triage(LOG_BAD, "EXITED", "com.example.game")
     ids = {f.id for f in r.findings}

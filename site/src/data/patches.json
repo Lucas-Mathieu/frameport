@@ -554,6 +554,11 @@
   "title": "GL shim for Unreal (no multisampled render-to-texture)",
   "group": "Steam Frame patches"
  },
+ "frame.unreal_multiview_depth": {
+  "anchor": "frame-unreal_multiview_depth",
+  "title": "Unreal: match multiview depth to the eye size",
+  "group": "Steam Frame patches"
+ },
  "frame.unreal_ovrp_entrypoints": {
   "anchor": "frame-unreal_ovrp_entrypoints",
   "title": "Unreal: stand-ins for OVRPlugin functions OVRPort lacks",
@@ -572,6 +577,11 @@
  "frame.unreal_skip_obb_check": {
   "anchor": "frame-unreal_skip_obb_check",
   "title": "Unreal: start without the OBB check",
+  "group": "Steam Frame patches"
+ },
+ "frame.unreal_splash_bypass": {
+  "anchor": "frame-unreal_splash_bypass",
+  "title": "Unreal: bypass the stalled loading splash",
   "group": "Steam Frame patches"
  },
  "frame.unreal_thumb_touch": {

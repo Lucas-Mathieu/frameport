@@ -5,6 +5,7 @@ Accepted layouts:
   <folder>/<package>.apk + <folder>/obb/                                       FramePort/PATCHED output layout
   <folder>/x.apk + <folder>/obb/<package>/ or Android/obb/<package>/          backups with an obb folder
   <game>/apk/x.apk + <game>/obb/<package>/                                     SideQuest-style backups (one game)
+  <game>/apk/x.apk + <game>/obb/<files>                                        SideQuest backups with loose OBB + PAKs
   <folder>/x.apk + (main|patch).<versionCode>.<package>.obb anywhere nearby    found by file name (next to the APK,
                                                                                <package>/apk/ + <package>/obb/, ...)
   a single .apk file
@@ -76,17 +77,21 @@ OBB_FOLDERS = ("obb", "obbs")
 
 # folder listings, kept while scan() runs: every game of a collection searches its neighbours (slow on NTFS drives)
 _LISTINGS: contextvars.ContextVar[dict | None] = contextvars.ContextVar("quest_dump_listings", default=None)
+# Library recovery must distinguish unreadable folders from a conclusive data selection.
+_STRICT_READS: contextvars.ContextVar[bool] = contextvars.ContextVar("quest_dump_strict_reads", default=False)
 
 
 def _list(d: Path) -> list[tuple[Path, bool]]:
-    """(entry, is a folder) in d, sorted; [] when it can't be read."""
-    cache = _LISTINGS.get()
+    """(entry, is a folder) in d, sorted; [] when unreadable, unless strict discovery is active."""
+    cache = None if _STRICT_READS.get() else _LISTINGS.get()
     if cache is not None and d in cache:
         return cache[d]
     try:
         with os.scandir(d) as it:
             out = sorted((Path(e.path), e.is_dir()) for e in it)
     except OSError:
+        if _STRICT_READS.get():
+            raise
         out = []
     if cache is not None:
         cache[d] = out
@@ -113,6 +118,8 @@ def _nonempty(d: Path | None) -> bool:
     try:
         return bool(d) and d.is_dir() and any(d.iterdir())
     except OSError:
+        if _STRICT_READS.get():
+            raise
         return False
 
 
@@ -146,7 +153,8 @@ def _find_data_dir(apk_dir: Path, pkg: str | None) -> Path | None:
       below its parent (SideQuest-style backups: <game>/apk/x.apk + <game>/obb/<package>/; the parent's folders
       with APKs of their own are other games and are skipped).
     An apk/apks folder belongs to its parent game folder: its sibling obb/ can hold raw assets (e.g. FMOD banks),
-    with or without a package subfolder or .obb files."""
+    with or without a package subfolder or .obb files. Loose sibling OBBs are selected by version in find_data
+    before that folder's extra assets are retained."""
     roots = [apk_dir]
     if apk_dir.name.lower() in APK_FOLDERS:
         roots.append(apk_dir.parent)
@@ -180,6 +188,21 @@ def _find_data_dir(apk_dir: Path, pkg: str | None) -> Path | None:
 
 # Android's expansion file names, also CryEngine's main.<package>.obb without a versionCode (GitHub #238).
 OBB_NAME = re.compile(r"^(main|patch)\.(?:(\d+)\.)?(.+)\.obb$", re.IGNORECASE)
+
+
+def _recursive_obb_names(d: Path) -> set[str]:
+    """Expansion file paths below d; propagate read errors so callers cannot mistake a partial scan for all files."""
+    names = set()
+    pending = [d]
+    while pending:
+        with os.scandir(pending.pop()) as entries:
+            for entry in entries:
+                path = Path(entry.path)
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(path)
+                elif OBB_NAME.match(entry.name) and entry.is_file():
+                    names.add(path.relative_to(d).as_posix())
+    return names
 
 
 def _named_obbs(d: Path, pkg: str) -> list[tuple[str, int | None, Path]]:
@@ -236,10 +259,20 @@ def _pick_obbs(obbs: list[tuple[str, int | None, Path]], version_code: int | Non
     return picked
 
 
-def find_data(apk_dir: Path, pkg: str | None, version_code: int | None = None) -> tuple[Path | None, list[str] | None]:
+def find_data(apk_dir: Path, pkg: str | None, version_code: int | None = None, *, strict: bool = False) \
+        -> tuple[Path | None, list[str] | None]:
     """(data folder, files) for the APK in apk_dir. files is None when the whole folder is the game's data (the
     layouts of _find_data_dir), else the names of the expansion files to send from it (found by file name, e.g.
-    lying next to the APK: the APK and anything else in that folder stay on the PC)."""
+    lying next to the APK: the APK and anything else in that folder stay on the PC). With strict=True, discovery
+    I/O errors propagate so library recovery can retry instead of treating an unreadable folder as empty."""
+    token = _STRICT_READS.set(strict)
+    try:
+        return _find_data(apk_dir, pkg, version_code)
+    finally:
+        _STRICT_READS.reset(token)
+
+
+def _find_data(apk_dir: Path, pkg: str | None, version_code: int | None) -> tuple[Path | None, list[str] | None]:
     data = _find_data_dir(apk_dir, pkg)
     if data is not None or not pkg:
         return data, None
@@ -251,6 +284,18 @@ def find_data(apk_dir: Path, pkg: str | None, version_code: int | None = None) -
     files = _pick_obbs(obbs, version_code)
     everything = {p.name for p, _ in _list(d)}
     names = [f.name for f in files]
+    if (apk_dir.name.lower() in APK_FOLDERS and d.parent == apk_dir.parent
+            and d.name.lower() in OBB_FOLDERS and not _has_apks(d)):
+        # Retain SideQuest's sibling-folder assets only after the version-aware OBB search has chosen it.
+        # Expanding a shared folder or one holding unselected OBB versions would undo that selection.
+        try:
+            obb_names = _recursive_obb_names(d)
+        except OSError:
+            if _STRICT_READS.get():
+                raise
+            return d, names
+        if obb_names == set(names):
+            return d, None
     return d, (None if everything == set(names) else names)
 
 

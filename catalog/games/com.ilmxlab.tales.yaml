@@ -1,15 +1,22 @@
 package: com.ilmxlab.tales
 title: 'Star Wars: Tales from the Galaxy''s Edge'
-status: unknown
-notes: Not working yet - after the intro logos and a loading animation the picture goes black (GitHub issue 61).
-  Gets the controller fixes found for Vader Immortal (same studio) to test.
+status: works
+notes: >-
+  Headset tested for GitHub issue 61: full view, loading into gameplay, both eyes, controller input and sound
+  work with the splash bypass and multiview depth-size fix. Keep the main OBB and all three content/sound-bank PAKs.
 details: Unreal Engine 4 (GLES) by ILMxLAB, like Vader Immortal, but a different engine build - it has none of Vader's
   Quest-only branches (no GetQuestShaderPrecompilePercent or RPOC key map; it precompiles shaders through Unreal's
   own pipeline cache), so frame.unreal_quest_precompile/_keymap don't apply. Its seasons and Wwise banks are Meta
   platform asset files (frame.asset_files). Vader's OVRPlugin findings apply to it as well - poses asked for at
   OVRPlugin's own clock (pose_time_fix) and thumbs from near-touch, which the Frame never reports (frame.unreal_thumb_touch).
-  Ruled out for the black picture so far (see the diagnostics in issue 61) - asset-file paks, Valve's foveation,
-  GL errors; the game's own eye image reads back black.
+  Map travel stalls with the game thread waiting in FlushRenderingCommands and the render thread waiting in
+  FSplash::RenderFrame_RenderThread / ovrp_WaitToBeginFrame. frame.unreal_splash_bypass lets loading finish.
+  SideQuest backups with sibling apk/ and obb/ folders must include all three PAKs; old scans omitted them and
+  lost sound. The scanner and library refresh recover that layout. Eye clipping came from cached Android window
+  dimensions for the depth attachment (1920x1016 versus the 1728x1728 eye color texture).
+  frame.unreal_multiview_depth refreshes both cached dimensions from the current eye render size; multiview and
+  multisampling remain enabled. The two engine fixes check exported symbols, function sizes and instruction bytes
+  before changing one instruction each; unrecognized engine builds are left unchanged.
 tested_version: 1.1.9+734762.cl.439699
 engine: Unreal
 xr: VrApi
@@ -18,10 +25,12 @@ alt_overport:
 frame:
 - frame.asset_files
 - frame.unreal_thumb_touch
+- frame.unreal_splash_bypass
+- frame.unreal_multiview_depth
 adapter:
   pose_time_fix: 1
 verified:
   issue: 61
-updated: '2026-10-09'
-min_app: 0.12.1
+updated: '2026-10-12'
+min_app: 1.0.4
 source_hint: Star Wars- Tales from the Galaxys Edge
