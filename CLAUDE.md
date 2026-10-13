@@ -808,6 +808,24 @@ index lines; no index (fp_spirv) = the old newest-by-mtime 4 MB. One JSON line (
 is read whole by `Frame.agent` (fine at that size); `_Writer.fit` drops the least recently used modules last, after
 cutting logs, to stay under the 24 MB zip limit.
 **Unreal OBB check (GitHub #159, 2026-10-10):** Epic's DownloaderActivity checks OBB name+size (OBBData), then with `bVerifyOBBOnStartUp=true` CRCs the whole OBB; its screens are invisible in Lepton (stuck at `Displayed …/.DownloaderActivity`, triage `unreal-obb-check-stuck`) → `frame.unreal_skip_obb_check` (analysis `unreal_verify_obb`, ANALYSIS_VERSION 11) flips the manifest boolean (`axml.set_meta_data_bool`); skips only the CRC pass. Host-tested only.
+**Issue round 2026-10-12 (agent v83):** Lepton pastes STEAM_COMPAT_DATA_PATH unquoted into `sh -c "ln -s …/internal/<pkg>
+/data/data/<pkg>"` (mounting.sh): a game on a card named "Steam Frame 512g" got no internal storage (no saves/prefs;
+Beyond Sandbox's EOS then looped `createKeychain→resetKeychain` forever, 1.85 GB log). Quest launchers with an unsafe
+path now `ln -sfn <base> ~/.local/share/frameport/lepton-paths/<pkg>` at every start and give Lepton that path
+(`app_dir_lines`/`set_app_dir`/`launcher_base`; upgrade_launchers converts; deployment.json keeps the real base).
+Verified on the device with a spaced copy of Stremio (old: the `ln` error; new: /data/data link, shared_prefs
+writable). `frame.eos_keychain_loop` (opt-in, triage `eos-keychain-loop`) returns from EOSSDK.resetKeychain. Wander
+0.3570 (Unity 6.5, Firebase, Gecko) ran out of bionic's 128 pthread keys → `frame.unity_tls_key_pool` (Klownicle's
+approach, #198: libunity's 4 key imports renamed `fp_tkey_*` via `elf.rename_imports`, `libfp_tkeys.so` pools
+destructor-less keys behind one real key); device: past Firestore, 72 fps. Cpp2IL releases can't read metadata v107
+(Unity 6.5) → `tools/cpp2il.py` falls back to the development CI build (nightly.link) on that error. Vermillion's canvas
+is an OVROverlay quad (drawn above the hand) → `frame.vermillion_scene_canvas` (PaintableMesh getters → false;
+installed build checked, 72 fps headless; headset not yet). Linux apps: `desktop_icon` switch, a deleted desktop copy
+stays deleted (#212). Findings: OLAR (#201) RHIThread null deref in libUnreal (`ldr x8,[x19,#792]`, x19=0) not fixed by
+hide_space_warp / vk_hide_fdm / no Valve layers; FNAF HW (#135) "freeze" = first-start GL program-binary-cache compile
+on Zink (threads busy in zink/disk cache), not a hang; VR4 (#199) reporter's patch.203 OBB truncated. Upload benchmark
+(`scripts/upload_bench.py`, #242): home Wi-Fi caps every method at ~11 MB/s; paramiko uses ~3x OpenSSH's CPU; Windows
+OpenSSH refuses FramePort's key file (ACL "bad permissions") until its permissions are tightened.
 **Meta user id (GitHub #182, 2026-10-11):** OVRPort's platform loader (runtimes 3.4.3-23204ea and -aa54c3f) answers
 `ovr_GetLoggedInUserID` (and two other callers) without a Meta account with a made-up id from a helper (`stp; mov x29,
 sp; bl random; …; mov/movk x9 = 0x53444835ec580000 (6e18); add x0, x8, x9; ldp; ret`), kept only in memory → a new id
