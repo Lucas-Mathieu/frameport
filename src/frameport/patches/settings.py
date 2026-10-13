@@ -24,6 +24,11 @@ SETTINGS = [
      "Removes the color scale/bias (XR_KHR_composition_layer_color_scale_bias) from the game's layers, so the runtime "
      "doesn't apply it. The Frame's runtime allocates GPU memory for it every frame without freeing it, for example "
      "Vader Immortal leaked ~20 MB/s on its loading screen. Fades done this way no longer show."),
+    ("fade_quad", "int", 0, "Draw fades over the picture",
+     "Games that fade to black by dimming their picture with a layer color scale (XR_KHR_composition_layer_color_"
+     "scale_bias, for example Batman: Arkham Shadow's loading screens) can show the level loading instead of black on "
+     "the Frame. FrameBridge then draws the fade itself: a black quad in front of the eyes whose opacity follows the "
+     "game's dimming. 2 also removes the game's own dimming (if both show, the fade is doubled)."),
     ("hide_space_warp", "int", 0, "Turn off space warp",
      "Hides XR_FB_space_warp, so the game renders every frame itself instead of half of them plus motion vectors "
      "(Application SpaceWarp). For games whose picture flickers or smears on the Frame (for example Unreal Engine 5 "
@@ -264,6 +269,9 @@ UI: dict[str, dict] = {
     "focus_hold_ms": dict(group="screens", level="advanced", label="Ignore focus dips up to", depends="focus_hold",
                           help="Longer for headsets that briefly think they're off your head.",
                           control=("slider", 500.0, 3000.0, 100.0, "{:.0f} ms")),
+    "fade_quad": dict(group="picture", level="advanced", label="Draw fades over the picture",
+                      help="For games whose fades to black don't show, so you see the level loading (for example "
+                           "Batman: Arkham Shadow).", control=("switch",)),
     "pose_consistency": dict(group="picture", level="advanced", label="Steadier head tracking",
                              help="For games that judder or shimmer while you hold your head still (for "
                                   "example I Am Cat).",

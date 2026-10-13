@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 159 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 160 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -12,7 +12,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 
 - [Patches from OVRPort](#group-overport) (25)
 - [Steam Frame patches](#group-frame) (48)
-- [Game settings](#group-adapter) (65)
+- [Game settings](#group-adapter) (66)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
 
@@ -107,6 +107,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [360° sharpness](#adapter-equirect_res) | `adapter.equirect_res` | Game settings |  |
 | [360° 3D](#adapter-equirect_stereo) | `adapter.equirect_stereo` | Game settings |  |
 | [Per-eye diagnostics (log)](#adapter-eye_debug) | `adapter.eye_debug` | Game settings |  |
+| [Draw fades over the picture](#adapter-fade_quad) | `adapter.fade_quad` | Game settings |  |
 | [Fix upside-down menus](#adapter-flip_emul) | `adapter.flip_emul` | Game settings |  |
 | [Rotate panels 180°](#adapter-flip_quads) | `adapter.flip_quads` | Game settings |  |
 | [Don't pause on short interruptions](#adapter-focus_hold) | `adapter.focus_hold` | Game settings | 4 |
@@ -1322,6 +1323,20 @@ Logs details when one eye looks wrong. No effect on the game.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > For one eye looking wrong (for example a jittering right eye): logs each eye's submitted pose against a fresh one, the eye-to-eye relation and when each eye's image was released, also into framebridge.log in the game's storage (some games stop Android's log early). No effect on the game.
+
+### <a id="adapter-fade_quad"></a>Draw fades over the picture
+
+For games whose fades to black don't show, so you see the level loading (for example Batman: Arkham Shadow).
+
+- `adapter.fade_quad`
+- **Changes:** Game setting: stored in the build and on the Frame (settings.conf); can be changed without a rebuild.
+- **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
+- **Options:**
+  - Value: int, default `0`.
+  - Game settings → Picture → "Draw fades over the picture" (advanced).
+- **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
+
+> Games that fade to black by dimming their picture with a layer color scale (XR_KHR_composition_layer_color_scale_bias, for example Batman: Arkham Shadow's loading screens) can show the level loading instead of black on the Frame. FrameBridge then draws the fade itself: a black quad in front of the eyes whose opacity follows the game's dimming. 2 also removes the game's own dimming (if both show, the fade is doubled).
 
 ### <a id="adapter-flip_emul"></a>Fix upside-down menus
 

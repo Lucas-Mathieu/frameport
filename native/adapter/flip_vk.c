@@ -35,6 +35,7 @@ static struct {
     PFN_vkResetCommandBuffer ResetCommandBuffer;
     PFN_vkCmdPipelineBarrier CmdPipelineBarrier;
     PFN_vkCmdBlitImage CmdBlitImage;
+    PFN_vkCmdClearColorImage CmdClearColorImage;  // fade_quad.c
     PFN_vkQueueSubmit QueueSubmit;
     PFN_vkCreateFence CreateFence;
     PFN_vkWaitForFences WaitForFences;
@@ -135,7 +136,7 @@ static int vk_ready(void) {
     if (!vk.GetDeviceProcAddr) return 0;
 #define DEV(name) vk.name = (PFN_vk##name)vk.GetDeviceProcAddr(vk.device, "vk" #name); if (!vk.name) return 0;
     DEV(GetDeviceQueue) DEV(CreateCommandPool) DEV(AllocateCommandBuffers) DEV(BeginCommandBuffer)
-    DEV(EndCommandBuffer) DEV(ResetCommandBuffer) DEV(CmdPipelineBarrier) DEV(CmdBlitImage) DEV(QueueSubmit)
+    DEV(EndCommandBuffer) DEV(ResetCommandBuffer) DEV(CmdPipelineBarrier) DEV(CmdBlitImage) DEV(CmdClearColorImage) DEV(QueueSubmit)
     DEV(CreateFence) DEV(WaitForFences) DEV(ResetFences)
 #undef DEV
     vk.GetDeviceQueue(vk.device, vk.family, vk.index, &vk.queue);

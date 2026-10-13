@@ -95,6 +95,9 @@ static int foveation_fix = 1;
 // e.g. Into The Radius 2; OVRPort's patch_disable_space_warp doesn't reach UE5's OpenXR plugin)
 static int hide_space_warp = 0;
 static int strip_color_bias = 0;
+// fade_quad.c: draw colour-scale fades (fade to black) as a black quad over the picture; 2 = also remove the scale
+static int fade_quad = 0;
+static uint32_t runtime_max_layers = 16;  // XrSystemGraphicsProperties::maxLayerCount (the Frame: 16)
 static int snapshot = 0;  // seconds between eye-image snapshots (snapshot_gl.c; 0 = off)
 static char snap_dir[256];
 static void snap_on_create(XrSwapchain handle, const XrSwapchainCreateInfo *info);
@@ -164,6 +167,7 @@ static void read_settings(const char *path) {
         if (sscanf(line, "foveation_fix=%f", &value) == 1) foveation_fix = value != 0;
         if (sscanf(line, "hide_space_warp=%f", &value) == 1) hide_space_warp = value != 0;
         if (sscanf(line, "strip_color_bias=%f", &value) == 1) strip_color_bias = (int)value;
+        if (sscanf(line, "fade_quad=%f", &value) == 1) fade_quad = value > 0 ? (int)value : 0;
         if (sscanf(line, "frame_balance=%f", &value) == 1) frame_balance = value != 0;
         if (sscanf(line, "snapshot=%f", &value) == 1) snapshot = value > 0 ? (int)value : 0;
         if (sscanf(line, "controller_fix=%f", &value) == 1) controller_fix = value != 0;
@@ -259,6 +263,8 @@ static void initialize(void) {
                             proximity_emul > 1 ? "thumb + index" : "thumb");
     if (hide_space_warp) LOG("per-game: hide_space_warp=1 (XR_FB_space_warp hidden, space warp info removed)");
     if (strip_color_bias) LOG("per-game: strip_color_bias=%d (layer color scale/bias removed)", strip_color_bias);
+    if (fade_quad) LOG("per-game: fade_quad=%d (colour-scale fades drawn as a black quad%s)", fade_quad,
+                       fade_quad > 1 ? "; the layer's own scale removed" : "");
     if (frame_balance) LOG("per-game: frame_balance=1 (an open frame is ended before the next one begins)");
     if (eye_debug || release_wait) LOG("per-game: eye_debug=%d release_wait=%d log_file=%s", eye_debug, release_wait,
                                        log_file ? path : "none");
@@ -768,6 +774,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetSystemProperties(XrInstance instance, XrSyst
     PFN_xrGetSystemProperties fn = (PFN_xrGetSystemProperties)lookup(instance, "xrGetSystemProperties");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
     XrResult result = fn(instance, system, properties);
+    if (XR_SUCCEEDED(result) && properties && properties->graphicsProperties.maxLayerCount)
+        runtime_max_layers = properties->graphicsProperties.maxLayerCount;
     if (XR_SUCCEEDED(result) && properties && layer_debug)
         LOG("layer_debug: system '%s' maxLayerCount=%u max swapchain %ux%u", properties->systemName,
             properties->graphicsProperties.maxLayerCount, properties->graphicsProperties.maxSwapchainImageWidth,
@@ -881,6 +889,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySpace(XrSpace space) {
 #include "cube_standin.c"
 #include "snapshot_gl.c"
 #include "surface_swapchain.c"
+#include "fade_quad.c"
 
 // GPU video buffers need explicit external-memory support on the app's device.
 // Preserve the runtime's extension list and both Vulkan-enable entry points.
@@ -1022,6 +1031,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance instance, const XrSess
         scene_on_create_session(*session);
         session_fixes_on_create_session(*session);
         emul_on_create_session(*session, info);
+        fade_on_create_session(*session, info);
     }
     return result;
 }
@@ -1465,7 +1475,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
             frames = 0; drift_sum = drift_max = 0;
         }
     }
-    if ((!layer_fix && !swap_eyes && !emulate_passthrough && !flip_quads && !flip_emul && !strip_depth) || !info || !info->layerCount ||
+    if ((!layer_fix && !swap_eyes && !emulate_passthrough && !flip_quads && !flip_emul && !strip_depth && !fade_quad) || !info || !info->layerCount ||
         info->layerCount > 64)
         return fn(session, info);
     if (layer_debug) {  // the submitted layer list (order, flags, eyes, chained structs) whenever its shape changes
@@ -1504,6 +1514,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
     XrCompositionLayerProjection projections[64];
     XrCompositionLayerProjectionView views[64][2];
     XrCompositionLayerQuad quads[64];
+    XrCompositionLayerQuad fade_out;  // fade_quad: at most one fade layer per frame
+    int faded = 0;
     uint32_t count = 0, dropped = 0, swapped = 0, passthrough = 0;
     const XrCompositionLayerBaseHeader *surface_projections[SURF_MAX];
     int surface_projection_count = 0;
@@ -1643,8 +1655,9 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
                     memcpy(last, now, sizeof(now));
                 }
             }
-            if (cb && strip_color_bias && (layer->type == XR_TYPE_COMPOSITION_LAYER_PROJECTION ||
-                                           layer->type == XR_TYPE_COMPOSITION_LAYER_QUAD)) {
+            if (cb && ((strip_color_bias && (layer->type == XR_TYPE_COMPOSITION_LAYER_PROJECTION ||
+                                             layer->type == XR_TYPE_COMPOSITION_LAYER_QUAD)) ||
+                       (fade_quad > 1 && layer->type == XR_TYPE_COMPOSITION_LAYER_PROJECTION))) {
                 const XrBaseInStructure *rest = head;  // skip leading color structs; one further down drops the chain
                 while (rest && rest->type == XR_TYPE_COMPOSITION_LAYER_COLOR_SCALE_BIAS_KHR) rest = rest->next;
                 for (const XrBaseInStructure *n = rest; n; n = n->next)
@@ -1754,6 +1767,11 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
             }
         }
         kept[count++] = layer;
+        // fade_quad: a dimmed projection layer gets the black quad right after it (the colour scale is read from
+        // the app's own layer: fade_quad=2 removed it from the copy submitted)
+        int level = fade_quad && !faded && count < 64 ? fade_level(info->layers[i]) : 0;
+        const XrCompositionLayerBaseHeader *fade_l = level ? fade_layer(session, level, count, &fade_out) : NULL;
+        if (fade_l) { kept[count++] = fade_l; faded = 1; ++swapped; }
     }
     XrFrameEndInfo fixed = *info;
     fixed.layers = kept;

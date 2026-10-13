@@ -69,6 +69,11 @@
   "title": "Per-eye diagnostics (log)",
   "group": "Game settings"
  },
+ "adapter.fade_quad": {
+  "anchor": "adapter-fade_quad",
+  "title": "Draw fades over the picture",
+  "group": "Game settings"
+ },
  "adapter.flip_emul": {
   "anchor": "adapter-flip_emul",
   "title": "Fix upside-down menus",
