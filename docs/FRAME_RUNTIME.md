@@ -172,6 +172,8 @@
 ## Steam integration
 - Non-Steam shortcut: binary `userdata/<id>/config/shortcuts.vdf`; appid = crc32(exe+title) | 0x80000000;
   artwork in `config/grid/<appid>p.*` (portrait), `<appid>.*` (landscape), `<appid>_hero.*`, `<appid>_logo.*`.
+  KeyValues names are case-insensitive: Steam may save `Shortcuts` / `AppName` after a devkit registration
+  (GitHub #263). Agent v86 reads and updates keys case-insensitively, keeping Steam's spelling and existing appids.
   Steam reads the file only at start → stop steam.service, edit, start (FramePort does it once per batch).
 - Processes started from Steam (Konsole, SSH sessions?) share steam.service's cgroup: use `systemd-run --user`.
 - SSH: `sshd` must be enabled (`sudo systemctl enable --now sshd`), which needs a user password (`passwd`).
