@@ -38,7 +38,9 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 # 13: validate monolithic CryEngine projects/config, OBB filename formats and foveation cvar (The Climb, GitHub #238)
 # 14: bhaptics_permission (bHaptics asks for Android 12's BLUETOOTH_CONNECT: frame.bhaptics_permission, GitHub #235)
 # 15: headset (the Meta headset a VR app was made for: Gear VR / Go games run through frame.a32_bridge) (2026-10)
-ANALYSIS_VERSION = 15
+# 16: headset "quest" also for 32-bit apps that require 6DoF head tracking (Santa Cruz builds, e.g. Sports
+#     Scramble: Touch controllers on the a32 bridge) (2026-10)
+ANALYSIS_VERSION = 16
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -155,6 +157,20 @@ def _features(manifest: bytes) -> dict[str, bool]:
     return out
 
 
+def requires_6dof(manifest: bytes) -> bool:
+    """The app requires 6DoF head tracking (uses-feature android.hardware.vr.headtracking, version 1, required): Meta's
+    Quest declaration, which Gear VR and Go apps don't make."""
+    x = axml.Axml(manifest)
+    names = x.strings()
+    for el in x.elements():
+        if el.name != "uses-feature" or x.attr_str(el, "name") != "android.hardware.vr.headtracking":
+            continue
+        attrs = {names[a.name]: a.value for a in el.attrs if a.name < len(names)}
+        if attrs.get("required", 1) != 0 and (attrs.get("version") or 0) >= 1:
+            return True
+    return False
+
+
 def vr_kind(libs: set[str], manifest_strings: list[str]) -> str:
     """What kind of Android app this is, for choosing how to port it:
     quest       Meta Quest app (VrApi / OVRPlugin / Meta's OpenXR loader + Oculus manifest entries): OVRPort
@@ -182,14 +198,15 @@ def vr_kind(libs: set[str], manifest_strings: list[str]) -> str:
 GODOT_CLIPBOARD_CAST = b"null cannot be cast to non-null type android.content.ClipboardManager"
 
 
-def headset(meta: dict, abis: list[str], kind: str) -> str:
+def headset(meta: dict, abis: list[str], kind: str, six_dof: bool = False) -> str:
     """The Meta headset a VR app was made for: "quest", "go" (Oculus Go), "gearvr" (Samsung Gear VR, which most Go
-    games also kept) or "" (not a Meta VR app). Quest games list their devices in com.oculus.supportedDevices; Gear VR
-    and Go games declare Samsung's VR mode and only ship 32-bit code (the Quest needs arm64)."""
+    games also kept) or "" (not a Meta VR app). Quest games list their devices in com.oculus.supportedDevices or
+    require 6DoF head tracking (six_dof: 32-bit Santa Cruz builds, which also kept Samsung's VR mode); Gear VR and Go
+    games declare Samsung's VR mode and only ship 32-bit code (the Quest needs arm64)."""
     if kind != "quest":
         return ""
     devices = str(meta.get("com.oculus.supportedDevices") or "").lower()
-    if "quest" in devices or "eureka" in devices or "arm64-v8a" in abis:
+    if "quest" in devices or "eureka" in devices or "arm64-v8a" in abis or six_dof:
         return "quest"
     if "go" in devices.split("|") or "pacific" in devices:
         return "go"
@@ -345,7 +362,7 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             "oculus_os_refs": sorted(oculus_os_refs),
             "xr_layer_exts": sorted(layer_exts),  # composition-layer extensions the game's own libraries request
             "vr_kind": vr_kind(libset, manifest_strings),
-            "headset": headset(meta, abis, vr_kind(libset, manifest_strings)),
+            "headset": headset(meta, abis, vr_kind(libset, manifest_strings), requires_6dof(manifest)),
             # the base of a split APK set (Play "app bundle" installs): the code/libraries live in split APKs
             "split_apk": bool({"isSplitRequired", "requiredSplitTypes"} & set(manifest_strings)),
             # Unity (IL2CPP) text fields: they close at once on the Frame (frame.unity_text_input)

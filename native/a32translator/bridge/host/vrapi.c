@@ -5,6 +5,7 @@
  * The 32-bit layouts are VrApi 1.5's (VrApi_Types.h asserts them; OVRPlugin 1.12's 1856-byte ovrFrameParms
  * matches). Host objects (ovrMobile, swap chains) are handles; EGL objects in the mode parameters are the handles the
  * guest got from the GL thunks. Each frame's layers become projection layers (the old API had no other kind). */
+#include <android/asset_manager_jni.h>
 #include <dlfcn.h>
 #include <math.h>
 #include <time.h>
@@ -109,6 +110,7 @@ static struct {
     int (*PollEvent)(void *);
     int (*GetSystemPropertyFloatArray)(const j64 *, int, float *, int);
     int (*SetTrackingSpace)(void *, int);
+    int (*SetHapticVibrationSimple)(void *, uint32_t, float);
 } B;
 static jobject activity; /* the app's activity (global reference), for input.c */
 
@@ -132,7 +134,7 @@ static void bridge_init(void)
     L(GetTextureSwapChainLength); L(GetTextureSwapChainHandle); L(SubmitFrame2); L(SetPropertyInt);
     L(EnumerateInputDevices); L(GetInputDeviceCapabilities); L(GetCurrentInputState); L(GetInputTrackingState);
     L(CreateTextureSwapChain3); L(SetDisplayRefreshRate); L(PollEvent); L(GetSystemPropertyFloatArray);
-    L(SetTrackingSpace);
+    L(SetTrackingSpace); L(SetHapticVibrationSimple);
 #undef L
     bridge_ok = B.Initialize && B.EnterVrMode && B.SubmitFrame2 && B.GetPredictedTracking2 && B.GetPredictedDisplayTime &&
                 B.LeaveVrMode && B.CreateTextureSwapChain2 && B.DestroyTextureSwapChain && B.GetTextureSwapChainLength &&
@@ -337,6 +339,41 @@ static uint32_t app_api; /* the app's VrApi as major << 16 | minor (1.0.4.5 -> 0
  * them overwrote AFFECTED's stack, VrApi 1.0.4) */
 static int api_has(uint32_t minor) { return app_api >= (1u << 16 | minor); }
 
+/* A Quest game (the conversion writes assets/fp_a32_headset.txt = "quest" for apps that require 6DoF head tracking,
+ * e.g. Sports Scramble's Santa Cruz build): its OVRPlugin reads two Touch controllers, so the Frame's controllers
+ * are passed through as they are instead of the Gear VR Controller below. A32_TOUCH=1/0 overrides it. */
+static int quest_touch;
+
+extern __typeof__(AAssetManager_fromJava) AAssetManager_fromJava __attribute__((weak));
+extern __typeof__(AAssetManager_open) AAssetManager_open __attribute__((weak));
+extern __typeof__(AAsset_read) AAsset_read __attribute__((weak));
+extern __typeof__(AAsset_close) AAsset_close __attribute__((weak));
+
+static void load_headset(JNIEnv *env, jobject act)
+{
+    const char *force = getenv("A32_TOUCH");
+    if (force) {
+        quest_touch = atoi(force) != 0;
+    } else if (env && act && AAssetManager_fromJava && AAssetManager_open) {
+        jclass k = (*env)->GetObjectClass(env, act);
+        jmethodID mid = k ? (*env)->GetMethodID(env, k, "getAssets", "()Landroid/content/res/AssetManager;") : NULL;
+        jobject jam = mid ? (*env)->CallObjectMethod(env, act, mid) : NULL;
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        AAssetManager *am = jam ? AAssetManager_fromJava(env, jam) : NULL;
+        AAsset *a = am ? AAssetManager_open(am, "fp_a32_headset.txt", AASSET_MODE_BUFFER) : NULL;
+        char buf[16] = {0};
+        if (a) {
+            AAsset_read(a, buf, sizeof buf - 1);
+            AAsset_close(a);
+        }
+        quest_touch = strncmp(buf, "quest", 5) == 0;
+        if (jam) (*env)->DeleteLocalRef(env, jam);
+        if (k) (*env)->DeleteLocalRef(env, k);
+    }
+    bridge_log(ANDROID_LOG_INFO, quest_touch ? "controllers: a Quest game, the Frame's controllers as Touch controllers"
+                                             : "controllers: a Gear VR / Go game, the Frame's right controller as its remote");
+}
+
 void imp_vrapi_Initialize(a32_cpu *c, argreader *R)
 {
     uint32_t p = rd32(R);
@@ -352,6 +389,7 @@ void imp_vrapi_Initialize(a32_cpu *c, argreader *R)
     init64 in = {1, (int32_t)ld32(p + 4), 1, 50, 0, (int32_t)ld32(p + 20), java_of(p + 24)};
     if (!activity && in.Java.ActivityObject && in.Java.Env)
         activity = (*in.Java.Env)->NewGlobalRef(in.Java.Env, in.Java.ActivityObject);
+    load_headset(in.Java.Env, in.Java.ActivityObject);
     int r = B.Initialize(&in);
     if (r == 0) vrapi_initialized = 1;
     app_api = ld32(p + 8) << 16 | (ld32(p + 12) & 0xffff);
@@ -443,7 +481,8 @@ void imp_vrapi_EnterVrMode(a32_cpu *c, argreader *R)
     }
     void *mobile = B.EnterVrMode(&m);
     bridge_log(ANDROID_LOG_INFO, "vrapi_EnterVrMode(flags 0x%x) -> %p", m.Flags, mobile);
-    if (mobile) input_start(mobile, B.EnumerateInputDevices, B.GetInputDeviceCapabilities, B.GetCurrentInputState, activity);
+    if (mobile && quest_touch) bridge_log(ANDROID_LOG_INFO, "controllers: no touchpad/back events (the game reads Touch)");
+    if (mobile && !quest_touch) input_start(mobile, B.EnumerateInputDevices, B.GetInputDeviceCapabilities, B.GetCurrentInputState, activity);
     ret32(c, ptr2h(mobile));
 }
 
@@ -704,6 +743,21 @@ void imp_vrapi_EnumerateInputDevices(a32_cpu *c, argreader *R)
 {
     void *m = h2ptr(rd32(R));
     uint32_t index = rd32(R), out = rd32(R);
+    if (quest_touch) { /* the index-th Touch controller (the bridge's other device types have other structs) */
+        int (*en)(void *, uint32_t, caps_header *) = B.EnumerateInputDevices;
+        uint32_t n = 0;
+        for (uint32_t i = 0; bridge() && m && en && i < 8; i++) {
+            caps_header h = {0, 0};
+            if (en(m, i, &h) < 0) break;
+            if (h.Type != TRACKED_REMOTE || n++ != index) continue;
+            st32(out, TRACKED_REMOTE);
+            st32(out + 4, h.DeviceID);
+            ret32(c, 0);
+            return;
+        }
+        ret32(c, (uint32_t)-1);
+        return;
+    }
     if (!bridge() || !m || index != 0 || right_controller(m) == 0xffffffffu) {
         ret32(c, (uint32_t)-1);
         return;
@@ -716,8 +770,18 @@ void imp_vrapi_EnumerateInputDevices(a32_cpu *c, argreader *R)
 
 void imp_vrapi_GetInputDeviceCapabilities(a32_cpu *c, argreader *R)
 {
-    rd32(R);
+    void *m = h2ptr(rd32(R));
     uint32_t p = rd32(R);
+    if (quest_touch) { /* the bridge's caps, only as far as the app's struct goes */
+        int (*caps)(void *, caps_header *) = B.GetInputDeviceCapabilities;
+        remote_caps64 rc;
+        memset(&rc, 0, sizeof rc);
+        rc.Header.Type = (int32_t)ld32(p), rc.Header.DeviceID = ld32(p + 4);
+        int r = bridge() && m && caps && rc.Header.Type == TRACKED_REMOTE ? caps(m, &rc.Header) : -1;
+        if (r >= 0) memcpy(g2p(p), &rc, api_has(15) ? 40 : 28); /* HapticSamplesMax.. TouchCapabilities: 1.1.15 */
+        ret32(c, (uint32_t)r);
+        return;
+    }
     if (ld32(p) != TRACKED_REMOTE || ld32(p + 4) != REMOTE_ID) {
         ret32(c, (uint32_t)-1);
         return;
@@ -738,6 +802,22 @@ void imp_vrapi_GetCurrentInputState(a32_cpu *c, argreader *R)
 {
     void *m = h2ptr(rd32(R));
     uint32_t id = rd32(R), out = rd32(R);
+    if (quest_touch) {
+        remote_state64 q;
+        memset(&q, 0, sizeof q);
+        q.ControllerType = TRACKED_REMOTE; /* the bridge refuses queries of any other type */
+        int (*qs)(void *, uint32_t, remote_state64 *) = B.GetCurrentInputState;
+        int r = bridge() && m && qs && ld32(out) == TRACKED_REMOTE ? qs(m, id, &q) : -1;
+        if (r >= 0) {
+            /* the struct grew with VrApi: triggers 1.1.13, touches 1.1.15, sticks 1.1.16 */
+            memcpy(g2p(out + 8), (char *)&q + 8, 28);
+            if (api_has(13)) memcpy(g2p(out + 36), &q.IndexTrigger, 8);
+            if (api_has(15)) memcpy(g2p(out + 44), &q.Touches, 8);
+            if (api_has(16)) memcpy(g2p(out + 52), q.Joystick, 16);
+        }
+        ret32(c, (uint32_t)r);
+        return;
+    }
     uint32_t dev = bridge() && m && id == REMOTE_ID ? right_controller(m) : 0xffffffffu;
     remote_state64 st;
     memset(&st, 0, sizeof st);
@@ -803,7 +883,7 @@ void imp_vrapi_GetInputTrackingState(a32_cpu *c, argreader *R)
     uint32_t id = rd32(R);
     double t = rdd(R);
     uint32_t out = rd32(R);
-    uint32_t dev = bridge() && m && id == REMOTE_ID ? right_controller(m) : 0xffffffffu;
+    uint32_t dev = !bridge() || !m ? 0xffffffffu : quest_touch ? id : id == REMOTE_ID ? right_controller(m) : 0xffffffffu;
     if (dev == 0xffffffffu || !B.GetInputTrackingState || !out) {
         ret32(c, (uint32_t)-1);
         return;
@@ -1086,7 +1166,14 @@ void imp_vrapi_GetBoundaryVisible(a32_cpu *c, argreader *R)
 }
 
 /* the Gear VR/Go controllers had no vibration */
-void imp_vrapi_SetHapticVibrationSimple(a32_cpu *c, argreader *R) { ret32(c, 0); }
+/* (ovr, deviceID, float intensity): Touch controllers only (a Gear VR remote has no motor) */
+void imp_vrapi_SetHapticVibrationSimple(a32_cpu *c, argreader *R)
+{
+    void *m = h2ptr(rd32(R));
+    uint32_t id = rd32(R);
+    float v = rdf(R);
+    ret32(c, quest_touch && bridge() && m && B.SetHapticVibrationSimple ? (uint32_t)B.SetHapticVibrationSimple(m, id, v) : 0);
+}
 void imp_vrapi_SetHapticVibrationBuffer(a32_cpu *c, argreader *R) { ret32(c, 0); }
 
 void imp_vrapi_SetClockLevels(a32_cpu *c, argreader *R) { ret32(c, 0); }

@@ -39,13 +39,13 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Patch Oculus detection for Unity](#patch_oculus_unity) | `patch_oculus_unity` | Patches from OVRPort | default |
 | [Patch Oculus detection for Unreal](#patch_oculus_unreal) | `patch_oculus_unreal` | Patches from OVRPort | default |
 | [Remove localized app names](#patch_remove_localized_names) | `patch_remove_localized_names` | Patches from OVRPort | default |
-| [Remove Unreal's ForceQuit](#patch_remove_unreal_force_quit) | `patch_remove_unreal_force_quit` | Patches from OVRPort | 34 |
+| [Remove Unreal's ForceQuit](#patch_remove_unreal_force_quit) | `patch_remove_unreal_force_quit` | Patches from OVRPort | 33 |
 | [Remove uses-library](#patch_remove_uses_library) | `patch_remove_uses_library` | Patches from OVRPort | default |
 | [Remove VrApi library](#patch_remove_vrapi) | `patch_remove_vrapi` | Patches from OVRPort |  |
 | [Replace application label and icon](#patch_replace_icon_label) | `patch_replace_icon_label` | Patches from OVRPort | default |
 | [Pico/YVR/Quest metadata](#patch_vr_metadata) | `patch_vr_metadata` | Patches from OVRPort | default |
 | [VrApi → OpenXR adapter (OVRPort)](#patch_vrapi_openxr) | `patch_vrapi_openxr` | Patches from OVRPort |  |
-| [32-bit ARM bridge (Gear VR / Go games)](#frame-a32_bridge) | `frame.a32_bridge` | Steam Frame patches | 3 |
+| [32-bit ARM bridge (Gear VR / Go games)](#frame-a32_bridge) | `frame.a32_bridge` | Steam Frame patches | 4 |
 | [FrameBridge OpenXR adapter](#frame-adapter) | `frame.adapter` | Steam Frame patches | default |
 | [Content files from the game's data](#frame-asset_files) | `frame.asset_files` | Steam Frame patches | 1 |
 | [Skip Meta avatars](#frame-avatar_stub) | `frame.avatar_stub` | Steam Frame patches | 1 |
@@ -415,7 +415,7 @@ Stops some Unreal games from closing themselves right after starting.
 - `patch_remove_unreal_force_quit`
 - **Changes:** Changes the APK (during the OVRPort conversion).
 - **Offered (off):** Built as the alternate APK for Unreal games (use it if the game quits itself).
-- **Catalog games (34):** Asgard's Wrath 2, BARTENDER VR SIMULATOR, Carve Snowboarding, Creed, Dance Central, Espire 1: VR Operative (Quest Edition), Espire 2, ExploreVR and 26 more.
+- **Catalog games (33):** Asgard's Wrath 2, BARTENDER VR SIMULATOR, Carve Snowboarding, Creed, Dance Central, Espire 1: VR Operative (Quest Edition), Espire 2, ExploreVR and 25 more.
 - **Suggested by launch-test signatures:**
   - `force-quit` (error): The game quit itself right after starting.
 - **Source:** [patches/overport.py](../src/frameport/patches/overport.py)
@@ -490,7 +490,7 @@ Runs a 32-bit game (Gear VR, Oculus Go, early Quest) on the Frame, which only ru
 - `frame.a32_bridge` · experimental
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** 32-bit-only game: the Frame can't run 32-bit ARM code, the bridge translates it.
-- **Catalog games (3):** AFFECTED: The Manor, Gunjack, Spunky Dungeon.
+- **Catalog games (4):** AFFECTED: The Manor, Gunjack, Sports Scramble (Santa Cruz), Spunky Dungeon.
 - **Suggested by launch-test signatures:**
   - `no-arm64` (fatal): 32-bit-only APK (e.g. a Gear VR or Oculus Go game).
 - **Source:** [patches/frame/a32_bridge.py](../src/frameport/patches/frame/a32_bridge.py)

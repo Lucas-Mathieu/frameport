@@ -119,12 +119,15 @@ void imp_a32_audio_close(a32_cpu *c, argreader *R)
 
 #include <android/asset_manager.h>
 #include <dlfcn.h>
+#include <pthread.h>
+#include <string.h>
 #include <android/input.h>
 #include <android/looper.h>
 
 #define W(f) extern __typeof__(f) f __attribute__((weak))
 W(ALooper_addFd); W(ALooper_pollOnce); W(AInputQueue_attachLooper); W(AInputQueue_getEvent); W(ALooper_forThread);
 W(AAssetDir_getNextFileName); W(AAsset_openFileDescriptor); W(AAsset_openFileDescriptor64);
+W(AAsset_getBuffer); W(AAsset_getLength64); W(AAsset_close);
 #undef W
 
 /* a guest ALooper callback int (*)(int fd, int events, void *data), called on the polling (guest) thread */
@@ -254,6 +257,71 @@ static void open_fd(a32_cpu *c, argreader *R, int wide)
 
 void imp_AAsset_openFileDescriptor(a32_cpu *c, argreader *R) { open_fd(c, R, 0); }
 void imp_AAsset_openFileDescriptor64(a32_cpu *c, argreader *R) { open_fd(c, R, 1); }
+
+/* AAsset_getBuffer's memory is the host's (above 4 GiB): the guest gets a copy in its own memory, kept until
+ * AAsset_close like the original (Unreal reads small config/text assets this way) */
+typedef struct asset_buf {
+    struct asset_buf *next;
+    AAsset *asset;
+    uint32_t buf;
+} asset_buf;
+
+static pthread_mutex_t asset_lock = PTHREAD_MUTEX_INITIALIZER;
+static asset_buf *asset_bufs;
+
+void imp_AAsset_getBuffer(a32_cpu *c, argreader *R)
+{
+    AAsset *a = h2ptr(rd32(R));
+    uint32_t g = 0;
+    pthread_mutex_lock(&asset_lock);
+    for (asset_buf *b = asset_bufs; b; b = b->next)
+        if (b->asset == a) g = b->buf;
+    pthread_mutex_unlock(&asset_lock);
+    if (g || !a || !AAsset_getBuffer) {
+        ret32(c, g);
+        return;
+    }
+    const void *p = AAsset_getBuffer(a);
+    off64_t len = p ? AAsset_getLength64(a) : 0;
+    if (!p || len < 0 || len > 0x40000000) {
+        if (p) bridge_log(ANDROID_LOG_WARN, "AAsset_getBuffer: %lld bytes is too big for a 32-bit app", (long long)len);
+        ret32(c, 0);
+        return;
+    }
+    asset_buf *b = malloc(sizeof *b);
+    g = b ? guest_malloc(len ? (uint32_t)len : 1) : 0;
+    if (!g) {
+        free(b);
+        bridge_log(ANDROID_LOG_WARN, "AAsset_getBuffer: no guest memory for %lld bytes", (long long)len);
+        ret32(c, 0);
+        return;
+    }
+    memcpy(g2p(g), p, (size_t)len);
+    b->asset = a, b->buf = g;
+    pthread_mutex_lock(&asset_lock);
+    b->next = asset_bufs, asset_bufs = b;
+    pthread_mutex_unlock(&asset_lock);
+    ret32(c, g);
+}
+
+void imp_AAsset_close(a32_cpu *c, argreader *R)
+{
+    AAsset *a = h2ptr(rd32(R));
+    asset_buf *found = NULL;
+    pthread_mutex_lock(&asset_lock);
+    for (asset_buf **pp = &asset_bufs; *pp; pp = &(*pp)->next)
+        if ((*pp)->asset == a) {
+            found = *pp;
+            *pp = found->next;
+            break;
+        }
+    pthread_mutex_unlock(&asset_lock);
+    if (found) {
+        guest_free(found->buf);
+        free(found);
+    }
+    if (a && AAsset_close) AAsset_close(a);
+}
 
 /* logged: a game that quits by itself shows it here */
 void imp_ANativeActivity_finish(a32_cpu *c, argreader *R)

@@ -95,6 +95,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Sniper Elite VR | Quest | ✅ Works |  |
 | Sniper Elite VR: Winter Warrior | Quest | ✅ Works |  |
 | Space Pirate Trainer Quest | Quest | ✅ Works |  |
+| Sports Scramble (Santa Cruz) | Quest | ✅ Works |  |
 | Star Wars Pinball VR | Quest | ✅ Works |  |
 | Star Wars: Tales from the Galaxy's Edge | Quest | ✅ Works |  |
 | Stremio | Quest | ✅ Works |  |
@@ -155,4 +156,3 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Journey of the Gods | Quest | ❌ Doesn't run | 32-bit only; the Frame has no AArch32. |
 | Roblox | Quest | ❌ Doesn't run | Crashes on its first VR frame on the Frame. |
 | Shadow Point | Quest | ❌ Doesn't run | 32-bit only; the Frame has no AArch32. |
-| Sports Scramble (Santa Cruz) | Quest | ❌ Doesn't run | 32-bit only; the Frame has no AArch32. |

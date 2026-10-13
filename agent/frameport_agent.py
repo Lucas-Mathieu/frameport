@@ -44,7 +44,7 @@ try:
 except ImportError:  # Windows: pc_revive loads this file for its VDF code only (GitHub #131)
     fcntl = None
 
-AGENT_VERSION = 85
+AGENT_VERSION = 86
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -2997,7 +2997,7 @@ setsid {lepton_q} start >"$app_dir/launch.log" 2>&1 &
 child=$!
 {dashboard}
 {logcat}
-wait "$child"
+{restart}
 """)
 
 
@@ -3040,6 +3040,71 @@ def cloud_dirs_line(pkg):
 
 def dashboard_line():
     return DASHBOARD_LINE.format(agent_q=shlex.quote(os.path.abspath(__file__)))
+
+
+# Unreal (4.21+, r.ProgramBinaryCache.RestartAndroidAfterPrecompile) restarts the app once after its first-run shader
+# precompile (the "optimizing" screen): it starts its own launcher activity and exits. Lepton ends the container when
+# the first process exits, the restarted game with it (Sports Scramble stopped after its first start; skipping the
+# restart left it on that screen). The launcher then starts Lepton once more, in the same Steam launch
+# (_restart_requested reads the two logs). FRAMEPORT_NO_RESTART=1 turns it off.
+RESTART_BLOCK = """rc=0; wait "$child" || rc=$?
+if [[ -z "${{FRAMEPORT_NO_RESTART:-}}" ]] && python3 {agent_q} _restart_requested "$app_dir/launch.log" "$SteamAppId" \\
+        {pkg_q} 9>&-; then
+    mv -f "$app_dir/launch.log" "$app_dir/launch-before-restart.log" 2>/dev/null || true
+    setsid {lepton_q} start >"$app_dir/launch.log" 2>&1 &
+    child=$!
+    {dashboard}
+    rc=0; wait "$child" || rc=$?
+fi
+exit $rc"""
+
+
+def restart_block(pkg, lepton):
+    return RESTART_BLOCK.format(agent_q=shlex.quote(os.path.abspath(__file__)), pkg_q=shlex.quote(pkg),
+                                lepton_q=shlex.quote(lepton), dashboard=dashboard_line())
+
+
+LOGCAT_TIME = re.compile(r"^(?:\x1b\[[0-9;]*m)?(\d\d-\d\d \d\d:\d\d:\d\d\.\d{3})")
+
+
+def restart_requested(log, appid, pkg, max_gap=5.0):
+    """Whether the game that just ended asked to be started again (RESTART_BLOCK): in Lepton's system log (dumped to
+    lepton-logcats/steamlaunch-<appid>/ when the container ends) the app itself (uid >= 10000; Lepton's own start is
+    uid 0) started its LAUNCHER activity by package, and at most max_gap s later the game's process called
+    System.exit(0) (launch.log; Android's WebView helper does too at every boot)."""
+    def when(line):
+        m = LOGCAT_TIME.match(line)
+        if not m:
+            return None
+        try:
+            t = time.strptime("2000-" + m.group(1)[:14], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None
+        return time.mktime(t) + float(m.group(1)[14:])
+    try:
+        with open(log, errors="replace") as f:
+            exits = [when(ln) for ln in f if "System.exit called, status: 0" in ln and "WebViewLoader" not in ln]
+        syslog = os.path.join(STEAM, "logs", "lepton-logcats", f"steamlaunch-{appid}", "logcat-system.log")
+        with open(syslog, errors="replace") as f:
+            starts = []
+            for ln in f:
+                m = re.search(r"ActivityTaskManager: START u0 \{act=android\.intent\.action\.MAIN "
+                              r"cat=\[android\.intent\.category\.LAUNCHER\][^}]* pkg=" + re.escape(pkg)
+                              + r"[ }][^\n]* from uid (\d+)", ln)
+                if m and int(m.group(1)) >= 10000:
+                    starts.append(when(ln))
+    except OSError:
+        return False
+    for e in exits:
+        if e is not None and any(s is not None and 0 <= e - s <= max_gap for s in starts):
+            try:
+                with open(log, "a") as f:
+                    f.write("FramePort: the game restarted itself (e.g. Unreal after its first-run shader "
+                            "precompile): starting it again\n")
+            except OSError:
+                pass
+            return True
+    return False
 
 
 def logcat_line():
@@ -3093,6 +3158,15 @@ def upgrade_launchers():
             # the lock belongs to Lepton only: helpers that outlive the game must not keep it
             new = new.replace("; fi; done ) & permfix=$!", "; fi; done ) 9>&- & permfix=$!", 1)
             new = new.replace('>"$app_dir/dashboard.log" 2>&1 &', '>"$app_dir/dashboard.log" 2>&1 9>&- &', 1)
+        if "_restart_requested" not in new and new.endswith('\nwait "$child"\n') and "_dashboard_worker" in new:
+            m = re.search(r'\nsetsid (\S+) start >', new)
+            pkg = os.path.basename(os.path.dirname(path))
+            try:
+                lepton = shlex.split(m.group(1))[0] if m else None
+            except ValueError:
+                lepton = None
+            if lepton:
+                new = new[:-len('wait "$child"\n')] + restart_block(pkg, lepton) + "\n"
         if PLAYS_LOG not in new:
             start, end = plays_lines(os.path.dirname(path))
             if "\nsetsid " in new and "\n    trap - EXIT INT TERM\n" in new:  # Lepton launcher
@@ -3485,7 +3559,7 @@ def write_launcher(anchor, base, pkg, title, appid, lepton, env, hw_video=False,
                             cloud_dirs=cloud_dirs_line(pkg),
                             video_codec=wrapper_lines(hw_video, gamepad),
                             plays_start=plays_lines(anchor)[0],
-                            plays_end=plays_lines(anchor)[1])
+                            plays_end=plays_lines(anchor)[1], restart=restart_block(pkg, lepton))
     text = set_config_sync_line(text, pkg, config_sync)
     path = os.path.join(anchor, "launch.sh")
     with open(path + ".tmp", "w") as f:
@@ -7610,6 +7684,8 @@ def main():
     if len(sys.argv) >= 4 and sys.argv[1] == "_gamepad_links":
         gamepad_links(sys.argv[2], sys.argv[3])
         return 0
+    if len(sys.argv) >= 5 and sys.argv[1] == "_restart_requested":
+        return 0 if restart_requested(sys.argv[2], sys.argv[3], sys.argv[4]) else 1
     if len(sys.argv) >= 4 and sys.argv[1] == "_dashboard_worker":
         dashboard_worker(sys.argv[2], sys.argv[3])
         return 0

@@ -325,7 +325,7 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
   is suggested for every 32-bit-only APK; the recipe then has `overport: False` (OVRPort is 64-bit only; the patch
   ships OVRPort's loader chain + its 32-bit platform dispatcher itself, `overport.ensure_runtime_lib`), only
   frame.a32_bridge/adapter/launcher of the frame patches, and `device.text_input_window` for Unity (`engine._a32`).
-  Analysis `extra.headset` (ANALYSIS_VERSION 9): gearvr / go / quest → "Gear VR" / "Oculus Go" platform + Steam tag.
+  Analysis `extra.headset` (ANALYSIS_VERSION 15): gearvr / go / quest → "Gear VR" / "Oculus Go" platform + Steam tag.
   Catalog: `headset:` field; com.fallen.affected, net.mobilemischief.spunkydungeon, com.ccpgames.gunjack (works, 2026-10-12). Learned: Unity 2019 contexts
   have no EGLConfig (EGL_KHR_no_config_context: the VrApi bridge takes the window's or an RGBA8 ES3 config); Unity's
   floor origin = vrapi_SetTrackingSpace(1) (the VrApi bridge now honours LOCAL_FLOOR/STAGE); mapped GL buffers are
@@ -351,8 +351,15 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
   events there (ALooper_poll* return the queue's ident while one waits; AInputQueue_getEvent/finishEvent and the
   AInputEvent/AKeyEvent/AMotionEvent getters are hand-written "!" imports that know them; touch positions scaled to the
   window size). Same mapping as AFFECTED: trigger = hold touchpad, A = tap, right stick = swipe, B = back; for NativeActivity games the stick's up/down = swipe forward/back (touchpad X: Gunjack's OnFlick = reload at ~0°, special weapon at ~180°). Not yet
-  headset-verified. Next: the three 32-bit catalog games
-  (Journey of the Gods, Shadow Point, Sports Scramble: still "unsupported" until tested), translator speed. Profiled on the Frame
+  headset-verified. Quest builds on the bridge (2026-10-13, Sports Scramble = a 32-bit Santa Cruz build,
+  UE 4.21 + OVRPlugin on VrApi 1.21): manifest requires `android.hardware.vr.headtracking` version 1
+  (`detect.requires_6dof`, headset "quest", ANALYSIS_VERSION 16) → convert writes `assets/fp_a32_headset.txt`
+  = "quest" → vrapi.c `quest_touch` (read in vrapi_Initialize via the activity's AssetManager; A32_TOUCH=1/0
+  overrides) passes the 64-bit bridge's Touch controllers through (enumerate/caps/state/tracking/haptics, struct
+  tails per VrApi minor) and starts no synthetic input. It also needed AAsset_getBuffer (guest copy, freed in
+  AAsset_close), AKeyEvent_getFlags and the other AConfiguration getters. Headset (owner, 2026-10-13): plays,
+  both controllers work. Next: the other 32-bit catalog games (Journey of the Gods, Shadow Point: still "unsupported" until
+  tested), translator speed. Profiled on the Frame
   (2026-10-12, `A32_PERFMAP` + perf): FPCR switches are negligible (8 of 86k samples); the cost was the run loop
   (a mutex + hash-chain walk on every dispatch, a contended counter, inline-lookup slots never refilled: Gunjack
   ~45 % of its CPU) and `jit_invalidate` scanning every block on each Mono `cacheflush` (72 % of Spunky Dungeon's
@@ -787,6 +794,13 @@ own context and saved as `files/fb_snap_0-7.ppm` (quarter size) — headless lau
 shows what the game draws. Vader: Lucasfilm logo (an OBB mp4: video works), then its loading card (portrait + segmented
 bar) that never advances; the async loader thread sleeps and OBB reads stop (~168 MB of a 2.7 GB pak).
 **SteamVR overlay apps (agent v75, 2026-10-10):** host OpenVR overlays (VRApplication_Overlay) are composited over Lepton (Quest) games on the Frame (probe checker seen over 4XVR in the headset view, `native/vroverlay_probe`); Windows ones register through Proton's vrclient too (Temporal Reality's Windows build created its overlays; fpsVR never reaches OpenVR under Proton). Detection `analysis/vroverlay.py` (bundled `.vrmanifest` with `is_dashboard_overlay`, else OpenVR + IVROverlay + self-registration markers, engine Other; Rift fingerprint `RIFT_ANALYSIS`), patch `pcvr.vr_overlay` (param autostart), Linux entry fields `vr_overlay`/`vr_overlay_autostart` (game page switch); agent `register_vr_overlay`/`unregister_vr_overlay`/`launch_vr_overlay` (IVRApplications via ctypes, live; manifest `<anchor>/frameport-overlay.vrmanifest`, the app's own key, binary = launch.sh). **SteamVR on the Frame reads only `binary_path_linux_arm`** (binary_path_linux alone is skipped). Overlay apps: no launch test, no Linux Steam-parent watchdog (`FRAMEPORT_OVERLAY`), not a "running game". A Steam overlay-app shortcut and a game shortcut run together. SteamVR's SetApplicationAutoLaunch didn't persist on the dev Frame (the watch never started by itself) → **agent v76: FramePort's own autostart**: the deployment's `overlay.autostart` is the source of truth; `ensure_host_fixes` (`ensure_overlay_service`) keeps the user service `frameport-vr-overlays.service` (`_vr_overlay_watch`, 5 s polls of the known vrserver's /proc stat) only while an overlay app has autostart on (register/unregister, uninstall, purge and the kill switch `~/.local/share/frameport/vr-overlays.disabled` / `FRAMEPORT_NO_OVERLAY_AUTOSTART` update it); a new vrserver (pid + start time, kept in `~/.cache/frameport-vr-overlays.json` across agent updates) → child `_vr_overlay_round`: wait for IVRApplications, 15 s grace, `launch_vr_overlay` for apps not running (folder process or GetApplicationProcessId); log `~/.local/share/frameport/vr-overlays.log`. Dev Frame: adopted the running vrserver, skipped the already running watch; a start after a real SteamVR start/boot is not yet seen. Details: docs/FRAME_RUNTIME.md "Overlay apps".
+**Unreal's self-restart (agent v86, 2026-10-13):** UE 4.21+ restarts the app once after its first-run shader
+precompile ("optimizing" screen; `r.ProgramBinaryCache.RestartAndroidAfterPrecompile`): it starts its own LAUNCHER
+activity and calls System.exit(0); Lepton ends the container with the first process (the restarted one with it).
+Skipping `AndroidThunkJava_RestartApplication` or the cvar = 0 (accepted via UE4CommandLine.txt `-ini:`) left Sports
+Scramble on that level for good. launch.sh (RESTART_BLOCK, `upgrade_launchers` adds it) starts Lepton once more when
+`_restart_requested` sees the app's own LAUNCHER start (system log, uid >= 10000) <= 5 s before its exit; first run
+kept as `launch-before-restart.log`; `FRAMEPORT_NO_RESTART=1` off. Owner-verified with Sports Scramble's first start (2026-10-13).
 **Lepton's logcat mirror dies (agent v67, 2026-10-09):** occasionally launch.log ends with `logcat: Unexpected EOF!` right after the game starts (about 1 launch in 50, Lepton 2.8.14 and 3.0.5): no dashboard auto-hide, no launch-test result. launch.sh's `_logcat_keeper` then reads `podman exec lepton-steamlaunch-<appid> logcat` itself into launch.log (up to 5 restarts while the game runs).
 **Double launch (agent v57, 2026-10-06):** a second Play while Lepton still boots (~10 s with nothing to see) made
 the second Lepton stop the first one's container ("Waiting for steamlaunch-<appid> (PID …) to exit", exit 137

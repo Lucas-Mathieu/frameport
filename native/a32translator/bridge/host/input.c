@@ -21,7 +21,7 @@
 #define W(f) extern __typeof__(f) f __attribute__((weak))
 W(ALooper_wake); W(AInputQueue_detachLooper); W(AInputQueue_hasEvents); W(AInputQueue_preDispatchEvent);
 W(AInputQueue_finishEvent); W(AInputEvent_getType); W(AInputEvent_getDeviceId); W(AInputEvent_getSource);
-W(AKeyEvent_getAction); W(AKeyEvent_getKeyCode); W(AKeyEvent_getMetaState); W(AKeyEvent_getRepeatCount);
+W(AKeyEvent_getAction); W(AKeyEvent_getKeyCode); W(AKeyEvent_getMetaState); W(AKeyEvent_getRepeatCount); W(AKeyEvent_getFlags);
 W(AMotionEvent_getAction); W(AMotionEvent_getPointerCount); W(AMotionEvent_getPointerId); W(AMotionEvent_getX);
 W(AMotionEvent_getY); W(AMotionEvent_getRawX); W(AMotionEvent_getRawY); W(AMotionEvent_getAxisValue);
 W(AMotionEvent_getButtonState);
@@ -258,6 +258,12 @@ void imp_AKeyEvent_getRepeatCount(a32_cpu *c, argreader *R)
 {
     const AInputEvent *e = h2ptr(rd32(R));
     ret32(c, is_fake(e) || !e || !AKeyEvent_getRepeatCount ? 0u : (uint32_t)AKeyEvent_getRepeatCount(e));
+}
+
+void imp_AKeyEvent_getFlags(a32_cpu *c, argreader *R)
+{
+    const AInputEvent *e = h2ptr(rd32(R));
+    ret32(c, is_fake(e) || !e || !AKeyEvent_getFlags ? 0u : (uint32_t)AKeyEvent_getFlags(e));
 }
 
 void imp_AMotionEvent_getPointerCount(a32_cpu *c, argreader *R)

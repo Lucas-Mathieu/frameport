@@ -1463,7 +1463,8 @@ def test_second_launch_while_starting_is_ignored(monkeypatch, tmp_path):
     text = a.LAUNCH_SH.format(title="T", pkg="com.x.y", app_dir=f"app_dir={base}", appid=1, lepton_q=str(lepton),
                               extra_env="", cloud_dirs="true",
                               watchdog=a.WATCHDOG, dashboard="true", logcat="true", single=a.SINGLE_LINE,
-                              plays_start="true", plays_end="true", video_codec="")
+                              plays_start="true", plays_end="true", video_codec="",
+                              restart=a.restart_block("com.x.y", str(lepton)))
     launcher = tmp_path / "launch.sh"
     launcher.write_text(text)
     launcher.chmod(0o755)
@@ -1780,3 +1781,101 @@ def test_game_threads_reports_stuck_threads(monkeypatch, tmp_path):
     assert "futex" in game and "futex_wait_queue" in game and f"{100 * 1000 // a.CLK_TCK}" in game
     assert "epoll_pwait" in out and "SYN_SENT" in out and "remote=local:443" in out
     assert "192.168" not in out and a.game_threads("com.missing", proc=str(proc)) is None
+
+
+# Sports Scramble's first start (2026-10-13): Unreal restarted itself after its first-run shader precompile
+RESTART_LOG = ("Waiting for app com.Armature.SportsScramble to exit...\n"
+               "10-13 10:51:26.516  1224  1386 I .SportsScrambl: System.exit called, status: 0\n"
+               "Exited!\n")
+RESTART_SYSLOG = (
+    "10-13 10:51:02.562   223   562 I ActivityTaskManager: START u0 {act=android.intent.action.MAIN "
+    "cat=[android.intent.category.LAUNCHER] flg=0x10000000 cmp=com.Armature.SportsScramble/com.epicgames.ue4."
+    "GameActivity} from uid 0\n"
+    "10-13 10:51:26.507   223  1111 I ActivityTaskManager: START u0 {act=android.intent.action.MAIN "
+    "cat=[android.intent.category.LAUNCHER] flg=0x14008000 pkg=com.Armature.SportsScramble cmp=com.Armature."
+    "SportsScramble/com.epicgames.ue4.GameActivity} from uid 10014\n")
+
+
+def _restart_logs(a, tmp_path, log, syslog, appid="2821789967"):
+    a.STEAM = str(tmp_path / "Steam")
+    d = tmp_path / "Steam/logs/lepton-logcats" / f"steamlaunch-{appid}"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "logcat-system.log").write_text(syslog)
+    p = tmp_path / "launch.log"
+    p.write_text(log)
+    return str(p)
+
+
+def test_restart_requested_after_unreals_first_run_precompile(monkeypatch, tmp_path):
+    """The app's own LAUNCHER start (uid >= 10000) right before its System.exit(0) = a self-restart (agent v86):
+    the launcher starts Lepton again, which ended the container with the first process."""
+    a = load_agent(monkeypatch, tmp_path)
+    log = _restart_logs(a, tmp_path, RESTART_LOG, RESTART_SYSLOG)
+    assert a.restart_requested(log, "2821789967", "com.Armature.SportsScramble")
+    assert "restarted itself" in Path(log).read_text()
+
+
+def test_restart_not_requested_for_a_plain_exit(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    launch_only = RESTART_SYSLOG.splitlines(keepends=True)[0]  # Lepton's start (uid 0) only
+    assert not a.restart_requested(_restart_logs(a, tmp_path, RESTART_LOG, launch_only), "2821789967",
+                                   "com.Armature.SportsScramble")
+    # Android's WebView helper exits at every container boot; another package's start doesn't count
+    webview = "10-13 10:51:26.516   380   380 I WebViewLoader-: System.exit called, status: 0\n"
+    assert not a.restart_requested(_restart_logs(a, tmp_path, webview, RESTART_SYSLOG), "2821789967",
+                                   "com.Armature.SportsScramble")
+    assert not a.restart_requested(_restart_logs(a, tmp_path, RESTART_LOG, RESTART_SYSLOG), "2821789967",
+                                   "com.Armature.Sports")
+    late = RESTART_LOG.replace("10:51:26.516", "10:52:26.516")  # the exit a minute later: not that restart
+    assert not a.restart_requested(_restart_logs(a, tmp_path, late, RESTART_SYSLOG), "2821789967",
+                                   "com.Armature.SportsScramble")
+    assert not a.restart_requested(str(tmp_path / "missing.log"), "1", "com.x.y")
+
+
+def test_upgrade_launchers_adds_the_restart(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    anchor = tmp_path / "Applications/quest-frame/com.x.y"
+    anchor.mkdir(parents=True)
+    old = (f'{a.OLD_WATCHDOG}\nsetsid /opt/lepton/lepton start >"$app_dir/launch.log" 2>&1 &\nchild=$!\n'
+           f'{a.dashboard_line()}\n{a.logcat_line()}\nwait "$child"\n')
+    (anchor / "launch.sh").write_text(old)
+    a.upgrade_launchers()
+    text = (anchor / "launch.sh").read_text()
+    assert "_restart_requested" in text and "com.x.y" in text and text.endswith("exit $rc\n")
+    assert text.count("setsid /opt/lepton/lepton start") == 2
+    assert subprocess.run(["bash", "-n", str(anchor / "launch.sh")]).returncode == 0
+    a.upgrade_launchers()  # once only
+    assert (anchor / "launch.sh").read_text() == text
+
+
+def test_launcher_starts_lepton_again_once_when_the_game_restarts_itself(monkeypatch, tmp_path):
+    """End to end in bash (agent v86): a fake Lepton whose game restarts itself (the logs of Sports Scramble's first
+    start) is started a second time; a game that keeps restarting isn't started a third time."""
+    a = load_agent(monkeypatch, tmp_path)
+    home = tmp_path / "home"
+    syslog_dir = home / ".local/share/Steam/logs/lepton-logcats/steamlaunch-2821789967"
+    syslog_dir.mkdir(parents=True)
+    base = tmp_path / "game"
+    (base / "lepton-app").mkdir(parents=True)
+    (tmp_path / "log.txt").write_text(RESTART_LOG)
+    (tmp_path / "syslog.txt").write_text(RESTART_SYSLOG)
+    lepton = tmp_path / "lepton"
+    lepton.write_text(f"#!/bin/bash\necho started >>{tmp_path}/starts\ncat {tmp_path}/log.txt\n"
+                      f"cp {tmp_path}/syslog.txt {syslog_dir}/logcat-system.log\n")
+    lepton.chmod(0o755)
+    text = a.LAUNCH_SH.format(title="T", pkg="com.Armature.SportsScramble", app_dir=f"app_dir={base}",
+                              appid=2821789967, lepton_q=str(lepton), extra_env="", cloud_dirs="true",
+                              watchdog=a.WATCHDOG, dashboard="true",
+                              logcat="true", single=a.SINGLE_LINE, plays_start="true", plays_end="true",
+                              video_codec="", restart=a.restart_block("com.Armature.SportsScramble", str(lepton)))
+    text = text.replace("python3 " + os.path.abspath(a.__file__) + " _dashboard_worker", "true")
+    launcher = tmp_path / "launch.sh"
+    launcher.write_text(text)
+    launcher.chmod(0o755)
+    env = {**os.environ, "HOME": str(home)}
+    subprocess.run([str(launcher)], timeout=30, env=env, start_new_session=True)
+    assert (tmp_path / "starts").read_text().count("started") == 2
+    assert "restarted itself" in (base / "launch-before-restart.log").read_text()
+    (tmp_path / "starts").unlink()
+    subprocess.run([str(launcher)], timeout=30, env={**env, "FRAMEPORT_NO_RESTART": "1"}, start_new_session=True)
+    assert (tmp_path / "starts").read_text().count("started") == 1

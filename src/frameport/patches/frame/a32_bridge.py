@@ -11,6 +11,7 @@ from __future__ import annotations
 import struct
 from collections.abc import Callable
 
+from ...analysis import detect
 from ...apk import axml
 from ..base import ApkContext, Patch, Suggestion, register
 from . import artifact
@@ -27,6 +28,7 @@ OVERPORT_CONFIG = (b'{"version":1,"database":[{"app_id":"__current__","products"
 
 
 SIGNATURE_ASSET = "assets/fp_a32_signature.txt"  # read by the bridge (native_activity.c), answered in jni.c
+HEADSET_ASSET = "assets/fp_a32_headset.txt"  # "quest": the bridge passes the Touch controllers through (vrapi.c)
 
 
 def original_signature(ws) -> bytes | None:
@@ -94,6 +96,8 @@ def convert(ws, prebuilt: Callable[[str], bytes], ovrport: Callable[[str, str], 
     if signature and any(n.startswith(f"lib/{abi}/libUE4.so") for n in names):
         ws.put(SIGNATURE_ASSET, signature)
     manifest = ws.read(MANIFEST)
+    if detect.requires_6dof(manifest):  # a Quest (Santa Cruz) build: Touch controllers, not the Gear VR remote
+        ws.put(HEADSET_ASSET, b"quest")
     manifest = axml.set_bool_attr(manifest, "application", "extractNativeLibs", True) or manifest
     ws.put(MANIFEST, raise_target_sdk(manifest))
     guest_only = {}  # libraries only guest code loads (no stub for Java)

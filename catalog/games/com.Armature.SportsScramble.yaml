@@ -4,14 +4,19 @@ tested_version: '1.0'
 source_hint: Sports Scramble
 engine: Unreal
 xr: VrApi
-status: unsupported
-notes: 32-bit only; the Frame has no AArch32.
-details: 32-bit (armeabi-v7a) only; the Frame has no AArch32.
-alt_overport:
-- patch_remove_unreal_force_quit
+status: works
+notes: 32-bit only (armeabi-v7a), runs through FramePort's 32-bit bridge (experimental). Both controllers work as
+  Touch controllers. The first start shows a one-time "optimizing" screen (a bit jittery) and then starts the game
+  again by itself.
+details: 'Unreal Engine 4 NativeActivity with OVRPlugin + VrApi, GLES, OBB. The bridge needed AAsset_getBuffer
+  (copied into guest memory), AKeyEvent_getFlags and the remaining AConfiguration getters. A Santa Cruz (early
+  Quest) build: it requires 6DoF head tracking, so the bridge passes both Frame controllers through as Touch
+  controllers (assets/fp_a32_headset.txt) instead of the Gear VR remote. Unreal restarts the app after its
+  first-run shader precompile; the launcher starts Lepton again for it (agent 86). Plays in the headset (owner,
+  2026-10-13).'
+frame:
+- frame.a32_bridge
 pcvr_alternative: Rift only; not on the Revive compatibility list.
 verified:
-  date: '2026-09-28'
-  overport_cli: 1.2.3
-  overport_runtime: 3.4.3-23204ea
-  known_good_sha256: e2e6788da99e2a38ea8f1e83e997ab44fed5492ce117d99ee3d376e6faeb0de4
+  date: '2026-10-13'
+min_app: 0.12.1

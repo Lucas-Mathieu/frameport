@@ -16,11 +16,17 @@ from frameport.validate.triage import triage
 UNITY = b"\x7fELF-unity\0com.oculus.systemactivities\0rest"
 
 
-def _manifest(target_sdk=21):
+def _manifest(target_sdk=21, headtracking=None):
+    """headtracking: (version, required) of a uses-feature android.hardware.vr.headtracking, None for none"""
+    feature = [] if headtracking is None else [
+        ("start", "uses-feature", [("name", "str", "android.hardware.vr.headtracking"),
+                                   ("required", "bool", headtracking[1]), ("version", "int", headtracking[0])]),
+        ("end", "uses-feature")]
     return build_axml([
         ("start", "manifest", [("package", "str", "com.example.gearvr")]),
         ("start", "uses-sdk", [("minSdkVersion", "int", 19), ("targetSdkVersion", "int", target_sdk)]),
         ("end", "uses-sdk"),
+        *feature,
         ("start", "application", [("extractNativeLibs", "bool", False)]),
         ("start", "activity", [("name", "str", "com.unity3d.player.UnityPlayerActivity")]),
         ("start", "intent-filter", []),
@@ -38,10 +44,10 @@ def _manifest(target_sdk=21):
     ])
 
 
-def _apk(tmp_path, platform=True):
+def _apk(tmp_path, platform=True, manifest=None):
     p = tmp_path / "gearvr.apk"
     with zipfile.ZipFile(p, "w") as z:
-        z.writestr("AndroidManifest.xml", _manifest())
+        z.writestr("AndroidManifest.xml", manifest or _manifest())
         z.writestr("classes.dex", b"dex\n035\0")
         z.writestr("META-INF/CERT.RSA", b"old signature")
         z.writestr("lib/armeabi-v7a/libmain.so", b"\x7fELF-main32")
@@ -195,6 +201,26 @@ def test_headset():
     assert detect.headset({"com.oculus.supportedDevices": "quest|quest2"}, ["armeabi-v7a"], "quest") == "quest"
     assert detect.headset(gear, ["arm64-v8a", "armeabi-v7a"], "quest") == "quest"  # a Quest build kept the entry
     assert detect.headset({}, ["armeabi-v7a"], "none") == ""
+    # a 32-bit Santa Cruz build (Sports Scramble) kept Samsung's VR mode but requires 6DoF head tracking
+    assert detect.headset(gear, ["armeabi-v7a"], "quest", six_dof=True) == "quest"
+
+
+def test_requires_6dof():
+    assert detect.requires_6dof(_manifest(headtracking=(1, True)))
+    assert not detect.requires_6dof(_manifest(headtracking=(1, False)))  # optional: a Go app may run on a Quest too
+    assert not detect.requires_6dof(_manifest(headtracking=(0, True)))  # version 0 = 3DoF
+    assert not detect.requires_6dof(_manifest())
+
+
+def test_quest_build_gets_touch_controllers(tmp_path):
+    """The bridge passes the Frame's controllers through as Touch controllers for Quest builds (fp_a32_headset.txt),
+    and keeps the Gear VR remote emulation for the others."""
+    with ApkWorkspace(_apk(tmp_path, manifest=_manifest(headtracking=(1, True)))) as ws:
+        a32_bridge.convert(ws, _prebuilt, _ovrport)
+        assert ws.read(a32_bridge.HEADSET_ASSET) == b"quest"
+    with ApkWorkspace(_apk(tmp_path)) as ws:
+        a32_bridge.convert(ws, _prebuilt, _ovrport)
+        assert not ws.has(a32_bridge.HEADSET_ASSET)
 
 
 def test_static_checks_skip_guest_libraries(tmp_path, monkeypatch):
