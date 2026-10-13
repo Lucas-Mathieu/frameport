@@ -30,7 +30,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Disable application space warp if used](#patch_disable_space_warp) | `patch_disable_space_warp` | Patches from OVRPort | 3 |
 | [Fix minimal Android SDK](#patch_fix_min_android_sdk) | `patch_fix_min_android_sdk` | Patches from OVRPort | default |
 | [Fix UE4 crash with Unity stub](#patch_fix_unreal_crash) | `patch_fix_unreal_crash` | Patches from OVRPort | default |
-| [Force enable passthrough](#patch_force_passthrough) | `patch_force_passthrough` | Patches from OVRPort | 2 |
+| [Force enable passthrough](#patch_force_passthrough) | `patch_force_passthrough` | Patches from OVRPort | 3 |
 | [Generate OVRPort config](#patch_generate_config) | `patch_generate_config` | Patches from OVRPort | default |
 | [Fix launcher icon entry](#patch_launcher_entry) | `patch_launcher_entry` | Patches from OVRPort | default |
 | [Mark application to allow backup](#patch_mark_allow_backup) | `patch_mark_allow_backup` | Patches from OVRPort | default |
@@ -58,7 +58,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Language packs from the game's files](#frame-langpacks) | `frame.langpacks` | Steam Frame patches |  |
 | [Launcher category (INFO → LAUNCHER)](#frame-launcher) | `frame.launcher` | Steam Frame patches | default |
 | [GL wrapper: OpenGL ES depth formats (Minecraft)](#frame-ltw_depth) | `frame.ltw_depth` | Steam Frame patches | default |
-| [Declare Meta-only permissions](#frame-meta_permissions) | `frame.meta_permissions` | Steam Frame patches | 1 |
+| [Declare Meta-only permissions](#frame-meta_permissions) | `frame.meta_permissions` | Steam Frame patches | 2 |
 | [Meta XR Audio: skip Quest telemetry class](#frame-metaxr_telemetry) | `frame.metaxr_telemetry` | Steam Frame patches | default |
 | [Clear android:debuggable](#frame-nodebug) | `frame.nodebug` | Steam Frame patches | 3 |
 | [Oculus OS telemetry class stubs](#frame-oculusos) | `frame.oculusos` | Steam Frame patches | 15 |
@@ -79,7 +79,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Unity: skip OVROverlay layers (fades, splash screens)](#frame-unity_no_overlay_copy) | `frame.unity_no_overlay_copy` | Steam Frame patches | 2 |
 | [Unity: start VR without Meta's system apps](#frame-unity_oculus_check) | `frame.unity_oculus_check` | Steam Frame patches | 9 |
 | [Unity: keep MSAA off at runtime (OVRManager)](#frame-unity_runtime_msaa_off) | `frame.unity_runtime_msaa_off` | Steam Frame patches | 22 |
-| [Make Unity text fields work](#frame-unity_text_input) | `frame.unity_text_input` | Steam Frame patches | 69 |
+| [Make Unity text fields work](#frame-unity_text_input) | `frame.unity_text_input` | Steam Frame patches | 70 |
 | [Unity: share thread keys (games that run out of them)](#frame-unity_tls_key_pool) | `frame.unity_tls_key_pool` | Steam Frame patches | 1 |
 | [Unity: headset always counts as worn](#frame-unity_user_presence) | `frame.unity_user_presence` | Steam Frame patches | 1 |
 | [GL shim for Unreal (no multisampled render-to-texture)](#frame-unreal_gl_shim) | `frame.unreal_gl_shim` | Steam Frame patches | 1 |
@@ -142,7 +142,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Re-create play space](#adapter-respace_kick) | `adapter.respace_kick` | Game settings |  |
 | [Sharpness](#adapter-scale) | `adapter.scale` | Game settings | 4 |
 | [Room depth](#adapter-scene_depth) | `adapter.scene_depth` | Game settings |  |
-| [Pretend room layout](#adapter-scene_emul) | `adapter.scene_emul` | Game settings | 2 |
+| [Pretend room layout](#adapter-scene_emul) | `adapter.scene_emul` | Game settings | 3 |
 | [Room height](#adapter-scene_height) | `adapter.scene_height` | Game settings |  |
 | [Room width](#adapter-scene_width) | `adapter.scene_width` | Game settings |  |
 | [Eye-image snapshots (diagnostics)](#adapter-snapshot) | `adapter.snapshot` | Game settings |  |
@@ -169,7 +169,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Hide Android's navigation bar](#device-hide_navbar) | `device.hide_navbar` | Files and settings on the Frame |  |
 | [Extra Lepton settings](#device-lepton_env) | `device.lepton_env` | Files and settings on the Frame | 3 |
 | [Controllers as a gamepad (Steam Input)](#device-steam_gamepad) | `device.steam_gamepad` | Files and settings on the Frame |  |
-| [Show the app's Android window (for typing)](#device-text_input_window) | `device.text_input_window` | Files and settings on the Frame | 69 |
+| [Show the app's Android window (for typing)](#device-text_input_window) | `device.text_input_window` | Files and settings on the Frame | 70 |
 | [Launch options (SteamVR or OpenXR)](#pcvr-launch_args) | `pcvr.launch_args` | PC VR (Proton and Revive) | 2 |
 | [Provide the Oculus runtime from Revive (Frame)](#pcvr-libovr_redirect) | `pcvr.libovr_redirect` | PC VR (Proton and Revive) |  |
 | [No Unreal crash reporter](#pcvr-no_crash_reporter) | `pcvr.no_crash_reporter` | PC VR (Proton and Revive) |  |
@@ -312,7 +312,7 @@ Lets mixed-reality games start even though they insist on a camera view of your 
 - `patch_force_passthrough`
 - **Changes:** Changes the APK (during the OVRPort conversion).
 - **Suggested (on):** Mixed-reality-only game (passthrough required, no guardian): force passthrough on.
-- **Catalog games (2):** BAM, Demeter.
+- **Catalog games (3):** Arkio, BAM, Demeter.
 - **Suggested by launch-test signatures:**
   - `passthrough-missing` (error): The game needs Meta passthrough (the camera view), which the Frame lacks; the adapter emulates it.
 - **Source:** [patches/overport.py](../src/frameport/patches/overport.py)
@@ -658,7 +658,7 @@ Declares Meta's permissions some mixed-reality games ask for, so they don't stop
 - `frame.meta_permissions`
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** Mixed-reality game that needs the room model: its 'use spatial data' permission must be granted (for example Demeter).
-- **Catalog games (1):** Demeter.
+- **Catalog games (2):** Arkio, Demeter.
 - **Source:** [patches/frame/manifest_fixes.py](../src/frameport/patches/frame/manifest_fixes.py)
 
 > Declares com.oculus.permission.* / horizonos.permission.* that the app uses, so Android grants them at install (for example the 'use spatial data' permission of mixed-reality games like Demeter).
@@ -941,7 +941,7 @@ Lets you type into this app's text fields on the Frame (they'd close at once).
 - `frame.unity_text_input` · also for 2D apps
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** Unity app with text fields (…): they close at once on the Frame because it has no system keyboard.
-- **Catalog games (69):** AgeOfJoy, AllInOneSports, Ancient_Dungeon, Audica, BattleSisters, Beat Saber, Beat Saber (co-existence build), Blade & Sorcery: Nomad and 61 more.
+- **Catalog games (70):** AgeOfJoy, AllInOneSports, Ancient_Dungeon, Arkio, Audica, BattleSisters, Beat Saber, Beat Saber (co-existence build) and 62 more.
 - **Source:** [patches/frame/unity_text_input.py](../src/frameport/patches/frame/unity_text_input.py)
 
 > Unity's TMP_InputField / InputField wait for Android's on-screen keyboard and close themselves a frame later when there is none (Lepton has no on-screen keyboard; Meta's system keyboard does this on a Quest), so a selected text field only flashes a caret. Rewrites TouchScreenKeyboardShouldBeUsed -&gt; false and isKeyboardUsingEvents (TMP) / InPlaceEditing (uGUI) -&gt; true in libil2cpp.so, found per game with Cpp2IL (downloaded on first use), so fields stay selected and take key presses: Steam's keyboard (with "Show the app window") or Type on Frame from the PC.
@@ -1848,7 +1848,7 @@ Mixed-reality games that build their level from your room get a simple room with
 - **Options:**
   - Value: int, default `0`.
   - Game settings → Mixed reality → "Pretend room layout".
-- **Catalog games (2):** Demeter, Vermillion.
+- **Catalog games (3):** Arkio, Demeter, Vermillion.
 - **Suggested by launch-test signatures:**
   - `scene-missing` (warning): The game wants Meta's room data (scene API), which the Frame lacks.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
@@ -2241,7 +2241,7 @@ Lets typing reach this app from Steam's on-screen keyboard or your PC's keyboard
 - `device.text_input_window`
 - **Changes:** Install only: written on the Frame when the game is installed; the APK isn't changed.
 - **Suggested (on):** App with text fields: key presses only reach a shown Android window.
-- **Catalog games (69):** AgeOfJoy, AllInOneSports, Ancient_Dungeon, Audica, Beat Saber, Beat Saber (co-existence build), Blade & Sorcery: Nomad, BodyCombat and 61 more.
+- **Catalog games (70):** AgeOfJoy, AllInOneSports, Ancient_Dungeon, Arkio, Audica, Beat Saber, Beat Saber (co-existence build), Blade & Sorcery: Nomad and 62 more.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > Lepton runs VR apps headless: their Android window is never shown, so it never gets keyboard focus and no key press (Steam's on-screen keyboard, a USB/Bluetooth keyboard, Type on Frame) reaches the app's text fields. With Lepton's lepton-show-flatscreen marker the window is shown (behind the VR view, which keeps working) and Steam's keyboard opens for a selected text field. Steam lists the shown window as "Gamescope" (the Frame's compositor). Pairs with "Make Unity text fields work without a system keyboard".

@@ -1,0 +1,25 @@
+package: com.arkio.arkio
+title: Arkio
+status: works
+notes: The quest version allows for passthrough mode
+tested_version: 2.3.1
+engine: Unity
+xr: OpenXR
+overport_extra:
+- patch_force_passthrough
+frame:
+- frame.meta_permissions
+- frame.unity_text_input
+device:
+- device.text_input_window
+adapter:
+  scene_emul: 1
+verified:
+  date: '2026-10-13'
+  known_good_sha256: e17f9b2dc56cb49b4469d81f2e075ca5953f73152804ff1a00fba0931048e103
+  app: 1.1.0
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 85
+  issue: 266
+source_hint: com.arkio.arkio
