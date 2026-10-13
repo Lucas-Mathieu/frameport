@@ -423,7 +423,11 @@ class SettingsView:
         self._mark(key)
         C.update(*self.index.values())
         if self.page_col is not None:
-            await self.page_col.scroll_to(scroll_key=scroll_key(key), duration=0 if self.app.reduce_motion else 300)
+            try:
+                await self.page_col.scroll_to(scroll_key=scroll_key(key),
+                                              duration=0 if self.app.reduce_motion else 300)
+            except RuntimeError:  # the page left the screen (or the window closed) before the scroll ran
+                pass
 
     def build(self) -> ft.Control:
         app = self.app

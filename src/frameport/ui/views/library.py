@@ -663,7 +663,7 @@ class LibraryView:
             tile.border = ft.Border.all(1, T.ACCENT if on else T.BORDER)
             quick.opacity = 1 if on else 0
             button.show(on)
-            tile.update()
+            C.update(tile)  # a hover can still arrive for a card the shelf just replaced
         tile.on_hover = hover
         # (padding: room for the hover lift and shadow inside the scrolling row, which clips)
         return ft.Container(ft.GestureDetector(content=tile,
@@ -855,7 +855,7 @@ class LibraryView:
             if quick:
                 quick.opacity = 1 if show else 0
                 button.show(show)
-            tile.update()
+            C.update(tile)  # a hover can still arrive for a card the grid just replaced (it raised and crashed)
         tile.on_hover = hover
         self.marks[pkg] = (tile, overlay, False)
         self._paint_card(pkg)
