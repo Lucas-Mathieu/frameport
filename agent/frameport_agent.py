@@ -3024,7 +3024,7 @@ CLOUD_DIRS_LINE = 'mkdir -p "$app_dir/lepton-data/external/Android/data/{pkg}/fi
 
 
 def cloud_dirs_line(pkg):
-    return CLOUD_DIRS_LINE.format(pkg=check_pkg(pkg))
+    return CLOUD_DIRS_LINE.format(pkg=pkg)
 
 
 def dashboard_line():
