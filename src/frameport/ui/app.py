@@ -1139,6 +1139,7 @@ class FramePortApp:
             "report": lambda e: self.report_problem_dialog(pkg),
             "move": lambda e: self.move_game(pkg),
             "update_app": lambda e: self.update_app_only(pkg),
+            "new_apk": lambda e: self.page.run_task(self.update_with_apk, pkg),
             "uninstall_frame": lambda e: self.uninstall(pkg, "frame"),
             "uninstall_pc": lambda e: self.uninstall(pkg, "pc"),
             "remove": lambda e: self.remove_from_library(pkg),
@@ -1155,7 +1156,7 @@ class FramePortApp:
             settings=self.has_game_settings(g), programs=rift or (linux and bool(self.linux_programs(g))),
             selectable=lv is not None,
             media_button=C.is_media_player(g) and not rift,
-            movable=connected and C.frame_drive(g, self.frame_info) is not None)
+            movable=connected and C.frame_drive(g, self.frame_info) is not None, android=not rift and not linux)
         return menu_sections(g, st, handlers.__getitem__)
 
     def open_game_menu(self, pkg: str) -> None:
@@ -1576,6 +1577,34 @@ class FramePortApp:
             actions=[C.ghost(tr("Cancel"), on_click=pick(lambda e: self.page.pop_dialog())),
                      C.primary(tr("Update app"), on_click=pick(lambda e: (self.page.pop_dialog(),
                                                                          self._submit_install(pkg, apk_only=True))))]))
+
+    async def update_with_apk(self, pkg: str) -> None:
+        """Game menu "Update with a newer APK…" (GitHub #161): pick the new APK; the game keeps its name, art and
+        recipe, and its page then offers Update on Frame."""
+        if self.jobs.busy_with(pkg):
+            return
+        paths = await C.pick_files(self.page, dialog_title=tr("Newer APK of {title}").format(title=self._title(pkg)),
+                                   extensions=["apk"])
+        if not paths:
+            return
+        on_frame = self.frame_state == "connected" and \
+            C.install_state(library.game(pkg) or {}, self.frame_info) in ("installed", "outdated")
+
+        def run(job: Job):
+            job.reporter.stage(tr("Reading the new APK"))
+            try:
+                res = pipeline.replace_apk(pkg, Path(paths[0]), job.reporter)
+            except pipeline.WrongPackage:
+                raise RuntimeError(tr("That APK is a different app, not {title}.").format(
+                    title=self._title(pkg))) from None
+            if res["older"]:
+                self.toast(tr("Heads-up: that APK is an older version than the one before."))
+            self.open_game(pkg)
+            if on_frame:
+                return tr("{title}: newer APK added. Press Update on Frame to install it.").format(
+                    title=self._title(pkg))
+            return tr("{title}: newer APK added").format(title=self._title(pkg))
+        self.submit(tr("Newer APK for {title}").format(title=self._title(pkg)), run, pkg, "task")
 
     def updatable(self) -> list[tuple[str, str]]:
         """[(package, "frame" | "pc")] installs with an update ready (a newer build or changed patch settings)."""

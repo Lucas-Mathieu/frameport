@@ -27,14 +27,15 @@ def _states():
     """(name, game, state) for the cases the menus have to handle."""
     return [
         ("quest on Frame", QUEST, MenuState(connected=True, on_frame=True, plays=[_play()], installs=[_install()],
-                                            settings=True, selectable=True)),
+                                            settings=True, selectable=True, android=True)),
         ("quest not installed", QUEST, MenuState(connected=True, installs=[_install("Install on Frame")],
-                                                 settings=True, selectable=True)),
+                                                 settings=True, selectable=True, android=True)),
         ("rift on PC", RIFT, MenuState(on_pc=True, plays=[_play("this PC")], programs=True, selectable=True,
                                        installs=[_install("Reinstall on this PC")])),
         ("linux on Frame", LINUX, MenuState(connected=True, on_frame=True, plays=[_play()], installs=[_install()],
                                             selectable=True)),
-        ("job running", QUEST, MenuState(connected=True, on_frame=True, job=True, settings=True, selectable=True)),
+        ("job running", QUEST, MenuState(connected=True, on_frame=True, job=True, settings=True, selectable=True,
+                                         android=True)),
     ]
 
 
@@ -58,7 +59,7 @@ def test_library_menu_is_short():
         entries = C.menu_entries(menu_sections(g, st, _key))
         labels = [e[0] for e in _items(entries)]
         assert not any(isinstance(e, Header) for e in entries), name  # no section headers
-        assert len(labels) <= 9, (name, labels)
+        assert len(labels) <= 10, (name, labels)  # 10: a Quest game on the Frame with "Update with a newer APK…"
         assert all(e[1] for e in _items(entries)), name
         assert "Open game page" in labels
         if st.job:
@@ -160,3 +161,14 @@ def test_process_menu():
     assert group == ["Show its processes", "Copy name", "—", "End all 3…", "Force quit all 3…"]
     end = next(e for e in process_menu(proc, _key) if e and e[0] == "End…")
     assert end[1] != ft.Icons.CLOSE_ROUNDED
+
+
+def test_newer_apk_for_quest_games_in_both_menus():
+    """GitHub #161: update a game with a newer APK from its menus (right-click and the page's "…")."""
+    for name, g, st in _states():
+        quick = [e[0] for e in _items(menu_sections(g, st, _key))]
+        st.quick = False
+        full = [e[0] for e in _items(menu_sections(g, st, _key))]
+        want = g is QUEST and not st.job
+        assert ("Update with a newer APK…" in quick) == want, name
+        assert ("Update with a newer APK…" in full) == want, name

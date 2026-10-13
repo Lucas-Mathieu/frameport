@@ -623,6 +623,41 @@ def reanalyze(package: str, reporter: Reporter | None = None) -> dict:
     return _store_analysis(package, _analyze_entry(entry, reporter))
 
 
+class WrongPackage(ValueError):
+    """The picked APK is another app than the game it should update."""
+
+
+def replace_apk(package: str, apk: Path, reporter: Reporter | None = None) -> dict:
+    """A newer APK for a Quest/Android game already in the library (GitHub #161): the entry points at it from now on.
+    Its title, art, tags and the user's own recipe stay (a suggested recipe follows the new analysis, like Analyze
+    again). The game data stays where it was unless the new APK's folder brings its own. Returns {"entry", "older":
+    the new versionCode is lower than the old one's, "old_version", "new_version"}."""
+    entry = library.game(package)
+    if entry is None or is_rift(entry) or is_linux(entry):
+        raise ValueError("only Quest/Android games can get a newer APK")
+    apk = Path(apk)
+    src = quest_dump.from_path(apk)
+    new_pkg, new_vc = quest_dump._apk_ids(apk)
+    if src is None or new_pkg is None:
+        raise ValueError(f"{apk.name} isn't a readable APK")
+    if new_pkg != package:
+        raise WrongPackage(f"{apk.name} is {new_pkg}, not {package}")
+    old_apk = Path(entry["apk"]) if entry.get("apk") else None
+    old_vc = quest_dump._apk_ids(old_apk)[1] if old_apk and old_apk.is_file() else None
+    if src.data_dir is None and entry.get("data_dir"):  # no data next to the new APK: keep the game's data
+        src = dataclasses.replace(src, data_dir=Path(entry["data_dir"]), data_files=entry.get("data_files"))
+    if reporter:
+        reporter.log(f"analyzing {apk.name}")
+    a = analyze(apk, data_bytes=src.data_bytes())
+    a.extra["lang_packs"] = langpacks.find_tags(_data_folder(src))
+    a.extra["asset_files"] = langpacks.find_content_files(_data_folder(src))
+    library.upsert_game(package, apk=str(apk), data_dir=str(src.data_dir) if src.data_dir else None,
+                        data_files=src.data_files, data_bytes=src.data_bytes())
+    stored = _store_analysis(package, a)
+    return {"entry": stored, "older": bool(old_vc and new_vc and new_vc < old_vc), "old_version": old_vc,
+            "new_version": new_vc}
+
+
 def _analyze_entry(entry: dict, reporter: Reporter | None = None):
     src = source_of(entry)
     if reporter:
