@@ -192,6 +192,29 @@ def test_obb_folder_next_to_an_apk_folder_inside_a_package_folder(tmp_path):
     assert (g.origin, g.data_dir, g.data_files) == (root / "com.x.game", root / "com.x.game" / "obb", None)
 
 
+@pytest.mark.parametrize("obb_at", ["obb", "obbs", "Android/obb/com.crytek.climb", "."])
+def test_sidequest_versionless_obb(tmp_path, obb_at):
+    """GitHub #238: CryEngine also opens main.<package>.obb, without a versionCode."""
+    backup = tmp_path / "com.crytek.climb" / "2026-10-12T16-44-24-860Z"
+    a = apk(backup / "apk" / "com.crytek.climb.apk")
+    IDS[a.name] = ("com.crytek.climb", 666)
+    obb(backup / obb_at, "main.com.crytek.climb.obb")
+    [g] = quest_dump.scan(tmp_path)
+    assert (g.apk, g.data_dir) == (a, backup / obb_at)
+    assert g.data_files == (["main.com.crytek.climb.obb"] if obb_at == "." else None)
+    assert quest_dump.from_path(a).data_dir == g.data_dir
+
+
+def test_versionless_obbs_select_only_the_package_and_prefer_usable_versions(tmp_path):
+    apk(tmp_path / "com.x.game.apk")
+    for name in ("main.COM.X.GAME.obb", "patch.com.x.game.obb", "main.5.com.x.game.obb",
+                 "main.8.com.x.game.obb", "main.com.y.other.obb"):
+        obb(tmp_path, name)
+    assert quest_dump.find_data(tmp_path, "com.x.game", 6)[1] == ["main.5.com.x.game.obb", "patch.com.x.game.obb"]
+    assert quest_dump.find_data(tmp_path, "com.x.game", 1)[1] == ["main.COM.X.GAME.obb", "patch.com.x.game.obb"]
+    assert quest_dump.find_data(tmp_path, "com.x.game", None)[1] == ["main.8.com.x.game.obb", "patch.com.x.game.obb"]
+
+
 @pytest.mark.parametrize("obb_at", ["obbs", "obb/2026-10-07T21-11-04.426Z", "Android/obb/com.x.game", "."])
 def test_sidequest_backup_with_timestamped_apks(tmp_path, obb_at):
     """SideQuest backups name APKs <timestamp>_<versionCode>.apk; where the OBB sits varies."""
@@ -229,14 +252,15 @@ def test_the_folder_with_the_apks_own_version_wins(tmp_path):
     assert (g.data_dir, g.data_files) == (game / "new", None)
 
 
-def test_obbs_by_name_never_come_from_another_games_folder(tmp_path):
+@pytest.mark.parametrize("name", ["main.2.com.x.game.obb", "main.com.x.game.obb"])
+def test_obbs_by_name_never_come_from_another_games_folder(tmp_path, name):
     v1, v2 = tmp_path / "Game v1", tmp_path / "Game v2"
     apk(v1 / "com.x.game_1.apk")
     apk(v2 / "com.x.game_2.apk")
-    obb(v2, "main.2.com.x.game.obb")
+    obb(v2, name)
     found = {g.origin.name: g for g in quest_dump.scan(tmp_path)}
     assert found["Game v1"].data_dir is None
-    assert (found["Game v2"].data_dir, found["Game v2"].data_files) == (v2, ["main.2.com.x.game.obb"])
+    assert (found["Game v2"].data_dir, found["Game v2"].data_files) == (v2, [name])
 
 
 def test_deleting_local_files_takes_only_the_games_own_obbs(tmp_path):
@@ -480,3 +504,18 @@ def test_install_looks_for_data_copied_in_after_the_apk_was_added(tmp_path, monk
     assert out["data_dir"] == str(tmp_path / "BnS") and stored["data_files"] == [
         "main.260730005.com.Warpfrog.BladeAndSorcery.obb"]
     assert pipeline._find_late_data({"package": "x", "apk": str(tmp_path / "gone.apk")})["apk"].endswith("gone.apk")
+
+
+def test_install_recovers_versionless_obb_skipped_by_older_scan(tmp_path, monkeypatch):
+    """An already-added Climb backup gets its missing data on Update on Frame, without needing a rescan."""
+    from frameport import pipeline
+    from frameport.core import library
+
+    backup = tmp_path / "com.crytek.climb" / "2026-10-12T16-44-24-860Z"
+    a = apk(backup / "apk" / "com.crytek.climb.apk")
+    obb(backup / "obb", "main.com.crytek.climb.obb")
+    saved = {}
+    monkeypatch.setattr(library, "upsert_game", lambda pkg, **kw: saved.update(kw) or {"package": pkg, **kw})
+    out = pipeline._find_late_data({"package": "com.crytek.climb", "apk": str(a), "data_dir": None})
+    assert out["data_dir"] == str(backup / "obb")
+    assert saved["data_files"] is None and saved["data_bytes"] == 1

@@ -39,7 +39,7 @@ def test_detect_and_engine(tmp_path, quest_manifest):
         z.writestr("AndroidManifest.xml", quest_manifest)
         z.writestr("classes.dex", b"dex\n035\0" + dex)
         z.writestr("lib/arm64-v8a/libAndroidLauncher.so", b"\x7fELF")
-        z.writestr("assets/game.cryproject", b"{}")
+        z.writestr("assets/game.cryproject", b'{"type": "CRYENGINE Project"}')
     a = detect.analyze(path, deep=False)
     assert a.extra["eos_keychain"] is True and a.engine == "CryEngine"
     assert EosKeychainLoop().applies(a) and EosKeychainLoop().detect(a) is None  # offered by triage only

@@ -391,7 +391,7 @@ MISSING_OBB_NOTE = ("This game's data file (.obb) wasn't found next to the APK. 
 
 
 def missing_obb(entry: dict) -> bool:
-    """A Quest game whose APK expects an OBB (analysis expects_obb: Unreal's bHasOBBFiles) but no data folder was
+    """A Quest game whose APK expects an OBB (Unreal, Unity split builds, CryEngine) but no data folder was
     found next to it (GitHub #85: TRIANGLE STRATEGY hung silently after OVRPlugin's JNI_OnLoad). Library fields
     only: no disk access (used by the game page)."""
     if is_rift(entry) or is_linux(entry):

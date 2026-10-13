@@ -26,6 +26,8 @@ constexpr int32_t kTexture2DArray = 2;
 constexpr int32_t kProjectionLayer = 1;
 constexpr uint32_t kLayerChromatic = 1u << 1;
 constexpr uint32_t kFrameFlush = 1u << 1;
+constexpr uint32_t kFrameInhibitVolume = 1u << 6;
+constexpr uint32_t kFrameShowTextureDensity = 1u << 8;  // obsolete Quest compositor debug overlay
 constexpr uint32_t kLayerFixedToView = 1u << 2;
 constexpr uint32_t kLayerClipRect = 1u << 4;
 constexpr uint32_t kLayerInhibitSrgb = 1u << 8;
@@ -263,10 +265,20 @@ bool ensureFullRateImage(ovrTextureSwapChain* chain) {
         image.arrayLayers = chain->arrayLayers;
         image.samples = VK_SAMPLE_COUNT_1_BIT;
         image.tiling = VK_IMAGE_TILING_OPTIMAL;
-        image.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        image.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                      VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT;
+        // Some engines bind this resource as a fragment-density attachment even when our VrApi capability says
+        // foveation is off (The Climb, GitHub #238). Turnip samples density maps on the CPU: this usage makes it
+        // choose linear storage and map the backing memory at bind time. An ordinary sampled image has a NULL
+        // image->map and crashes in vkCmdEndRenderPass. Keep the constant full-rate contents in either case.
+        // This API supplies a density attachment, so never substitute an ordinary sampled image when a layer
+        // filters the advertised format features. vkCreateImage can reject unsupported usage without publishing it.
         image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        if (vkCreateImage(s.vk.Device, &image, nullptr, &resource.image) != VK_SUCCESS) return false;
+        const VkResult created = vkCreateImage(s.vk.Device, &image, nullptr, &resource.image);
+        OVP_LOG("Full-rate image: format features=0x%x usage=0x%x create=%d",
+                properties.optimalTilingFeatures, image.usage, created);
+        if (created != VK_SUCCESS) return false;
         VkMemoryRequirements requirements{};
         vkGetImageMemoryRequirements(s.vk.Device, resource.image, &requirements);
         uint32_t memoryType = 0;
@@ -299,9 +311,7 @@ bool ensureFullRateImage(ovrTextureSwapChain* chain) {
     barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, chain->arrayLayers};
     vkCmdPipelineBarrier(gCopy.command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-    // Constant (1,1) density means full-rate shading. This ordinary sampled
-    // texture supports consumers which query the resource even with VRS off;
-    // it is not a hardware fragment-density attachment or an enabled feature.
+    // Constant (1,1) density means full-rate shading, including when the engine binds it as a density attachment.
     const VkClearColorValue fullRate{{1.0f, 1.0f, 1.0f, 1.0f}};
     vkCmdClearColorImage(gCopy.command, resource.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                         &fullRate, 1, &barrier.subresourceRange);
@@ -1090,8 +1100,12 @@ VRAPI ovrResult vrapi_SubmitFrame2(ovrMobile* mobile,
         (description->LayerCount != 0 && !description->Layers)) {
         return failFrame(InvalidParameter);
     }
-    if ((description->Flags & ~kFrameFlush) != 0 || description->SwapInterval != 1) {
-        OVP_ERROR("Unsupported frame flags or swap interval");
+    // Volume suppression and the old texture-density visualization only affect Quest's compositor overlays.
+    // OpenXR has neither overlay; accepting those flags must still submit the application's actual layers.
+    if ((description->Flags & ~(kFrameFlush | kFrameInhibitVolume | kFrameShowTextureDensity)) != 0 ||
+        description->SwapInterval != 1) {
+        OVP_ERROR("Unsupported frame flags or swap interval: flags=0x%x interval=%u",
+                  description->Flags, description->SwapInterval);
         return failFrame(Unsupported);
     }
 

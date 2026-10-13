@@ -24,6 +24,19 @@ def test_healthy_log():
     assert r.fps == 72.2
 
 
+def test_vrapi_rejected_frames_fail_even_with_pacing_and_a_headless_end():
+    """The Climb's old debug frame flag produced paced empty frames, so its launch test falsely passed (#238)."""
+    log = (LOG_OK + "09-28 17:39:06.000  1147  1174 E OVRPortVrApi: "
+           "Unsupported frame flags or swap interval\n"
+           "09-28 17:39:35.000  1147  1174 I OVRPortVrApi: "
+           "EnterVrMode: no tracked head pose before deadline\n"
+           "09-28 17:39:36.000  1147  1174 F libc: Fatal signal 11 (SIGSEGV)\n")
+    r = triage(log, "EXITED", "com.example.game", headless=True)
+    assert r.fps == 72.2 and r.verdict == "fail"
+    finding = next(f for f in r.findings if f.id == "vrapi-frame-rejected")
+    assert finding.severity == "fatal" and finding.suggest == ["frame.vrapi_bridge"]
+
+
 def test_failures_map_to_patches():
     r = triage(LOG_BAD, "EXITED", "com.example.game")
     ids = {f.id for f in r.findings}

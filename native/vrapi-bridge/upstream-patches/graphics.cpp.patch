@@ -10,7 +10,16 @@
  #include <algorithm>
  #include <array>
  #include <cmath>
-@@ -54,6 +57,13 @@
+@@ -23,6 +26,8 @@ constexpr int32_t kTexture2DArray = 2;
+ constexpr int32_t kProjectionLayer = 1;
+ constexpr uint32_t kLayerChromatic = 1u << 1;
+ constexpr uint32_t kFrameFlush = 1u << 1;
++constexpr uint32_t kFrameInhibitVolume = 1u << 6;
++constexpr uint32_t kFrameShowTextureDensity = 1u << 8;  // obsolete Quest compositor debug overlay
+ constexpr uint32_t kLayerFixedToView = 1u << 2;
+ constexpr uint32_t kLayerClipRect = 1u << 4;
+ constexpr uint32_t kLayerInhibitSrgb = 1u << 8;
+@@ -54,6 +59,13 @@ struct ovrTextureSwapChain {
      uint32_t outputImageCount = 0;
      std::array<XrSwapchainImageVulkanKHR, kMaxBuffers> outputImages{};
      std::array<bool, kMaxBuffers> outputInitialized{};
@@ -24,7 +33,7 @@
  };
  
  namespace {
-@@ -121,6 +131,11 @@
+@@ -121,6 +133,11 @@ void destroyAppImage(AppImage& image) {
  }
  
  void destroyAppImages(ovrTextureSwapChain* chain) {
@@ -36,7 +45,41 @@
      for (uint32_t i = 0; i < chain->bufferCount; ++i) destroyAppImage(chain->appImages[i]);
      destroyAppImage(chain->fullRateImage);
      chain->fullRateInitialized = false;
-@@ -313,10 +328,65 @@
+@@ -248,10 +265,20 @@ bool ensureFullRateImage(ovrTextureSwapChain* chain) {
+         image.arrayLayers = chain->arrayLayers;
+         image.samples = VK_SAMPLE_COUNT_1_BIT;
+         image.tiling = VK_IMAGE_TILING_OPTIMAL;
+-        image.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
++        image.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
++                      VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT;
++        // Some engines bind this resource as a fragment-density attachment even when our VrApi capability says
++        // foveation is off (The Climb, GitHub #238). Turnip samples density maps on the CPU: this usage makes it
++        // choose linear storage and map the backing memory at bind time. An ordinary sampled image has a NULL
++        // image->map and crashes in vkCmdEndRenderPass. Keep the constant full-rate contents in either case.
++        // This API supplies a density attachment, so never substitute an ordinary sampled image when a layer
++        // filters the advertised format features. vkCreateImage can reject unsupported usage without publishing it.
+         image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+         image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+-        if (vkCreateImage(s.vk.Device, &image, nullptr, &resource.image) != VK_SUCCESS) return false;
++        const VkResult created = vkCreateImage(s.vk.Device, &image, nullptr, &resource.image);
++        OVP_LOG("Full-rate image: format features=0x%x usage=0x%x create=%d",
++                properties.optimalTilingFeatures, image.usage, created);
++        if (created != VK_SUCCESS) return false;
+         VkMemoryRequirements requirements{};
+         vkGetImageMemoryRequirements(s.vk.Device, resource.image, &requirements);
+         uint32_t memoryType = 0;
+@@ -284,9 +311,7 @@ bool ensureFullRateImage(ovrTextureSwapChain* chain) {
+     barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, chain->arrayLayers};
+     vkCmdPipelineBarrier(gCopy.command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+-    // Constant (1,1) density means full-rate shading. This ordinary sampled
+-    // texture supports consumers which query the resource even with VRS off;
+-    // it is not a hardware fragment-density attachment or an enabled feature.
++    // Constant (1,1) density means full-rate shading, including when the engine binds it as a density attachment.
+     const VkClearColorValue fullRate{{1.0f, 1.0f, 1.0f, 1.0f}};
+     vkCmdClearColorImage(gCopy.command, resource.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         &fullRate, 1, &barrier.subresourceRange);
+@@ -313,10 +338,65 @@ bool ensureFullRateImage(ovrTextureSwapChain* chain) {
      return true;
  }
  
@@ -102,7 +145,7 @@
  
      uint32_t formatCount = 0;
      XrResult result = s.xr.xrEnumerateSwapchainFormats(s.session, 0, &formatCount, nullptr);
-@@ -331,12 +401,29 @@
+@@ -331,12 +411,29 @@ bool ensureOutput(ovrTextureSwapChain* chain) {
          ovp::xrOk(result, "xrEnumerateSwapchainFormats");
          return false;
      }
@@ -138,7 +181,7 @@
      }
  
      XrSwapchainCreateInfo create{XR_TYPE_SWAPCHAIN_CREATE_INFO};
-@@ -485,8 +572,104 @@
+@@ -485,8 +582,104 @@ bool projectionGeometry(const ovrMatrix4f& matrix, const ovrRectf& rect,
      return true;
  }
  
@@ -243,7 +286,7 @@
      bool black = false;
      XrCompositionLayerProjection projection{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
      std::array<XrCompositionLayerProjectionView, 2> views{{
-@@ -547,7 +730,97 @@
+@@ -547,7 +740,97 @@ bool acquireJobs(std::array<CopyJob, kMaxCopyJobs>& jobs, uint32_t count) {
      return true;
  }
  
@@ -341,7 +384,21 @@
      if (!settleCopy(kFrameWaitNs, false)) return false;
      reapRetired();
      if (count == 0) return true;
-@@ -826,6 +1099,28 @@
+@@ -817,7 +1100,11 @@ VRAPI ovrResult vrapi_SubmitFrame2(ovrMobile* mobile,
+         (description->LayerCount != 0 && !description->Layers)) {
+         return failFrame(InvalidParameter);
+     }
+-    if ((description->Flags & ~kFrameFlush) != 0 || description->SwapInterval != 1) {
+-        OVP_ERROR("Unsupported frame flags or swap interval");
++    // Volume suppression and the old texture-density visualization only affect Quest's compositor overlays.
++    // OpenXR has neither overlay; accepting those flags must still submit the application's actual layers.
++    if ((description->Flags & ~(kFrameFlush | kFrameInhibitVolume | kFrameShowTextureDensity)) != 0 ||
++        description->SwapInterval != 1) {
++        OVP_ERROR("Unsupported frame flags or swap interval: flags=0x%x interval=%u",
++                  description->Flags, description->SwapInterval);
+         return failFrame(Unsupported);
+     }
+@@ -826,6 +1113,28 @@ VRAPI ovrResult vrapi_SubmitFrame2(ovrMobile* mobile,
      for (uint32_t i = 0; i < description->LayerCount; ++i) {
          const ovrLayerHeader2* header = description->Layers[i];
          if (!header) return failFrame(InvalidParameter);
@@ -370,7 +427,7 @@
          if (header->Type != kProjectionLayer) {
              OVP_ERROR("Unsupported VrApi layer type %d", header->Type);
              return failFrame(Unsupported);
-@@ -910,6 +1205,56 @@
+@@ -910,6 +1219,56 @@ VRAPI ovrResult vrapi_SubmitFrame2(ovrMobile* mobile,
      for (uint32_t i = 0; i < description->LayerCount; ++i) {
          PreparedLayer& output = prepared[i];
          if (output.black) continue;
@@ -427,7 +484,7 @@
          const bool headLocked = (output.source->Header.Flags & kLayerFixedToView) != 0;
          if (headLocked && !haveHeadLockedViews) {
              XrViewLocateInfo locate{XR_TYPE_VIEW_LOCATE_INFO};
-@@ -951,6 +1296,9 @@
+@@ -951,6 +1310,9 @@ VRAPI ovrResult vrapi_SubmitFrame2(ovrMobile* mobile,
                            rect.x, rect.y, rect.width, rect.height);
                  return failFrame(InvalidParameter);
              }
@@ -437,7 +494,7 @@
              output.views[eye].subImage.swapchain = chain->output;
              output.views[eye].subImage.imageArrayIndex =
                  chain->type == kTexture2DArray ? eye : 0;
-@@ -1007,3 +1355,74 @@
+@@ -1007,3 +1369,74 @@ void shutdown() {
      destroyCopyContext();
  }
  } // namespace ovp::graphics

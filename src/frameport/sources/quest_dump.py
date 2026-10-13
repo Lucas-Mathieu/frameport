@@ -178,21 +178,21 @@ def _find_data_dir(apk_dir: Path, pkg: str | None) -> Path | None:
     return found
 
 
-# Android's expansion file names: main.<versionCode>.<package>.obb, patch.<versionCode>.<package>.obb
-OBB_NAME = re.compile(r"^(main|patch)\.(\d+)\.(.+)\.obb$", re.IGNORECASE)
+# Android's expansion file names, also CryEngine's main.<package>.obb without a versionCode (GitHub #238).
+OBB_NAME = re.compile(r"^(main|patch)\.(?:(\d+)\.)?(.+)\.obb$", re.IGNORECASE)
 
 
-def _named_obbs(d: Path, pkg: str) -> list[tuple[str, int, Path]]:
+def _named_obbs(d: Path, pkg: str) -> list[tuple[str, int | None, Path]]:
     """(kind, versionCode, file) of the package's expansion files directly in d."""
     out = []
     for f, is_dir in _list(d):
         m = OBB_NAME.match(f.name)
         if m and m.group(3).lower() == pkg.lower() and not is_dir:
-            out.append((m.group(1).lower(), int(m.group(2)), f))
+            out.append((m.group(1).lower(), int(m.group(2)) if m.group(2) else None, f))
     return out
 
 
-def _obb_folders(apk_dir: Path, pkg: str, depth: int = 3) -> list[tuple[Path, list[tuple[str, int, Path]]]]:
+def _obb_folders(apk_dir: Path, pkg: str, depth: int = 3) -> list[tuple[Path, list[tuple[str, int | None, Path]]]]:
     """Folders holding the package's expansion files by name, nearest first: the APK's own folder, the folders below
     it, its parent, then the parent's other folders (each up to `depth` levels). Folders with APKs of their own are
     other games (e.g. another version of this one) and aren't searched."""
@@ -222,14 +222,15 @@ def _obb_folders(apk_dir: Path, pkg: str, depth: int = 3) -> list[tuple[Path, li
     return found
 
 
-def _pick_obbs(obbs: list[tuple[str, int, Path]], version_code: int | None) -> list[Path]:
+def _pick_obbs(obbs: list[tuple[str, int | None, Path]], version_code: int | None) -> list[Path]:
     """The expansion files for this APK: per kind (main, patch) the newest one not newer than the APK's versionCode
     (expansion files keep the versionCode they were introduced with, so that's its own one when there is one); only
-    when there is none at all, the newest ones (another version of the game's files: better than nothing)."""
-    usable = [o for o in obbs if version_code is not None and o[1] <= version_code] or obbs
+    when there is none at all, the newest ones (another version of the game's files: better than nothing).
+    Versionless files are usable for any APK; a usable numbered file takes precedence."""
+    usable = [o for o in obbs if version_code is None or o[1] is None or o[1] <= version_code] or obbs
     picked = []
     for kind in ("main", "patch"):
-        same = sorted((vc, f) for k, vc, f in usable if k == kind)
+        same = sorted((vc if vc is not None else -1, f) for k, vc, f in usable if k == kind)
         if same:
             picked.append(same[-1][1])
     return picked
@@ -245,7 +246,8 @@ def find_data(apk_dir: Path, pkg: str | None, version_code: int | None = None) -
     folders = _obb_folders(apk_dir, pkg)
     if not folders:
         return None, None
-    d, obbs = next((f for f in folders if any(vc == version_code for _, vc, _ in f[1])), folders[0])
+    d, obbs = next((f for f in folders if version_code is not None and any(vc == version_code for _, vc, _ in f[1])),
+                  folders[0])
     files = _pick_obbs(obbs, version_code)
     everything = {p.name for p, _ in _list(d)}
     names = [f.name for f in files]

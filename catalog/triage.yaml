@@ -6,6 +6,11 @@
 # with diagnostics. Launch tests and real play sessions (agent session_log, `frameport session`) are both matched.
 # Sources: every failure we hit porting 34 games to the Steam Frame (see docs/PLAYBOOK.md).
 signatures:
+  - id: vrapi-frame-rejected
+    pattern: 'OVRPortVrApi:\s+Unsupported frame flags or swap interval'
+    severity: fatal
+    diagnosis: The VrApi bridge rejected the game's frame options, so no picture reaches the headset even though frame pacing can appear in the log. Rebuild and reinstall with the updated bridge; it accepts the old texture-density debug flag used by The Climb (GitHub #238). Other unsupported options are logged with their flags and swap interval.
+    suggest: [frame.vrapi_bridge]
   - id: no-launcher
     pattern: 'APP_ACTIVITY is empty'
     severity: fatal
