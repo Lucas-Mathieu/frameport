@@ -434,7 +434,7 @@ class GameView:
                                  lambda e, p=r["package"]: self.app.open_game(p), color=T.ACCENT))
         if links:
             out.append(ft.Row(links, spacing=T.S2, wrap=True))
-        warns = engine.warnings(recipe)
+        warns = engine.warnings(recipe, library.analysis_from_dict(g["analysis"]) if g.get("analysis") else None)
         if warns:
             out.append(C.callout("\n".join(warns), "warn"))
         return out
@@ -713,8 +713,8 @@ class GameView:
         def save(r):
             r.source = "user"
             pipeline.set_recipe(package, r)
-            warn.value = "\n".join(engine.warnings(r))
-            warn.update()
+            warn.value = "\n".join(engine.warnings(r, analysis))
+            C.update(warn)
 
         def toggle(pid):
             def handler(e):
@@ -726,7 +726,11 @@ class GameView:
                     r.reasons[pid] = r.reasons.get(pid) or tr("Enabled by you.")
                 else:
                     r.patches.pop(pid, None)
+                before = set(r.patches)
                 save(r)
+                if set(r.patches) != before:
+                    # saving switched other patches too (the 32-bit bridge turns OVRPort & co. off): show them
+                    app.open_game(package, advanced=True, show_all=self.show_all)
             return handler
 
         def set_value(pid, kind):
@@ -900,7 +904,7 @@ class GameView:
                 value=self.show_all,
                 on_change=lambda e: app.open_game(package, advanced=True,
                                                                          show_all=e.control.value)), "show_all"))
-        warn.value = "\n".join(engine.warnings(recipe))
+        warn.value = "\n".join(engine.warnings(recipe, analysis))
         return C.section(tr("Patches"), *top, warn, *sections,
                          subtitle=tr("Changes apply to the next install. Hover a patch above to see why it's there."))
 

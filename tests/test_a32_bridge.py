@@ -188,6 +188,76 @@ def test_recipe_for_a_32bit_game():
     assert not [p for p in shown if p.category == "overport"]
 
 
+def test_catalog_verdict_from_before_the_bridge(monkeypatch):
+    """A catalog entry written before the bridge ("unsupported: no AArch32") no longer overrides it."""
+    from frameport.recommend import catalog
+
+    old = catalog.CatalogEntry(package="com.example.gearvr", title="Old", status="unsupported",
+                               notes="32-bit only; the Frame has no AArch32.",
+                               alt_overport=["patch_remove_unreal_force_quit"])
+    monkeypatch.setattr(catalog, "lookup", lambda pkg: old)
+    r = engine.suggest(_analysis())
+    assert "frame.a32_bridge" in r.patches and r.status == "unknown" and "32-bit bridge" in r.notes
+    assert not r.overport and not r.alt_patches
+    # an entry that names the bridge (tested with it) keeps its own verdict
+    tested = catalog.CatalogEntry(package="com.example.gearvr", title="New", status="unsupported",
+                                  frame=["frame.a32_bridge"])
+    monkeypatch.setattr(catalog, "lookup", lambda pkg: tested)
+    r = engine.suggest(_analysis())
+    assert "frame.a32_bridge" in r.patches and r.status == "unsupported"
+
+
+def test_bridge_turned_on_by_hand(tmp_path, monkeypatch):
+    """Turning the bridge on in a saved recipe switches OVRPort and the 64-bit-only fixes off."""
+    from frameport import pipeline
+    from frameport.core import library
+    from frameport.core.models import Recipe
+
+    monkeypatch.setattr(library, "_path", lambda: tmp_path / "library.json")
+    library.upsert_game("com.example.gearvr", title="X", analysis=_analysis().to_dict())
+    r = Recipe(package="com.example.gearvr", source="user", alt_patches=["patch_remove_unreal_force_quit"],
+               patches={"patch_copy_libraries": {}, "frame.vk_sanitize": {}, "frame.adapter": {},
+                        "adapter.haptic_fix": {"value": 1}, "adapter.scale": {"value": 0.9}})
+    pipeline.set_recipe("com.example.gearvr", r)
+    assert r.overport  # without the bridge nothing changes
+    r.patches["frame.a32_bridge"] = {}
+    pipeline.set_recipe("com.example.gearvr", r)
+    saved = library.recipe_from_dict(library.game("com.example.gearvr")["recipe"])
+    assert not saved.overport and not saved.alt_patches
+    assert set(saved.patches) == {"frame.a32_bridge", "frame.adapter", "adapter.scale", "device.text_input_window"}
+    assert set(r.patches) == set(saved.patches)  # changed in place: the game page redraws from it
+    # turned off by the user afterwards: stays off; hand-added 64-bit fixes are still dropped
+    r.patches.pop("device.text_input_window")
+    r.patches["frame.vk_sanitize"] = {}
+    pipeline.set_recipe("com.example.gearvr", r)
+    assert set(library.game("com.example.gearvr")["recipe"]["patches"]) == {"frame.a32_bridge", "frame.adapter",
+                                                                             "adapter.scale"}
+
+
+def test_bridge_by_hand_lifts_the_old_verdict(tmp_path, monkeypatch):
+    """A saved "unsupported" (no AArch32, from before the bridge) no longer blocks installing once it's turned on."""
+    from frameport import pipeline
+    from frameport.core import library
+    from frameport.core.models import Recipe
+    from frameport.recommend import catalog
+
+    monkeypatch.setattr(library, "_path", lambda: tmp_path / "library.json")
+    library.upsert_game("com.example.gearvr", title="X", analysis=_analysis().to_dict())
+    old = catalog.CatalogEntry(package="com.example.gearvr", title="Old", status="unsupported")
+    monkeypatch.setattr(catalog, "lookup", lambda pkg: old)
+    r = Recipe(package="com.example.gearvr", source="user", status="unsupported", notes="no AArch32",
+               patches={"frame.a32_bridge": {}})
+    pipeline.set_recipe("com.example.gearvr", r)
+    assert r.status == "unknown" and "32-bit bridge" in r.notes
+    tested = catalog.CatalogEntry(package="com.example.gearvr", title="New", status="unsupported",
+                                  frame=["frame.a32_bridge"])
+    monkeypatch.setattr(catalog, "lookup", lambda pkg: tested)
+    r = Recipe(package="com.example.gearvr", source="user", status="unsupported", patches={"frame.a32_bridge": {}})
+    library.upsert_game("com.example.gearvr", recipe={"package": "com.example.gearvr", "patches": {}})
+    pipeline.set_recipe("com.example.gearvr", r)
+    assert r.status == "unsupported"  # tested with the bridge: the verdict stands
+
+
 def test_64bit_games_keep_their_recipe():
     a = _analysis(abis=["arm64-v8a"], extra={"size": 1, "vr_kind": "quest", "headset": "quest"})
     r = engine.suggest(a, use_catalog=False)
@@ -251,3 +321,118 @@ def test_triage_doesnt_suggest_the_64bit_vrapi_bridge():
     assert "direct-vrapi" not in {f.id for f in r.findings}
     r = triage("I Unity: vrapi_Initialize\n", "RUNNING", "com.example.game")
     assert "direct-vrapi" in {f.id for f in r.findings}
+
+
+def test_which_patches_work_on_the_bridge():
+    """Declared per patch (base.works_on_a32): OVRPort and the 64-bit Frame fixes don't, FrameBridge settings and
+    device options do unless they need the xrshim (settings.XRSHIM_SETTINGS, the same list frame.adapter uses)."""
+    from frameport.patches.settings import XRSHIM_SETTINGS
+
+    ok = {p.id for p in base.all_patches() if base.works_on_a32(p)}
+    assert {p for p in ok if base.get(p).category in ("overport", "frame")} == {
+        "frame.a32_bridge", "frame.adapter", "frame.launcher"}
+    assert "adapter.scale" in ok and "device.text_input_window" in ok
+    assert not {f"adapter.{k}" for k in XRSHIM_SETTINGS} & ok
+    a = _analysis()
+    assert not base.get("adapter.haptic_fix").applies(a)  # hidden in the Game settings dialog too
+    assert base.get("adapter.haptic_fix").applies(_analysis(abis=["arm64-v8a"]))
+
+
+def test_build_refuses_a_32bit_recipe_that_cant_work():
+    import pytest
+
+    from frameport import build
+    from frameport.core.models import Recipe
+
+    a = _analysis()
+    with pytest.raises(ValueError, match="only 32-bit ARM code"):
+        build.check_a32(a, Recipe(package=a.package, patches={"frame.adapter": {}}))
+    with pytest.raises(ValueError, match="OVRPort"):
+        build.check_a32(a, Recipe(package=a.package, patches={"frame.a32_bridge": {}}))
+    with pytest.raises(ValueError, match=base.get("frame.vk_sanitize").title):
+        build.check_a32(a, Recipe(package=a.package, overport=False,
+                                  patches={"frame.a32_bridge": {}, "frame.vk_sanitize": {}}))
+    build.check_a32(a, engine.suggest(a, use_catalog=False))  # the suggested recipe builds
+    build.check_a32(_analysis(abis=["arm64-v8a"]), Recipe(package=a.package))  # 64-bit games: no check
+
+
+def test_warnings_for_32bit_games():
+    from frameport.core.models import Recipe
+
+    a = _analysis()
+    assert "only 32-bit ARM code" in engine.warnings(Recipe(package=a.package), a)[0]
+    assert engine.warnings(engine.suggest(a, use_catalog=False), a) == []
+    r = engine.suggest(a, use_catalog=False)
+    r.patches["frame.vk_sanitize"] = {}
+    assert engine.warnings(r, a) == [f"{base.get('frame.vk_sanitize').title} doesn't work with the 32-bit bridge."]
+
+
+def test_parity_has_no_baseline_for_bridge_builds(tmp_path):
+    from frameport import parity
+
+    old = tmp_path / "old.apk"
+    with zipfile.ZipFile(old, "w") as z:
+        z.writestr("lib/armeabi-v7a/libmain.so", b"x")
+    new = tmp_path / "new.apk"
+    with zipfile.ZipFile(new, "w") as z:
+        z.writestr(f"lib/arm64-v8a/{a32_bridge.BRIDGE}", b"x")
+    assert not parity._bridge_baseline(old) and parity._bridge_baseline(new)
+    assert not parity._bridge_baseline(tmp_path / "missing.apk")
+    rows = [{"game": "A", "primary": {"verdict": "identical", "diffs": []}},
+            {"game": "B", "primary": {"verdict": parity.NO_BASELINE, "diffs": []}}]
+    parity.write_report(rows, tmp_path / "r.md")
+    text = (tmp_path / "r.md").read_text()
+    assert "**1/1 games at parity**" in text and "1 32-bit bridge build(s) without a baseline" in text
+
+
+def test_game_page_bridge_switch(tmp_path, monkeypatch):
+    """The game page's switch (no browser): turning the bridge on saves a bridge recipe and redraws the page, since
+    other patches changed with it."""
+    from types import SimpleNamespace
+
+    import flet as ft
+
+    from frameport.core import library
+    from frameport.core.models import Recipe
+    from frameport.ui import components as C
+    from frameport.ui.views.game import GameView
+
+    monkeypatch.setattr(library, "_path", lambda: tmp_path / "library.json")
+    a = _analysis()
+    r = Recipe(package=a.package, source="user", status="unsupported", notes="32-bit only; no AArch32.",
+               patches={"patch_copy_libraries": {}, "frame.adapter": {}, "frame.vk_sanitize": {}})
+    library.upsert_game(a.package, title="X", analysis=a.to_dict(), recipe=library.recipe_to_dict(r))
+    redraws = []
+    app = SimpleNamespace(has_game_settings=lambda g: True, settings_dialog=print,
+                          open_game=lambda *args, **kw: redraws.append(kw))
+    panel = GameView(app, a.package, advanced=True, show_all=True).advanced_panel()
+
+    def walk(c):
+        yield c
+        for attr in ("controls", "content", "actions"):
+            v = getattr(c, attr, None)
+            for x in (v if isinstance(v, list) else [v] if v is not None and not isinstance(v, str) else []):
+                yield from walk(x)
+
+    def switch_for(title):
+        """The real ft.Switch in the patch row whose title is `title` (C.switch wraps it in a painted track)."""
+        shown = C.patch_title(title, False)
+        for c in walk(panel):
+            ctrls = getattr(c, "controls", None)
+            if isinstance(ctrls, list) and len(ctrls) > 1 \
+                    and any(getattr(x, "value", None) == shown for x in walk(ctrls[0])):
+                sw = next((x for x in walk(ctrls[-1]) if isinstance(x, ft.Switch)), None)
+                if sw is not None:
+                    return sw
+        raise AssertionError(f"no switch for {title}")
+
+    # the panel warns before anything is changed
+    assert any("only 32-bit ARM code" in str(getattr(c, "value", "")) for c in walk(panel))
+    sw = switch_for(base.get("frame.a32_bridge").title)
+    assert sw.value is False
+    sw.value = True
+    sw.on_change(SimpleNamespace(control=sw))
+    saved = library.recipe_from_dict(library.game(a.package)["recipe"])
+    assert set(saved.patches) == {"frame.a32_bridge", "frame.adapter", "device.text_input_window"}
+    assert not saved.overport and saved.status == "unknown" and "32-bit bridge" in saved.notes
+    assert redraws == [{"advanced": True, "show_all": True}]  # the switches now show what changed

@@ -236,6 +236,20 @@ def find_source(sources: Path, hint: str, package: str) -> quest_dump.SourceGame
     return None
 
 
+NO_BASELINE = "new build (no baseline)"
+
+
+def _bridge_baseline(known: Path) -> bool:
+    """The known-good APK is itself a 32-bit bridge build (it has the bridge's arm64 runtime)."""
+    from .patches.frame.a32_bridge import BRIDGE, HOST
+
+    try:
+        with zipfile.ZipFile(known) as z:
+            return f"lib/{HOST}/{BRIDGE}" in z.namelist()
+    except (OSError, zipfile.BadZipFile):
+        return False
+
+
 def run_parity(known_good: Path, sources: Path, outdir: Path, report: Path, only: list[str], keep: bool,
                reporter: Reporter) -> bool:
     results = []
@@ -260,8 +274,16 @@ def run_parity(known_good: Path, sources: Path, outdir: Path, report: Path, only
             a = analyze(src.apk)
             recipe = engine.suggest(a)
             res = build(src, a, recipe, outdir / pkg, reporter)
-            row["primary"] = compare(res.apk, folder / f"{pkg}.apk")
-            if res.alt_apk:
+            if "frame.a32_bridge" in recipe.patches and not _bridge_baseline(folder / f"{pkg}.apk"):
+                # the known-good copy is an OVRPort build from before the 32-bit bridge: nothing to compare with
+                # until a bridge build is kept as the new known-good one
+                row["primary"] = {"verdict": NO_BASELINE, "diffs": [
+                    ("apk", NO_BASELINE, "32-bit bridge build; the known-good APK is from before the bridge")]}
+            else:
+                row["primary"] = compare(res.apk, folder / f"{pkg}.apk")
+            if row["primary"]["verdict"] == NO_BASELINE:
+                pass  # (the old alternate build doesn't apply either: the bridge has none)
+            elif res.alt_apk:
                 known_alt = folder / f"{pkg}.alt-noforcequit.apk"
                 no_alt = {"verdict": "UNEXPLAINED", "diffs": [("alt", "UNEXPLAINED", "no known-good alt APK")]}
                 row["alt"] = compare(res.alt_apk, known_alt) if known_alt.exists() else no_alt
@@ -310,9 +332,14 @@ def write_report(results: list[dict], path: Path) -> None:
         failed = ", ".join(c["name"] for c in r.get("checks_failed", [])) or "none"
         lines.append(f"| {r['game']} | {r['primary']['verdict']} | {r.get('alt', {}).get('verdict', '—')} | {failed} | "
                      + "<br>".join(notes) + " |")
+    new = sum(1 for r in results if "error" not in r and r["primary"]["verdict"] == NO_BASELINE)
     ok = sum(1 for r in results
-             if "error" not in r and all(r.get(k, {}).get("verdict") != "UNEXPLAINED" for k in ("primary", "alt")))
-    lines += ["", f"**{ok}/{len(results)} games at parity** (identical, expected or equivalent)."]
+             if "error" not in r and all(r.get(k, {}).get("verdict") not in ("UNEXPLAINED", NO_BASELINE)
+                                         for k in ("primary", "alt")))
+    lines += ["", f"**{ok}/{len(results) - new} games at parity** (identical, expected or equivalent)."]
+    if new:
+        lines.append(f"{new} 32-bit bridge build(s) without a baseline: keep one that works in the headset as the "
+                     "new known-good build.")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

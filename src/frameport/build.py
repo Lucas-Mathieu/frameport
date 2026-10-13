@@ -60,9 +60,26 @@ def apply_frame_fixes(apk_in: Path, apk_out_unsigned: Path, analysis: Analysis, 
     return applied, checks, selection.superseded
 
 
+def check_a32(analysis: Analysis, recipe: Recipe) -> None:
+    """A 32-bit-only game builds only through the 32-bit bridge, and without what the bridge replaces: OVRPort and
+    the 64-bit fixes would fail deep inside a tool or give an APK the Frame refuses (INSTALL_FAILED_NO_MATCHING_ABIS).
+    pipeline.set_recipe / build_game normally fix the recipe first (engine.a32_recipe); this catches every other
+    path with a plain message."""
+    if not analysis.only_32bit:
+        return
+    if "frame.a32_bridge" not in recipe.patches:
+        raise ValueError("This game has only 32-bit ARM code, which the Steam Frame can't run: turn on "
+                         f"\"{base.get('frame.a32_bridge').title}\" to build it.")
+    wrong = [base.get(pid).title for pid in recipe.patches if not base.works_on_a32(base.get(pid))]
+    if recipe.overport or wrong:
+        raise ValueError("The 32-bit bridge can't be combined with " + ", ".join(
+            (["OVRPort"] if recipe.overport else []) + wrong) + ": reset the recipe or turn those off.")
+
+
 def build(source: SourceGame, analysis: Analysis, recipe: Recipe, outdir: Path, reporter: Reporter,
           keep_work: bool = False) -> BuildResult:
     pkg = analysis.package
+    check_a32(analysis, recipe)
     work = work_dir() / pkg
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)

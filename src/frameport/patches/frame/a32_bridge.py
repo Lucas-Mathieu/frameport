@@ -147,6 +147,7 @@ def convert(ws, prebuilt: Callable[[str], bytes], ovrport: Callable[[str, str], 
 
 class A32Bridge(Patch):
     id = "frame.a32_bridge"
+    a32 = True  # the bridge itself
     title = "32-bit ARM bridge (Gear VR / Go games)"
     description = (
         "Runs a 32-bit-only game (armeabi-v7a: Gear VR, Oculus Go and early Quest games) on the Frame, which has no "
