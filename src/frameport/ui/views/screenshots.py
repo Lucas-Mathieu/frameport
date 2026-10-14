@@ -441,24 +441,9 @@ class ScreenshotsView:
         self.app.run_bg(self._take_bg)
 
     def _take_bg(self) -> None:
-        from ...install import screenshots
-
-        app = self.app
         try:
-            r = screenshots.take(app.target.frame)
-            if r.get("taken"):
-                app.toast(tr("Screenshot taken"))
+            if take_screenshot(self.app):
                 self.load()
-            elif r.get("reason") == "steamvr":
-                app.toast(tr("SteamVR isn't running on the Frame: put the headset on, then take the screenshot."),
-                          error=True)
-            elif r.get("reason") == "capture" or r.get("hmd") == "Standby":
-                app.toast(tr("The headset is asleep: put it on, then take the screenshot."), error=True)
-            else:
-                app.toast(tr("The Frame didn't save a screenshot ({why}). Try again.").format(
-                    why=r.get("reason") or tr("no reason given")), error=True)
-        except Exception as exc:  # noqa: BLE001
-            app.toast(tr("Couldn't take a screenshot: {error}").format(error=explain(exc)), error=True)
         finally:
             self.take_btn.disabled = False
             C.update(self.take_btn)
@@ -530,3 +515,26 @@ class ScreenshotsView:
         C.confirm(self.app.page, tr_n("Delete {n} screenshot?", "Delete {n} screenshots?", len(shots)),
                   tr("They're deleted on the Frame for good. Steam's own list may show them until Steam "
                      "restarts."), tr("Delete"), go, danger=True)
+
+
+def take_screenshot(app) -> bool:
+    """A Steam screenshot of the headset's view, saved on the Frame (Screenshots tab and Live view; runs on a
+    background thread, waits while the Frame saves it). Tells the user how it went; True when one was taken."""
+    from ...install import screenshots
+
+    try:
+        r = screenshots.take(app.target.frame)
+        if r.get("taken"):
+            app.toast(tr("Screenshot taken"))
+            return True
+        if r.get("reason") == "steamvr":
+            app.toast(tr("SteamVR isn't running on the Frame: put the headset on, then take the screenshot."),
+                      error=True)
+        elif r.get("reason") == "capture" or r.get("hmd") == "Standby":
+            app.toast(tr("The headset is asleep: put it on, then take the screenshot."), error=True)
+        else:
+            app.toast(tr("The Frame didn't save a screenshot ({why}). Try again.").format(
+                why=r.get("reason") or tr("no reason given")), error=True)
+    except Exception as exc:  # noqa: BLE001
+        app.toast(tr("Couldn't take a screenshot: {error}").format(error=explain(exc)), error=True)
+    return False
