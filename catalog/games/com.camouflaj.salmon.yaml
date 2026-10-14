@@ -8,6 +8,8 @@ frame:
 - frame.unity_text_input
 device:
 - device.text_input_window
+adapter:
+  fade_quad: 1
 verified:
   date: '2026-10-05'
   known_good_sha256: 41e0ab90f622afd50accb0b6e2553520d30a6cc82e5ab4cbb2341b48f7316a71
@@ -15,3 +17,5 @@ verified:
   overport_cli: 1.2.5
   issue: 47
 source_hint: Marvel's Iron Man VR
+updated: '2026-10-13'
+min_app: 1.1.0

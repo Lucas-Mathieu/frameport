@@ -202,6 +202,55 @@ class Axml:
 
 
 # ---------------------------------------------------------------------- high-level queries/fixes
+def copy_activity_label_to_application(manifest: bytes) -> bytes | None:
+    """Fill a missing application label from an activity, retaining its resource/string value (#269).
+
+    OVRPort's appName() assumes the application has a label; Android permits activity-only labels. Existing
+    application labels and the activity itself are untouched. No strings or resource ids are added.
+    """
+    x = Axml(manifest)
+    names = x.strings()
+
+    def label(el):
+        return next((a for a in el.attrs if a.ns < len(names) and a.name < len(names) and names[a.ns] == ANDROID_NS
+                     and names[a.name] == "label"), None)
+
+    elements = list(x.elements())
+    app = next((el for el in elements if el.name == "application"), None)
+    if app is None or label(app) is not None:
+        return None
+    source = next((a for el in elements if el.name in ("activity", "activity-alias")
+                   and (a := label(el)) is not None), None)
+    if source is None:
+        return None
+    # Attributes are sorted by resource id in Android's binary XML. Reuse the existing resource map.
+    ids = {}
+    pos = x.pool_off + x.pool_size
+    while pos < app.offset:
+        typ, hsz, size = struct.unpack_from("<HHI", x.data, pos)
+        if size < hsz or size == 0:
+            raise ValueError("invalid binary XML chunk")
+        if typ == 0x0180:  # RES_XML_RESOURCE_MAP
+            ids = dict(enumerate(struct.unpack_from(f"<{(size - hsz) // 4}I", x.data, pos + hsz)))
+            break
+        pos += size
+    ext = app.offset + struct.unpack_from("<H", x.data, app.offset + 2)[0]
+    start, stride, count = struct.unpack_from("<HHH", x.data, ext + 8)
+    index = next((i for i, a in enumerate(app.attrs)
+                  if ids.get(a.name, 0xFFFFFFFF) > ids.get(source.name, 0xFFFFFFFF)), count)
+    at = ext + start + index * stride
+    record = x.data[source.offset:source.offset + 20] + bytes(stride - 20)
+    data = x.data[:at] + record + x.data[at:]
+    struct.pack_into("<I", data, app.offset + 4, app.size + stride)
+    struct.pack_into("<H", data, ext + 12, count + 1)
+    for offset in (14, 16, 18):  # one-based id/class/style attribute indices
+        value = struct.unpack_from("<H", data, ext + offset)[0]
+        if value > index:
+            struct.pack_into("<H", data, ext + offset, value + 1)
+    struct.pack_into("<I", data, 4, len(data))
+    return bytes(data)
+
+
 def used_and_declared_permissions(manifest: bytes) -> tuple[list[str], set[str]]:
     x = Axml(manifest)
     used, declared = [], set()

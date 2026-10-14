@@ -37,6 +37,65 @@ def test_vdf_roundtrip_and_upsert(monkeypatch, tmp_path):
     assert a.vdf_decode(vdf.read_bytes())["shortcuts"] == {}
 
 
+@pytest.mark.parametrize("root_key", ["Shortcuts", "SHORTCUTS", "shortcuts"])
+def test_shortcuts_keep_steams_key_spelling_and_existing_games(monkeypatch, tmp_path, root_key):
+    a = load_agent(monkeypatch, tmp_path)
+    vdf = tmp_path / "shortcuts.vdf"
+    exe = '"/game/launch.sh"'
+    other = {"AppID": 123, "AppName": "Other", "EXE": '"/other"', "Tags": {"0": "Favorite"}}
+    original = {root_key: {"0": {"AppID": 456, "AppName": "Old", "EXE": exe, "ICON": "/old.png",
+                                 "Tags": {"0": "Favorite"}, "LastPlayTime": 99}, "1": other}}
+    data = a.vdf_encode(original)
+    vdf.write_bytes(data)
+    assert a.vdf_encode(a.vdf_decode(data)) == data
+    assert a.upsert_shortcut(str(vdf), exe, "New", "/game", tags=["Action"], write=False) == (456, True)
+    assert vdf.read_bytes() == data
+    assert a.upsert_shortcut(str(vdf), exe, "New", "/game", tags=["Action"]) == 456
+    root = a.vdf_decode(vdf.read_bytes())
+    assert list(root) == [root_key]
+    entry = root["shortcuts"]["0"]
+    assert entry["appname"] == "New" and "AppName" in list(entry) and "appname" not in list(entry)
+    assert entry["appid"] == 456 and entry["icon"] == "/old.png" and entry["LastPlayTime"] == 99
+    assert list(entry["tags"].values()) == ["Favorite", "Quest on Frame", "Action"]
+    assert root["shortcuts"]["1"] == other
+    assert a.upsert_shortcut(str(vdf), exe, "New", "/game", tags=["Action"], write=False) == (456, False)
+    a.upsert_shortcut(str(vdf), '"/third"', "Third", "/")
+    assert len(a.vdf_decode(vdf.read_bytes())["shortcuts"]) == 3
+    assert a.prune_shortcuts(str(vdf), "New", '"/replacement"', "Quest on Frame") == [456]
+    assert a.remove_shortcut(str(vdf), '"/other"')
+    root = a.vdf_decode(vdf.read_bytes())
+    assert list(root) == [root_key] and len(root["shortcuts"]) == 1
+    assert root["shortcuts"]["0"]["appname"] == "Third"
+
+
+def test_capitalized_shortcuts_are_found_by_library_and_devkit_checks(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    cfg = Path(a.STEAM) / "userdata/42/config"
+    cfg.mkdir(parents=True)
+    exe = '"/game/launch.sh"'
+    vdf = cfg / "shortcuts.vdf"
+    vdf.write_bytes(a.vdf_encode({"Shortcuts": {"0": {"APPID": 0xF0000001, "EXE": exe,
+                                                     "APPNAME": "Game", "DEVKITGAMEID": "fp_game"}}}))
+    monkeypatch.setattr(a, "library_users", lambda: ["42"])
+    monkeypatch.setattr(a, "steam_users", lambda: ["42"])
+    monkeypatch.setattr(a, "shortcut_args", lambda pkg: (exe,))
+    monkeypatch.setattr(a.time, "sleep", lambda seconds: None)
+    assert a.shortcut_appid_for(exe) == 0xF0000001
+    assert a.devkit_appid("fp_game") == 0xF0000001
+    assert a.shortcut_names("42") == {str(0xF0000001): "Game"}
+    assert a.shortcuts_lost(["42"], ["com.x.y"], wait=0) == []
+
+
+def test_case_variant_duplicate_vdf_keys_are_not_overwritten(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    vdf = tmp_path / "shortcuts.vdf"
+    data = a.vdf_encode({"Shortcuts": {"0": {"appid": 1}}, "shortcuts": {"0": {"appid": 2}}})
+    vdf.write_bytes(data)
+    with pytest.raises(a.AgentError, match="duplicate VDF key"):
+        a.upsert_shortcut(str(vdf), '"/game"', "Game", "/")
+    assert vdf.read_bytes() == data
+
+
 def test_launcher_template(monkeypatch, tmp_path):
     a = load_agent(monkeypatch, tmp_path)
     anchor = tmp_path / "anchor"
