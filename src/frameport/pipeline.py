@@ -763,6 +763,23 @@ def source_of(entry: dict) -> SourceGame:
                       Path(entry["origin"]) if entry.get("origin") else None, data_files=entry.get("data_files"))
 
 
+def check_source(entry: dict) -> SourceGame:
+    from .errors import MissingGameSource
+
+    src = source_of(entry)
+    if not src.apk.is_file():
+        raise MissingGameSource(src.apk)
+    if src.data_dir is not None:
+        if not src.data_dir.is_dir():
+            raise MissingGameSource(src.data_dir, "data folder")
+        # only files the user picked: the folder's other files can change (newer OBBs) and are listed again at build
+        for name in src.data_files or ():
+            path = src.data_dir / name
+            if not path.is_file():
+                raise MissingGameSource(path, "data file")
+    return src
+
+
 def set_recipe(package: str, recipe: Recipe) -> None:
     library.upsert_game(package, recipe=library.recipe_to_dict(recipe))
 
@@ -831,7 +848,7 @@ def prepare_as_is(package: str, reporter: Reporter) -> dict:
     from .build import sha256
 
     entry = library.game(package)
-    apk = Path(entry["apk"])
+    apk = check_source(entry).apk
     a = entry["analysis"]
     reporter.stage("Checking the game (installing it as it is)")
     checks = []
@@ -956,6 +973,9 @@ def _build_inputs_changed(entry: dict) -> bool:
 
 
 def build_game(package: str, reporter: Reporter, outdir: Path | None = None) -> dict:
+    entry = library.game(package)
+    if not is_linux(entry) and not is_rift(entry):
+        check_source(entry)  # fail before reanalysis or tool setup when the original files have gone
     if analysis_outdated(library.game(package) or {}):  # analysed by an older FramePort: new fields first
         refresh_analyses([package], reporter)
     entry = library.game(package)

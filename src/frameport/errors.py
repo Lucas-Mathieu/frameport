@@ -7,9 +7,16 @@ install queue then waits for it instead of failing every remaining job).
 from __future__ import annotations
 
 import errno
+import ssl
 import zipfile
 
 from .i18n import tr
+
+
+class MissingGameSource(ValueError):
+    def __init__(self, path, kind="APK"):
+        self.path, self.kind = path, kind
+        super().__init__(f"missing game {kind}: {path}")
 
 
 def _paramiko():
@@ -46,6 +53,16 @@ def explain(exc: BaseException) -> str:
     paramiko, _ = _paramiko()
     msg = " ".join(str(exc).split()).removeprefix("[Errno None] ")
     low = msg.lower()
+    if isinstance(exc, MissingGameSource):
+        kind = {"APK": tr("APK"), "data folder": tr("data folder"), "data file": tr("data file")}.get(exc.kind, exc.kind)
+        return tr("The game's {kind} isn't at {path} any more. Add the game again from the folder that has it.") \
+            .format(kind=kind, path=exc.path)
+    if isinstance(exc, ssl.SSLCertVerificationError) or any(
+            marker in low for marker in ("certificate_verify_failed", "certificate verify failed",
+                                         "self-signed certificate", "self signed certificate")):
+        return tr("The site's HTTPS certificate couldn't be verified. Something on the network, such as antivirus "
+                  "HTTPS scanning, a proxy or a school/work network, may have replaced it. Try another network or "
+                  "turn off HTTPS scanning.")
     if type(exc).__name__ == "HostKeyChanged":
         return tr("This Frame's SSH key changed since FramePort last connected (SteamOS was reset, or another "
                   "device now has its address). If it's your Frame, choose Trust the new key on the Steam Frame "
