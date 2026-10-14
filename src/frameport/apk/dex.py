@@ -152,17 +152,18 @@ class Dex:
         """Make a void method return at once (see return_early)."""
         return self.return_early(code_off, "V")
 
-    def return_early(self, code_off: int, ret: str) -> bool:
+    def return_early(self, code_off: int, ret: str, *, boolean_value: bool = False) -> bool:
         """Make a method return at once: its first instruction(s) become `return-void` (ret "V"), `const/4 v0, 0;
         return v0` (ret Z/B/S/C/I: false / 0) or `const-string v0, ""; return-object v0` (ret Ljava/lang/String;: the
-        empty string, only when the dex has it), padded with nops to the next instruction boundary. The rest of the
-        code stays as it was (unreachable). False if the method already starts that way, the return type isn't
-        supported (wide, other objects) or its first instructions can't be decoded."""
+        empty string, only when the dex has it). Z can return true with boolean_value=True. Padded with nops to the
+        next instruction boundary. The rest of the code stays as it was (unreachable). False if the method already
+        starts that way, the return type isn't supported (wide, other objects) or its first instructions can't be
+        decoded."""
         regs = struct.unpack_from("<H", self.data, code_off)[0]  # registers_size: v0 must exist for a value
         if ret == "V":
             new = [RETURN_VOID]
         elif ret in ("Z", "B", "S", "C", "I") and regs:
-            new = [CONST4_V0_0, RETURN_V0]
+            new = [0x1012 if ret == "Z" and boolean_value else CONST4_V0_0, RETURN_V0]
         elif ret == "Ljava/lang/String;" and regs and self.strings_n and self.string(0) == "":
             new = [CONST_STRING_V0, 0, RETURN_OBJECT_V0]  # string ids are sorted: "" is always the first
         else:

@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 165 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 166 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -11,7 +11,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 ## Groups
 
 - [Patches from OVRPort](#group-overport) (25)
-- [Steam Frame patches](#group-frame) (53)
+- [Steam Frame patches](#group-frame) (54)
 - [Game settings](#group-adapter) (66)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
@@ -90,6 +90,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Unreal: Quest controller bindings (RPOC key map)](#frame-unreal_quest_keymap) | `frame.unreal_quest_keymap` | Steam Frame patches | 3 |
 | [Unreal: don't wait for the Quest shader precompile](#frame-unreal_quest_precompile) | `frame.unreal_quest_precompile` | Steam Frame patches | 3 |
 | [Unreal: start without the OBB check](#frame-unreal_skip_obb_check) | `frame.unreal_skip_obb_check` | Steam Frame patches | 3 |
+| [Unreal: skip the OBB delivery check](#frame-unreal_skip_obb_delivery) | `frame.unreal_skip_obb_delivery` | Steam Frame patches |  |
 | [Unreal: bypass the stalled loading splash](#frame-unreal_splash_bypass) | `frame.unreal_splash_bypass` | Steam Frame patches | 1 |
 | [Unreal: thumb follows the capacitive touches](#frame-unreal_thumb_touch) | `frame.unreal_thumb_touch` | Steam Frame patches | 7 |
 | [Vermillion: paint canvases in the scene](#frame-vermillion_scene_canvas) | `frame.vermillion_scene_canvas` | Steam Frame patches | 1 |
@@ -1077,6 +1078,19 @@ Starts Unreal games without re-checking their data file (they'd seem to hang on 
 - **Source:** [patches/frame/unreal_obb_check.py](../src/frameport/patches/frame/unreal_obb_check.py)
 
 > Unreal games can check their whole data file (.obb) before starting (bVerifyOBBOnStartUp). On the Frame that check's progress and error screens are invisible (Lepton runs VR games without an Android window), so the game seems to hang on its DownloaderActivity, for example Contractors. This turns the check off in the manifest; Unreal still checks that the OBB is there with the right size, so a missing or wrong-version OBB still stops the game.
+
+### <a id="frame-unreal_skip_obb_delivery"></a>Unreal: skip the OBB delivery check
+
+Skips a separate data-file check when an Unreal game still hangs at startup with the content check off. Experimental; the game still needs its data.
+
+- `frame.unreal_skip_obb_delivery` · experimental · also for 2D apps
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
+- **Suggested by launch-test signatures:**
+  - `unreal-obb-check-stuck` (fatal): The game stays on Unreal's OBB check screen (DownloaderActivity), which the Frame doesn't show, and never starts VR (for example Contractors, GitHub #159).
+- **Source:** [patches/frame/unreal_obb_check.py](../src/frameport/patches/frame/unreal_obb_check.py)
+
+> Unreal's Java OBB delivery check can leave a game on an invisible DownloaderActivity screen even with the manifest CRC check off (e.g. Into The Radius). Makes known Unreal expansionFilesDelivered methods return true, bypassing the Java name and size gate. Experimental: the native engine still needs complete, matching, readable OBB data.
 
 ### <a id="frame-unreal_splash_bypass"></a>Unreal: bypass the stalled loading splash
 

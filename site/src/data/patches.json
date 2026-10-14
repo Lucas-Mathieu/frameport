@@ -594,6 +594,11 @@
   "title": "Unreal: start without the OBB check",
   "group": "Steam Frame patches"
  },
+ "frame.unreal_skip_obb_delivery": {
+  "anchor": "frame-unreal_skip_obb_delivery",
+  "title": "Unreal: skip the OBB delivery check",
+  "group": "Steam Frame patches"
+ },
  "frame.unreal_splash_bypass": {
   "anchor": "frame-unreal_splash_bypass",
   "title": "Unreal: bypass the stalled loading splash",

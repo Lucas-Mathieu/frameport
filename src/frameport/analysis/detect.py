@@ -39,7 +39,8 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 # 13: validate monolithic CryEngine projects/config, OBB filename formats and foveation cvar (The Climb, GitHub #238)
 # 14: bhaptics_permission (bHaptics asks for Android 12's BLUETOOTH_CONNECT: frame.bhaptics_permission, GitHub #235)
 # 15: verified xLua/LuaJIT 47-bit lightuserdata engine (frame.luajit_pointers, GitHub #257)
-ANALYSIS_VERSION = 15
+# 16: unreal_obb_delivery (Java expansionFilesDelivered gate, GitHub #283) (2026-10)
+ANALYSIS_VERSION = 16
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -192,6 +193,7 @@ LAYER_EXTENSIONS = ("XR_KHR_composition_layer_cylinder", "XR_KHR_composition_lay
 
 def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Analysis:
     path = Path(path)
+    package, version, label, activity, apk_info = _read_manifest_info(path)
     with zipfile.ZipFile(path) as z:
         names = z.namelist()
         abis = sorted({n.split("/")[1] for n in names if n.startswith("lib/") and n.count("/") >= 2})
@@ -212,6 +214,9 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
                                   for d in dexes)
         # video through Android's decoders (frame.hw_video_decode): Java MediaCodec, ExoPlayer/Media3, or libVLC
         media_codec = any(m in d for d in dexes for m in MEDIA_CODEC_MARKERS) or "libvlc.so" in libs
+        from ..patches.frame.unreal_obb_check import has_delivery_check
+
+        unreal_obb_delivery = any(has_delivery_check(d, package) for d in dexes)
         del dexes
         manifest = z.read("AndroidManifest.xml")
         lib_bytes = {}
@@ -234,7 +239,6 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         system_cfg = (z.read("assets/system.cfg").decode("utf-8", "replace")
                       if "assets/system.cfg" in names else "")
 
-    package, version, label, activity, apk_info = _read_manifest_info(path)
     libset = set(libs)
     engine = ("Unreal" if libset & {"libUE4.so", "libUnreal.so"} else "Unity" if "libunity.so" in libset
               else "CryEngine" if "libCrySystem.so" in libset or cry_project else "Other")
@@ -366,6 +370,7 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             "unity_split": unity_split,
             # Unreal CRC-checks the OBB before the game starts (frame.unreal_skip_obb_check, GitHub #159)
             "unreal_verify_obb": unreal_verify_obb(meta),
+            "unreal_obb_delivery": unreal_obb_delivery,
             # Unreal's Oculus module needs every OVRPlugin function it looks up (frame.unreal_ovrp_entrypoints)
             "unreal_ovrp_lookups": (ovrp_lookups(lib_bytes.get(engine_lib.rsplit("/", 1)[1], b""))
                                     if engine_lib and "libOVRPlugin.so" in libset else []),
