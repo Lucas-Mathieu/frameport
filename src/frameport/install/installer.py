@@ -148,7 +148,10 @@ def install(frame: Frame, plan: InstallPlan, reporter: Reporter) -> dict:
                 reporter.check_cancel()
                 reporter.progress(done / total, f"APK {done / 2**20:.0f}/{size / 2**20:.0f} MiB",
                                   speed=speed.text(done))
-            xfer.put(plan.apk, posixpath.join(incoming, "game.apk"), apk_cb)
+            if plan.apk.stat().st_size >= BIG_FILE:
+                upload_files(xfer, [(plan.apk, "game.apk", plan.apk.stat().st_size)], incoming, reporter, total)
+            else:
+                xfer.put(plan.apk, posixpath.join(incoming, "game.apk"), apk_cb)
             sent += plan.apk.stat().st_size
         if to_send:
             reporter.stage(f"Upload data ({len(to_send)} files)")
@@ -426,11 +429,11 @@ def upload_threads(value=None) -> int:
     from ..core import library
 
     if value is None:
-        value = library.setting("install.upload_threads", 2)
+        value = library.setting("install.upload_threads", 3)
     try:
         return max(1, min(8, int(value)))
     except (TypeError, ValueError, OverflowError):
-        return 2
+        return 3
 
 
 def _upload_parallel(frame, items, remote_root, reporter, total, sent, workers):
@@ -537,7 +540,8 @@ def transfer_link(frame: Frame, reporter: Reporter, need: int):
 
 
 def upload_files(frame: Frame, items: list[tuple[Path, str, int]], remote_root: str, reporter: Reporter,
-                 total: int, sent: int = 0, speed: Speed | None = None, workers: int | None = None) -> int:
+                 total: int, sent: int = 0, speed: Speed | None = None, workers: int | None = None,
+                 prefer_native: bool = True) -> int:
     """Upload (local, relative path, size) items under remote_root. Interruptible (Cancel, dropped connection) and
     resumable: finished files are skipped next time (the agent counts files already in incoming/), a cut-off big file
     continues from its .part. Returns bytes sent."""
@@ -553,7 +557,34 @@ def upload_files(frame: Frame, items: list[tuple[Path, str, int]], remote_root: 
         done = state["sent"] + extra
         reporter.progress(done / total, label, speed=speed.text(done))
     threads = min(upload_threads(workers), len(big))
-    if threads > 1 and hasattr(frame, "upload_session"):
+    native_done = False
+    if big and prefer_native and isinstance(frame, Frame):
+        from ..frame import native_upload
+
+        original = reporter
+        class ProgressReporter:
+            last = 0.0
+
+            def __getattr__(self, name):
+                return getattr(original, name)
+
+            def progress(self, fraction, label, **kwargs):
+                self.last = max(self.last, fraction)
+                original.progress(self.last, label, **kwargs)
+
+        reporter = ProgressReporter()  # fallback resumes in a different order; never move the progress bar backward
+        try:
+            state["sent"] = native_upload.upload(frame, big, remote_root, reporter, total, sent, max(threads, 1))
+            native_done = True
+        except Cancelled:
+            raise
+        except Exception as exc:  # native startup, authentication or transfer failure: retain the portable path
+            reporter.check_cancel()
+            reporter.log(f"OpenSSH unavailable or failed; resuming with Paramiko: {exc}")
+        speed.samples.clear()
+    if native_done:
+        pass
+    elif threads > 1 and hasattr(frame, "upload_session"):
         reporter.log(f"uploading large files with {threads} workers")
         state["sent"] = _upload_parallel(frame, big, remote_root, reporter, total, sent, threads)
         speed.samples.clear()

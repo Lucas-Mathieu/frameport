@@ -128,7 +128,8 @@ class SettingsView:
                               options=[ft.DropdownOption(str(n), str(n)) for n in range(1, 9)],
                               on_select=threads_changed)
         return ft.Column([launch, keep, video, parallel,
-                          C.meta(tr("Large files upload together. Default: 2. Lower this on a busy network.")),
+                          C.meta(tr("Large files upload together using OpenSSH when available. "
+                                    "Default: 3. Lower this on a busy network.")),
                           C.ghost(tr("Remove converted copies now"), ft.Icons.CLEANING_SERVICES_OUTLINED, clean,
                                   tooltip=tr("Your own game files aren't touched."))],
                          spacing=T.S2, horizontal_alignment=ft.CrossAxisAlignment.START)

@@ -10,13 +10,13 @@ from frameport.install import installer
 
 
 @pytest.mark.parametrize("value, expected", [(1, 1), (2, 2), (8, 8), (0, 1), (99, 8),
-                                             ("3", 3), ("bad", 2), (float("inf"), 2)])
+                                             ("3", 3), ("bad", 3), (float("inf"), 3)])
 def test_upload_threads_bounds(value, expected):
     assert installer.upload_threads(value) == expected
 
 
 def test_upload_threads_default_and_setting():
-    assert installer.upload_threads() == 2
+    assert installer.upload_threads() == 3
     library.set_setting("install.upload_threads", 8)
     assert installer.upload_threads() == 8
 
@@ -71,7 +71,7 @@ class Control:
         pytest.fail("the control connection must remain open")
 
 
-def test_default_two_workers_and_monotonic_aggregate_progress(monkeypatch, tmp_path):
+def test_two_workers_and_monotonic_aggregate_progress(monkeypatch, tmp_path):
     monkeypatch.setattr(installer, "BIG_FILE", 5)
     barrier = threading.Barrier(2)
     activity = {"active": 0, "peak": 0}
@@ -88,7 +88,7 @@ def test_default_two_workers_and_monotonic_aggregate_progress(monkeypatch, tmp_p
     frame = Control(action)
     events = []
     reporter = Reporter([events.append])
-    assert installer.upload_files(frame, items(tmp_path), "/incoming", reporter, 40) == 40
+    assert installer.upload_files(frame, items(tmp_path), "/incoming", reporter, 40, workers=2) == 40
     assert activity["peak"] == 2
     assert len(frame.sessions) == 2 and all(session.closed.is_set() for session in frame.sessions)
     assert sorted(remote for remote, _ in frame.calls) == [f"/incoming/obb/main-{n}.obb" for n in range(4)]
@@ -164,7 +164,7 @@ def test_parallel_upload_setting_options_and_persistence():
     app = SimpleNamespace(target=None, frame_state="disconnected")
     controls = SettingsView(app).installing().controls
     dropdown = next(control for control in controls if isinstance(control, ft.Dropdown))
-    assert dropdown.value == "2"
+    assert dropdown.value == "3"
     assert [option.key for option in dropdown.options] == [str(n) for n in range(1, 9)]
     dropdown.on_select(SimpleNamespace(control=SimpleNamespace(value="8")))
     assert library.setting("install.upload_threads") == 8

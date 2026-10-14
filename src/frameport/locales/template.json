@@ -781,7 +781,7 @@
  "KiB": "",
  "Language": "",
  "Language packs from the game's files": "",
- "Large files upload together. Default: 2. Lower this on a busy network.": "",
+ "Large files upload together using OpenSSH when available. Default: 3. Lower this on a busy network.": "",
  "Last build": "",
  "Last launch test's log": "",
  "Last launch test: passed": "",

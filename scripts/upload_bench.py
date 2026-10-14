@@ -3,11 +3,12 @@
     uv run python scripts/upload_bench.py --mib 512 --repeat 3 --json /tmp/uploads.json
     uv run python scripts/upload_bench.py --fast-link --remote-dir /path/on/sdcard --check-resume
 
-No production transport changes. The script uses a unique scratch folder, verifies SHA-256 outside the timed
+The script uses a unique scratch folder, verifies SHA-256 outside the timed
 transfer, and removes its own files afterwards. Native SCP/SFTP timings include startup; SSH streaming reports
 handshake separately. Windows-native Python and WSL must be measured separately.
 Use --methods app-files-1,app-files-2,sftp-files-1,sftp-files-2 to compare parallel file uploads.
 Both file methods accept worker counts 1, 2, 3, 4 and 8, using the same eight-file payload.
+app-files-N uses the production backend (OpenSSH preferred, Paramiko fallback); its log records the actual choice.
 """
 from __future__ import annotations
 
@@ -121,17 +122,24 @@ def stream_ssh(frame, key, command, writer, cipher=None):
                 process.stdin.close()
 
 
-def send(method, frame, local, remote, key, small, large=None):
+def send(method, frame, local, remote, key, small, large=None, logs=None):
     """Returns measured setup seconds (None when the native tool cannot expose handshake completion)."""
     t0 = time.monotonic()
-    if method.startswith("app-files-"):
+    if method.startswith(("app-files-", "paramiko-files-")):
         from frameport.core.events import Reporter
         from frameport.install.installer import upload_files
 
         workers = int(method.rsplit("-", 1)[1])
         with contextlib.closing(Frame(frame.target, frame.password).connect()) as transfer:
             items = [(path, path.name, path.stat().st_size) for path in large]
-            upload_files(transfer, items, remote, Reporter(), sum(size for _, _, size in items), workers=workers)
+            def record(event):
+                if event.kind == "log":
+                    if logs is not None:
+                        logs.append(event.message)
+                    print(f"  {event.message}", flush=True)
+            reporter = Reporter([record])
+            upload_files(transfer, items, remote, reporter, sum(size for _, _, size in items), workers=workers,
+                         prefer_native=not method.startswith("paramiko-files-"))
         return None  # worker handshakes overlap transfers; measure the production end-to-end operation
     if method.startswith("sftp-files-"):
         workers = min(int(method.rsplit("-", 1)[1]), len(large))
@@ -197,6 +205,7 @@ def send(method, frame, local, remote, key, small, large=None):
 
 METHODS = ("app", "paramiko-tuned", "ssh", "ssh-gcm", "ssh-chacha", "sftp", "scp", "app-tar", "ssh-tar",
            "app-files-1", "app-files-2", "app-files-3", "app-files-4", "app-files-8",
+           "paramiko-files-1", "paramiko-files-2", "paramiko-files-3", "paramiko-files-4", "paramiko-files-8",
            "sftp-files-1", "sftp-files-2", "sftp-files-3", "sftp-files-4", "sftp-files-8")
 
 
@@ -235,6 +244,30 @@ def check_resume(frame, local, remote, key):
             raise RuntimeError(f"resume checksum mismatch: {err}")
         results.append({"method": method, "offset": offset, "seconds": time.monotonic() - started,
                         "sha256_ok": True, "cancelled_app": True})
+    from frameport.core.events import Cancelled, Reporter
+    from frameport.install.installer import upload_files
+
+    root = remote + "-production"
+    items = [(local, "resume.obb", local.stat().st_size)]
+    report = Reporter()
+    report.subscribe(lambda event: report.cancelled.set()
+                     if event.kind == "progress" and event.fraction >= 0.5 else None)
+    try:
+        upload_files(frame, items, root, report, local.stat().st_size, workers=1)
+    except Cancelled:
+        pass
+    offset = frame.sftp.stat(root + "/resume.obb.part").st_size
+    if not 0 < offset < local.stat().st_size:
+        raise RuntimeError("production cancellation did not leave a partial file")
+    started = time.monotonic()
+    logs = []
+    upload_files(frame, items, root, Reporter([lambda event: logs.append(event.message)
+                                             if event.kind == "log" else None]), local.stat().st_size, workers=1)
+    code, out, err = frame.run(f"sha256sum {sh_quote(root + '/resume.obb')}")
+    if code or out.split()[0] != digest(local):
+        raise RuntimeError(f"production resume checksum mismatch: {err}")
+    results.append({"method": "production", "offset": offset, "seconds": time.monotonic() - started,
+                    "sha256_ok": True, "cancelled_production": True, "logs": logs})
     return results
 
 
@@ -339,13 +372,14 @@ def main():
                 size = sum(p.stat().st_size for p in small) if method.endswith("-tar") else local.stat().st_size
                 c0, t0 = cpu(), time.monotonic()
                 try:
-                    setup = send(method, frame, local, remote, key, small, large)
+                    row["logs"] = []
+                    setup = send(method, frame, local, remote, key, small, large, row["logs"])
                     elapsed, used = time.monotonic() - t0, cpu() - c0
                     row.update(bytes=size, total_s=elapsed, setup_s=setup, cpu_s=used,
                                total_MB_s=size / elapsed / 1e6,
                                payload_MB_s=size / (elapsed - setup) / 1e6 if setup is not None else None)
                     verify_start = time.monotonic()
-                    large_trial = method.startswith(("app-files-", "sftp-files-"))
+                    large_trial = method.startswith(("app-files-", "paramiko-files-", "sftp-files-"))
                     if method.endswith("-tar") or large_trial:
                         pattern = "*.obb" if large_trial else "*.bin"
                         _, out, _ = frame.run(f"cd {sh_quote(remote)} && sha256sum {pattern}")
