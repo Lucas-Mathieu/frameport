@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 163 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 164 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -11,7 +11,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 ## Groups
 
 - [Patches from OVRPort](#group-overport) (25)
-- [Steam Frame patches](#group-frame) (51)
+- [Steam Frame patches](#group-frame) (52)
 - [Game settings](#group-adapter) (66)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
@@ -58,6 +58,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Language packs from the game's files](#frame-langpacks) | `frame.langpacks` | Steam Frame patches |  |
 | [Launcher category (INFO → LAUNCHER)](#frame-launcher) | `frame.launcher` | Steam Frame patches | default |
 | [GL wrapper: OpenGL ES depth formats (Minecraft)](#frame-ltw_depth) | `frame.ltw_depth` | Steam Frame patches | default |
+| [Fix Lua startup crashes on Frame](#frame-luajit_pointers) | `frame.luajit_pointers` | Steam Frame patches |  |
 | [Declare Meta-only permissions](#frame-meta_permissions) | `frame.meta_permissions` | Steam Frame patches | 1 |
 | [Meta XR Audio: skip Quest telemetry class](#frame-metaxr_telemetry) | `frame.metaxr_telemetry` | Steam Frame patches | default |
 | [Clear android:debuggable](#frame-nodebug) | `frame.nodebug` | Steam Frame patches | 3 |
@@ -650,6 +651,19 @@ Stops a black picture in Minecraft launchers (for example QuestCraft).
 - **Source:** [patches/frame/ltw_depth.py](../src/frameport/patches/frame/ltw_depth.py)
 
 > Minecraft asks for desktop OpenGL's GL_DEPTH_COMPONENT32 depth textures. Some builds of LTW, the OpenGL-to-OpenGL ES wrapper in Minecraft launchers such as QuestCraft, pass that on unchanged; Quest's driver accepts it, the Frame's Mesa rejects it (GL_INVALID_OPERATION in glTexImage2D), so the depth buffer never exists and the picture stays black. LTW then loads OpenGL ES through a small shim that asks for GL_DEPTH_COMPONENT32F (or 24-bit) instead.
+
+### <a id="frame-luajit_pointers"></a>Fix Lua startup crashes on Frame
+
+Lets games with a verified older Lua engine get past a startup crash on the Frame.
+
+- `frame.luajit_pointers`
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested (on):** The bundled Lua engine rejects Frame's wider native pointers; use the compatible full-pointer engine while retaining the game's bindings.
+- **Suggested by launch-test signatures:**
+  - `lua-lightuserdata-pointer` (fatal): The Lua runtime rejected a pointer outside its supported address range.
+- **Source:** [patches/frame/luajit_pointers.py](../src/frameport/patches/frame/luajit_pointers.py)
+
+> Older xLua/LuaJIT engines reject native pointers outside their 47-bit range, causing a startup error and sometimes a second crash during Unity shutdown (e.g. BattleTalent). Uses a Lua engine that preserves full pointer values while keeping the game's original xLua bindings and native helpers. Applied only to the verified compatible library build.
 
 ### <a id="frame-meta_permissions"></a>Declare Meta-only permissions
 

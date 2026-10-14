@@ -6,6 +6,18 @@
 # with diagnostics. Launch tests and real play sessions (agent session_log, `frameport session`) are both matched.
 # Sources: every failure we hit porting 34 games to the Steam Frame (see docs/PLAYBOOK.md).
 signatures:
+  - id: lua-lightuserdata-pointer
+    pattern: 'bad light userdata pointer'
+    severity: fatal
+    diagnosis: The Lua runtime rejected a pointer outside its supported address range. In the verified older xLua build, valid wider Frame pointers trigger this failure; a scoped compatible engine is available. For other builds, inspect the rejected pointer before assuming this cause.
+    suggest: [frame.luajit_pointers]
+    supersedes: [native-crash]
+  - id: lua-startup-exit
+    pattern: '(?s)\A(?=.*libxlua\.so[^\r\n]*lj_err_throw)(?=.*(?:__cxa_finalize|exit\+\d+))(?=.*(?:Fatal signal 6|FORTIFY:))'
+    severity: error
+    diagnosis: An uncaught Lua error triggered process exit, followed by a crash during Unity cleanup. The mutex failure is secondary; capture the original Lua error before choosing a fix. This stack alone does not identify a pointer-range problem.
+    suggest: []
+    supersedes: [native-crash]
   - id: vrapi-frame-rejected
     pattern: 'OVRPortVrApi:\s+Unsupported frame flags or swap interval'
     severity: fatal

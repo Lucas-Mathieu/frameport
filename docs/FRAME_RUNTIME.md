@@ -84,7 +84,24 @@
 - Display 72 Hz by default in tests. Head pose is only tracked while the headset is worn; otherwise flags 0x3 and
   the session stays below FOCUSED.
 
+## Lua native pointer compatibility
+
+Frame's Android processes can map libraries above the lowest 2^47 bytes of address space. The verified xLua API 105
+engine in BattleTalent 4.7 rejects those otherwise valid pointers in `lua_pushlightuserdata`. This was isolated using
+the unchanged library from the source APK: a real allocation at `0x10000000` round-trips, but its own native `xlua_tag`
+pointer above 47 bits raises `bad light userdata pointer` and exits. With `frame.luajit_pointers`, both round-trip
+exactly. No game scripts or account checks are changed. This validates an address-layout compatibility requirement;
+the APK was not run on an actual Quest during this investigation.
+
+The patch is restricted to SHA-256 `6d5860e4a4f1cc2b05c600c63297ed467369739666edca79413fff4374ff2684`.
+It redirects only the Lua engine's public API to a pinned full-pointer LuaJIT, keeping the original xLua bindings,
+LuaSocket and game helpers. The patched build survives a 60 s headless launch and creates OpenXR swapchains.
+Early frame-rectangle errors and backend login errors remain in the capture; this does not verify rendering or play.
+An arbitrary `lj_err_throw` followed by Unity destructor failures does not prove this pointer issue: first capture the
+Lua error text. `Unknown Platform` also appears after this crash is fixed, so it was not the fatal cause here.
+
 ## Graphics stack
+
 - Explicit foveation injection probe (SteamOS 0.4.5, 20261007.6125817, Lepton 3.0.5, 2026-10-11):
   Batman's normal Steam environment requested the FDM Vulkan layer but supplied no `FDM_DEBUG` flag.
   Appending `debug` while preserving inherited flags showed `fdm_injection_CreateInstance: skipped`.

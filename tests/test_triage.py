@@ -17,6 +17,20 @@ LOG_BAD = ("""
 """)
 
 
+def test_lua_pointer_error_and_cleanup_stack_are_distinguished():
+    pointer = triage("PANIC: bad light userdata pointer", "EXITED")
+    finding = next(f for f in pointer.findings if f.id == "lua-lightuserdata-pointer")
+    assert finding.suggest == ["frame.luajit_pointers"] and finding.severity == "fatal"
+    cleanup = ("FORTIFY: pthread_mutex_lock called on a destroyed mutex\n"
+               "libc.so (__cxa_finalize+148)\nlibc.so (exit+24)\n"
+               "libxlua.so (lj_err_throw+428)\nFatal signal 6 (SIGABRT)\n")
+    result = triage(cleanup, "EXITED")
+    finding = next(f for f in result.findings if f.id == "lua-startup-exit")
+    assert finding.suggest == []  # unhandled Lua errors have other causes too
+    assert "lua-lightuserdata-pointer" not in {f.id for f in result.findings}
+    assert "lua-startup-exit" not in {f.id for f in triage("Unknown Platform\n" + LOG_OK, "RUNNING").findings}
+
+
 def test_healthy_log():
     r = triage(LOG_OK, "RUNNING", "com.example.game")
     assert r.verdict == "pass"
