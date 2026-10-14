@@ -11,6 +11,10 @@ TBXR also draws through multisampled render-to-texture (glFramebufferTexture2DMu
 glRenderbufferStorageMultisampleEXT) whatever its --msaa setting; on the Frame that framebuffer is incomplete
 (GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE, black eyes). The GL shim (libglshim.so, linked into the TBXR library) hands
 it single-sampled versions of both.
+
+GL4ES implements desktop GL draw calls, including client arrays and immediate-mode conversion. The shim's GLES
+draw exports must not take those calls away from GL4ES: doing so submits its untranslated arrays and stretches
+animated models into spikes (#191). Keep those five symbols private only in APKs that bundle GL4ES.
 """
 from __future__ import annotations
 
@@ -21,6 +25,8 @@ from . import artifact
 from .vrapi_bridge import SHIM
 
 VENDOR_LOADER = "libopenxr_loader_valve.so"
+GL4ES_DRAW_EXPORTS = ("glDrawArrays", "glDrawElements", "glDrawArraysInstanced",
+                     "glDrawElementsInstanced", "glDrawRangeElements")
 
 
 class TbxrVendor(Patch):
@@ -29,7 +35,8 @@ class TbxrVendor(Patch):
     description = ("Team Beef's ports (for example Lambda1VR, RTCWQuest) load an OpenXR library named after the "
                    "headset maker and pick their VR setup by maker; for \"valve\" they stop at start "
                    "(libopenxr_loader_valve.so not found) or take the Pico path. Adds that library and lets them take "
-                   "the Meta path.")
+                   "the Meta path. Keeps GL4ES in charge of its desktop OpenGL draw calls so animated models "
+                   "don't turn into stretched triangles.")
     order = 47
 
     def applies(self, a):
@@ -60,11 +67,25 @@ class TbxrVendor(Patch):
                 ctx.notes.append(f"GL shim loaded by {lib} (single-sampled render-to-texture)")
                 changed = True
         if changed or ws.has(ws.lib(SHIM)):
-            ws.put(ws.lib(SHIM), artifact(ws.abi, SHIM))
+            shim = artifact(ws.abi, SHIM)
+            if ws.has(ws.lib("libgl4es.so")):
+                shim, hidden = elf.hide_exports(shim, GL4ES_DRAW_EXPORTS)
+                if hidden:
+                    ctx.notes.append("GL4ES keeps its desktop GL draw calls (shim draw exports made private)")
+            if not ws.has(ws.lib(SHIM)) or ws.read_lib(SHIM) != shim:
+                ws.put(ws.lib(SHIM), shim)
+                changed = True
         if not ws.has(ws.lib(VENDOR_LOADER)):
             ws.put(ws.lib(VENDOR_LOADER), build_stub_library([], soname=VENDOR_LOADER))
             changed = True
         return changed
+
+    def validate(self, ctx: ApkContext):
+        ws = ctx.ws
+        if ws.abi != "arm64-v8a" or not ws.has(ws.lib("libgl4es.so")) or not ws.has(ws.lib(SHIM)):
+            return []
+        _, public = elf.hide_exports(ws.read_lib(SHIM), GL4ES_DRAW_EXPORTS)
+        return [("GL4ES handles desktop GL draw calls", not public, ", ".join(public))]
 
 
 register(TbxrVendor)

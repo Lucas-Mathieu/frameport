@@ -16,11 +16,12 @@ frame:
 adapter:
   sync_guard: 1
   surface_native: 1
+  fade_quad: 1
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
   overport_runtime: 3.4.3-23204ea
   known_good_sha256: 796d1cab08f614d72c50d9702974c719c0908f5de91183cfe02d1fd5eb09551a
-updated: '2026-10-10'
-min_app: 0.12.1
+updated: '2026-10-13'
+min_app: 1.1.0
 source_hint: Batman- Arkham Shadow

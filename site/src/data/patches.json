@@ -434,6 +434,11 @@
   "title": "GL wrapper: OpenGL ES depth formats (Minecraft)",
   "group": "Steam Frame patches"
  },
+ "frame.luajit_pointers": {
+  "anchor": "frame-luajit_pointers",
+  "title": "Fix Lua startup crashes on Frame",
+  "group": "Steam Frame patches"
+ },
  "frame.meta_permissions": {
   "anchor": "frame-meta_permissions",
   "title": "Declare Meta-only permissions",

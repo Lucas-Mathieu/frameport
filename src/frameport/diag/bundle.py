@@ -34,6 +34,7 @@ Created by FramePort {version} on {created}. Personal data was replaced by place
 | manifest.json | app / agent / tool versions, OS, which games are included, warnings |
 | app/app.log, app/jobs/*.log | the app's log and recent GUI job logs (build, install, launch test, ...) |
 | app/settings.json | library settings and catalog sources |
+| app/display.json | GUI versions, window state; Windows display modes, GPU drivers and display/device event metadata |
 | frame/info.json, frame/host.json | the Frame: SteamOS build, Lepton/Proton, OpenXR runtime + layers, podman, kernel"""
 """ keys |
 | games/<pkg>/entry.json | the library entry: analysis, recipe, build checks, installs, last launch test |
@@ -372,6 +373,12 @@ def collect(packages: list[str] | None, target=None, reporter: Reporter | None =
             red.add("source", d)
     w = _Writer(red)
     # app-wide
+    try:
+        from . import display
+
+        w.json("app/display.json", display.collect())
+    except Exception as exc:  # noqa: BLE001
+        w.warnings.append(f"display diagnostics: {exc}")
     for p in sorted(applog.logs_dir().glob("app.log*"))[:2]:
         w.text("app/" + p.name, _read_tail(p, 2 << 20))
     jobs = sorted(applog.jobs_dir().glob("*.log"))

@@ -37,6 +37,7 @@ def suggest(analysis: Analysis, use_catalog: bool = True) -> Recipe:
     elif entry:
         recipe.source = f"catalog ({entry.origin})"
         recipe.status, recipe.notes, recipe.title = entry.status, entry.notes, entry.title or recipe.title
+        recipe.as_is = entry.as_is
         why = f"Known-good recipe for {entry.title} (tested {entry.verified.get('date', '?')})."
         for pid in entry.overport_remove:
             recipe.patches.pop(pid, None)
@@ -88,7 +89,9 @@ def suggest(analysis: Analysis, use_catalog: bool = True) -> Recipe:
             recipe.notes = f"No 64-bit ARM code ({', '.join(analysis.abis)}): the Steam Frame can't run it."
         if not rift:
             _static_blockers(analysis, recipe)
-            _non_quest(analysis, recipe)
+    if not rift and (not entry or analysis.vr_kind == "none"):
+        # Saved recipes still need the flat-app build rules: no OVRPort, and APK fixes only when needed (#271).
+        _non_quest(analysis, recipe)
     if not rift and not entry and (analysis.extra or {}).get("frame_patched"):
         # already has FramePort's adapter (e.g. a PATCHED/ build): installing it unchanged is the safe default
         recipe.as_is = True
