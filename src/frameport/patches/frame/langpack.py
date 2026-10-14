@@ -34,6 +34,18 @@ def with_assets(lib: bytes) -> bytes:
     at += len(ASSETS_MARK)
     return lib[:at] + b"1" + lib[at + 1:]
 
+STUB_MARK = b"@FPASSETSTUB@"
+
+
+def with_stub(lib: bytes) -> bytes:
+    """Enable the empty asset-list / installed-status bypass without listing local files."""
+    at = lib.find(STUB_MARK + b"0")
+    if at < 0:
+        return lib
+    at += len(STUB_MARK)
+    return lib[:at] + b"1" + lib[at + 1:]
+
+
 # Every function native/langpack/langpack.c defines. The loader's own exports of these are hidden (see
 # elf.hide_exports) so lookups reach LIB first; tests/test_langpack.py keeps this list equal to the C source.
 EXPORTS = (
@@ -112,6 +124,7 @@ class AssetFiles(Patch):
                    "installed and answers their download request at once with the file's path; nothing is copied or "
                    "downloaded. Shares the language-pack library.")
     order = 33
+    flag_library = staticmethod(with_assets)
 
     def applies(self, a):
         extra = a.extra or {}
@@ -137,11 +150,11 @@ class AssetFiles(Patch):
             ws.put(ws.lib(LOADER), elf.add_needed(patched, LIB))
             ws.put(ws.lib(LIB), with_metadata(artifact(ws.abi, LIB), (ctx.analysis.version or "").strip()))
         lib = ws.read_lib(LIB)
-        flagged = with_assets(lib)
+        flagged = self.flag_library(lib)
         if flagged == lib:
             return False
         ws.put(ws.lib(LIB), flagged)
-        ctx.notes.append(f"content files listed as installed asset files by {LIB}")
+        ctx.notes.append(f"{self.title} enabled by {LIB}")
         return True
 
     def validate(self, ctx: ApkContext):
@@ -151,5 +164,36 @@ class AssetFiles(Patch):
         return [("Content files listed (asset-file library)", ASSETS_MARK + b"1" in ws.read_lib(LIB), LIB)]
 
 
+class AssetFilesStub(AssetFiles):
+    id = "frame.asset_files_stub"
+    title = "Asset-file service bypass"
+    description = ("Experimental bypass for a DLC manager blocked on Meta asset-file service errors "
+                   "at startup (e.g. PixelRipped 1995: Asset status error (code 100)). Returns an empty successful asset list and "
+                   "reports requested asset IDs as installed, with an empty file path. Does not supply DLC or "
+                   "change download requests. Enable only to test this startup failure; disable with "
+                   "FRAMEPORT_ASSET_FILES_STUB=0. Shares the language-pack library and needs no language packs.")
+    order = 34
+    experimental = True
+    flag_library = staticmethod(with_stub)
+
+    @property
+    def summary(self):
+        return ("Experimental bypass for a failed Meta asset-file check at startup. Reports an empty asset list and "
+                "installed status without a file path; does not provide DLC. Experimental.")
+
+    def applies(self, a):
+        return LOADER in a.libs and "arm64-v8a" in a.abis
+
+    def detect(self, a):
+        return None
+
+    def validate(self, ctx: ApkContext):
+        ws = ctx.ws
+        linked = ws.has(ws.lib(LOADER)) and LIB in elf.needed(ws.read_lib(LOADER))
+        enabled = ws.has(ws.lib(LIB)) and STUB_MARK + b"1" in ws.read_lib(LIB)
+        return [("Asset-file bypass linked and enabled", linked and enabled, LIB)]
+
+
+register(AssetFilesStub)
 register(LanguagePacks)
 register(AssetFiles)

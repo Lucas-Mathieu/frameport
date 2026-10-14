@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 164 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 165 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -11,7 +11,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 ## Groups
 
 - [Patches from OVRPort](#group-overport) (25)
-- [Steam Frame patches](#group-frame) (52)
+- [Steam Frame patches](#group-frame) (53)
 - [Game settings](#group-adapter) (66)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
@@ -47,6 +47,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [VrApi → OpenXR adapter (OVRPort)](#patch_vrapi_openxr) | `patch_vrapi_openxr` | Patches from OVRPort |  |
 | [FrameBridge OpenXR adapter](#frame-adapter) | `frame.adapter` | Steam Frame patches | default |
 | [Content files from the game's data](#frame-asset_files) | `frame.asset_files` | Steam Frame patches | 1 |
+| [Asset-file service bypass](#frame-asset_files_stub) | `frame.asset_files_stub` | Steam Frame patches |  |
 | [Skip Meta avatars](#frame-avatar_stub) | `frame.avatar_stub` | Steam Frame patches | 1 |
 | [bHaptics: skip the Bluetooth permission request](#frame-bhaptics_permission) | `frame.bhaptics_permission` | Steam Frame patches |  |
 | [BlazeRush: controllers without Meta avatars, own shader cache](#frame-blazerush) | `frame.blazerush` | Steam Frame patches | 1 |
@@ -510,6 +511,19 @@ Lets the game find extra content it keeps next to its data (for example Star War
 - **Source:** [patches/frame/langpack.py](../src/frameport/patches/frame/langpack.py)
 
 > Some games keep content in separate files next to their OBB (for example Star Wars: Tales from the Galaxy's Edge: its seasons and sound banks) and ask Meta's platform for them as asset files. OVRPort's platform loader doesn't know them, so the game waits for content that never arrives (black screen after loading). Lists the content files shipped with the game's data (*.pak) as installed and answers their download request at once with the file's path; nothing is copied or downloaded. Shares the language-pack library.
+
+### <a id="frame-asset_files_stub"></a>Asset-file service bypass
+
+Experimental bypass for a failed Meta asset-file check at startup. Reports an empty asset list and installed status without a file path; does not provide DLC. Experimental.
+
+- `frame.asset_files_stub` · experimental
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
+- **Suggested by launch-test signatures:**
+  - `meta-asset-status-error` (error): A DLC manager reports a Meta asset-file status error after VR starts (e.g.
+- **Source:** [patches/frame/langpack.py](../src/frameport/patches/frame/langpack.py)
+
+> Experimental bypass for a DLC manager blocked on Meta asset-file service errors at startup (e.g. PixelRipped 1995: Asset status error (code 100)). Returns an empty successful asset list and reports requested asset IDs as installed, with an empty file path. Does not supply DLC or change download requests. Enable only to test this startup failure; disable with FRAMEPORT_ASSET_FILES_STUB=0. Shares the language-pack library and needs no language packs.
 
 ### <a id="frame-avatar_stub"></a>Skip Meta avatars
 

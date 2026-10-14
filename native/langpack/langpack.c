@@ -300,6 +300,16 @@ static int assets_enabled(void) {
     return ((const volatile char *)g_assets_slot)[sizeof ASSETS_MARK - 1] == '1';
 }
 
+// Triage-only bypass for games blocked on Meta's unavailable asset-file service. No file paths are invented.
+#define STUB_MARK "@FPASSETSTUB@"
+__attribute__((used)) static char g_stub_slot[sizeof STUB_MARK + 1] = STUB_MARK "0";
+
+static int stub_enabled(void) {
+    const char *env = getenv("FRAMEPORT_ASSET_FILES_STUB");
+    if (env && *env) return *env == '1';
+    return ((const volatile char *)g_stub_slot)[sizeof STUB_MARK - 1] == '1';
+}
+
 static u64 hash_name(const char *name) {
     u64 h = 1469598103934665603ULL ^ 0x66;  // FNV-1a, seeded apart from the tags
     for (const char *p = name; *p; p++) {
@@ -754,6 +764,14 @@ EXPORT u64 ovr_LanguagePack_SetCurrent(const char *tag) {
 }
 
 EXPORT u64 ovr_AssetFile_GetList(void) {
+    if (stub_enabled()) {
+        msg_t *m = new_msg(MSG_ASSETFILE_GETLIST, 0);
+        if (!m) return 0;
+        u64 req = m->req;
+        fplog("AssetFile_GetList: stub, empty list");
+        post(m);
+        return req;
+    }
     u64 req = o_AssetFile_GetList();
     fplog("AssetFile_GetList (dispatcher request %llu)", (unsigned long long)req);
     if (req) {
@@ -772,6 +790,19 @@ EXPORT u64 ovr_AssetFile_GetList(void) {
 }
 
 EXPORT u64 ovr_AssetFile_StatusById(u64 id) {
+    if (stub_enabled()) {
+        msg_t *m = new_msg(MSG_ASSETFILE_STATUSBYID, 0);
+        if (!m) return 0;
+        u64 req = m->req;
+        m->has_det = 1;
+        m->det.id = id;
+        snprintf(m->det.type, sizeof m->det.type, "default");
+        snprintf(m->det.status, sizeof m->det.status, "installed");
+        snprintf(m->det.iap, sizeof m->det.iap, "free");
+        fplog("AssetFile_StatusById(%llu): stub, installed without a file", (unsigned long long)id);
+        post(m);
+        return req;
+    }
     fplog("AssetFile_StatusById(%llu)%s", (unsigned long long)id, (id >> 48) == 0x4650 ? " (ours)" : "");
     if ((id >> 48) == 0x4650) {
         pack_t packs[MAXP];

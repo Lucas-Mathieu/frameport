@@ -6,6 +6,11 @@
 # with diagnostics. Launch tests and real play sessions (agent session_log, `frameport session`) are both matched.
 # Sources: every failure we hit porting 34 games to the Steam Frame (see docs/PLAYBOOK.md).
 signatures:
+  - id: meta-asset-status-error
+    pattern: 'Asset status error\s+\(code 100\)'
+    severity: error
+    diagnosis: A DLC manager reports a Meta asset-file status error after VR starts (e.g. PixelRipped 1995). The asset-file check failed; the log does not identify the native call or asset ID. Try the experimental asset-file bypass (empty list, installed status with no file path); this does not supply DLC and has not been verified in the game.
+    suggest: [frame.asset_files_stub]
   - id: lua-lightuserdata-pointer
     pattern: 'bad light userdata pointer'
     severity: fatal

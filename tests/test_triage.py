@@ -474,3 +474,11 @@ def test_crash_after_the_headless_tracking_deadline_passes_a_launch_test():
     # no frames before the deadline: the game never ran
     no_frames = "\n".join(ln for ln in HEADLESS_END.splitlines() if "pacing:" not in ln)
     assert triage(no_frames, "EXITED", "ru.targem.blazerush", headless=True).verdict == "fail"
+
+
+def test_pixelripped_asset_status_error():
+    log = "E Unity : |||||||||| Asset status error  (code 100)\nE Unity : DLC_Manager:AssetStatusCallback(Message`1)\n"
+    result = triage(log, "RUNNING")
+    assert "meta-asset-status-error" in {f.id for f in result.findings}
+    assert "frame.asset_files_stub" in result.suggestions()
+    assert "meta-asset-status-error" not in {f.id for f in triage("Asset status OK\n", "RUNNING").findings}
