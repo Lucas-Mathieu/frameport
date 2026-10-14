@@ -1,6 +1,7 @@
 1a4dce5c4a6d0dfc5f20e55ac29e70c73cc2cc124c21ca6a7e1b316e6afb1c79  ./arm64-v8a/libVkLayer_fdm_darken.so
 5becb96ee86fbda0ce98c0e0fd064f8ba092314aceaa400e3dcc785705dc3c23  ./arm64-v8a/libVkLayer_fp_shaderfix.so
 e7554c6343ee2989b0a273ee6230e65c25bfe6499eefd00de19f5f0fee58754f  ./arm64-v8a/libfp_langpack.so
+69102b128e00fa1809489a7308e09c1505f563bf7091bbdd3fe5a58e4cc96c2c  ./arm64-v8a/libfp_luajit.so
 321da502e0f8f46f0880aad39fe6b84bdef88f925164568814cf704a1b31a577  ./arm64-v8a/libfp_ovrp.so
 40defdaddcda53bd2649eb48076fae1622bfc2bfc88e9e03c94fc8b45af2a4f2  ./arm64-v8a/libfp_ovrtrace.so
 0167c2fde5dfde62897f9d85afc4fc8e97784e988b5b8df6cea8c407240b3424  ./arm64-v8a/libfp_tkeys.so
@@ -20,6 +21,7 @@ b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe  ./hevc/COPYING
 4516971bbb2b635e19b14d2d37b9353962876f7de02043e7457327052c1fcbc0  ./hevc/manifest.json
 46c3dcad2c43cc30bea3b3680b362ed84a99c15d60714bbbbb422c80ecf90405  ./hevc/media_codecs_frameport.xml
 529ea35d5d82474afe9e09ad1216d269317f56dd24a05fb100fced52b7b4dbca  ./hevc/podman.py.txt
+6cda3076a8c09b31bb1f90da614ea89e7ee194589626eeac613e522849604e47  ./licenses/LuaJIT.txt
 1aa733117cf57ccff7cf23f0425dbfd73b0332a3ef1c905ceeca0ccd0449c4e0  ./linux-arm64/XR_APILAYER_FRAMEPORT_timefix.json
 28c2430a02bbd8902c5bfb9562c6fd0e318654f9e05c095bfeb94b0450ab1b07  ./linux-arm64/libxr_frameport_timefix.so
 b10b3a5c10c3339fc63fd9f6cb4d01ea29be11a863d0ebad1389ea69fd471940  ./linux-arm64-bin/fp_venc

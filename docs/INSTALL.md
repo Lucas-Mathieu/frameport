@@ -19,6 +19,9 @@ On first start FramePort downloads the tools it uses (Settings → Tools shows t
 
 ## First launch
 
+Starting FramePort again brings its existing window to the front. If a previous instance was left running after
+its window closed, FramePort recovers it automatically, including on Windows where the GUI lock cannot be read.
+
 FramePort isn't signed with a paid certificate, so the first start shows a warning:
 
 - **Windows:** "Windows protected your PC" → **More info** → **Run anyway**.
