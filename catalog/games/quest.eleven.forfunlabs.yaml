@@ -1,11 +1,16 @@
 package: quest.eleven.forfunlabs
 title: Eleven Table Tennis
-status: unsupported
-notes: Stops at the splash screen. The game needs Meta's online services after start, which aren't available on
-  the Frame.
+status: works
+notes: Works great for me, tried the tutorial and an online match. Quest 2 apk.
+tested_version: 0.436.37_2026.9.4.18.35.33.415
 engine: Unity
 xr: OpenXR
-pcvr_alternative: The PC VR (Rift) version works on the Frame through FramePort.
+adapter:
+  haptic_fix: 1
 verified:
-  date: '2026-10-10'
-  issue: 160
+  date: '2026-10-13'
+  known_good_sha256: f4d996db1c913639f8b981bf87834e053ee2d9267383da3c1a8372ba755e5ac8
+  app: 1.1.0
+  overport_cli: 1.2.5
+  issue: 267
+source_hint: quest.eleven.forfunlabs
