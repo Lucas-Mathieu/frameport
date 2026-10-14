@@ -825,6 +825,38 @@ def test_tbxr_vendor_on_lambda1vr():
     assert count == 1 and b"\0alve\0" in fixed and len(fixed) == len(xash)
 
 
+@pytest.mark.parametrize("gl4es", [True, False])
+def test_tbxr_shim_leaves_desktop_draws_to_gl4es(tmp_path, quest_manifest, gl4es):
+    """#191: the same shim must preserve GL4ES dispatch without removing other games' GLES hooks."""
+    from frameport.analysis import elf
+    from frameport.patches.frame import artifact
+    from frameport.patches.frame.tbxr_vendor import GL4ES_DRAW_EXPORTS
+
+    original = artifact("arm64-v8a", "libglshim.so")
+    patch = base.get("frame.tbxr_vendor")
+    a = _analysis(libs=["libxash.so"], extra={"tbxr_libs": ["libxash.so"]})
+    with ApkWorkspace(_apk(tmp_path, quest_manifest)) as ws:
+        ws.put(ws.lib("libglshim.so"), original)
+        if gl4es:
+            ws.put(ws.lib("libgl4es.so"), build_stub_library(["glDrawElements"], soname="libgl4es.so"))
+        ctx = base.ApkContext(ws, a, {}, Reporter(), {patch.id: {}})
+        if gl4es:
+            assert patch.validate(ctx)[0][1] is False
+        assert patch.apply(ctx)
+        shim = ws.read_lib("libglshim.so")
+        _, visible = elf.hide_exports(shim, GL4ES_DRAW_EXPORTS)
+        assert bool(visible) is not gl4es
+        if gl4es:
+            assert patch.validate(ctx)[0][1] is True
+            # Functions remain callable inside the shim; its GL queries and framebuffer fix stay intact.
+            assert elf.find_symbols(shim, GL4ES_DRAW_EXPORTS) == elf.find_symbols(original, GL4ES_DRAW_EXPORTS)
+            assert elf.find_symbols(shim, ["eglGetProcAddress", "glGetString", "glGetIntegerv"]) == \
+                elf.find_symbols(original, ["eglGetProcAddress", "glGetString", "glGetIntegerv"])
+        else:
+            assert shim == original
+        assert not patch.apply(ctx)
+
+
 def test_unity_user_presence_points_the_xr_plugin_at_the_shim(tmp_path, quest_manifest):
     """BONELAB: OVRPlugin reported the worn headset as not worn and the Marrow rig froze (no tracking, no controls)."""
     from frameport.analysis import elf

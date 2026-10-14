@@ -119,6 +119,20 @@ def test_crash_logcat_signatures():
     assert [(f.id, f.suggest) for f in r.findings] == [("swapchain-size-abort", ["frame.swapchain_limit"])]
 
 
+def test_tbxr_fdm_crash_is_identified_as_vr_teardown():
+    log = "F libc: Fatal signal 11 (SIGSEGV), fault addr 0x0 in AppThreadFunction\n"
+    crash = ("#00 libVkLayer_VALVE_fdm_injection.so (fdm_injection_xrDestroySwapchain+136)\n"
+             "#01 libopenxr_loader_generic.so (xrDestroySwapchain+2600)\n"
+             "#03 libxash.so (ovrRenderer_Destroy+44)\n"
+             "#04 libxash.so (TBXR_LeaveVR+76)\n")
+    r = triage(log, "EXITED", "com.drbeef.lambda1vr", crash=crash)
+    assert [f.id for f in r.findings] == ["tbxr-fdm-shutdown-crash"]
+    assert r.suggestions() == []  # no unverified graphics or foveation fix
+    assert [f.id for f in triage(log, "EXITED", crash=crash.replace("TBXR_LeaveVR", "OtherCall")).findings] == \
+        ["native-crash"]
+    assert not triage(crash, "RUNNING").findings  # symbol names alone are not a crash
+
+
 def test_ovrplugin_extension_probe_is_not_a_scene_game():
     probe = LOG_OK + "09-28 17:39:02.200  1147  1174 I OVRPlugin: Unavailable OpenXR extension: XR_FB_scene\n"
     assert "scene-missing" not in {f.id for f in triage(probe, "RUNNING", "com.example.game").findings}

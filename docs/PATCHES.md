@@ -847,7 +847,7 @@ Lets Team Beef ports (for example Lambda1VR) start on the Frame.
 - **Catalog games (1):** Lambda1VR.
 - **Source:** [patches/frame/tbxr_vendor.py](../src/frameport/patches/frame/tbxr_vendor.py)
 
-> Team Beef's ports (for example Lambda1VR, RTCWQuest) load an OpenXR library named after the headset maker and pick their VR setup by maker; for "valve" they stop at start (libopenxr_loader_valve.so not found) or take the Pico path. Adds that library and lets them take the Meta path.
+> Team Beef's ports (for example Lambda1VR, RTCWQuest) load an OpenXR library named after the headset maker and pick their VR setup by maker; for "valve" they stop at start (libopenxr_loader_valve.so not found) or take the Pico path. Adds that library and lets them take the Meta path. Keeps GL4ES in charge of its desktop OpenGL draw calls so animated models don't turn into stretched triangles.
 
 ### <a id="frame-unity_gl_shim"></a>GL shim for Unity (no multisampled render-to-texture)
 
