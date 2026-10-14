@@ -164,6 +164,7 @@ class FramePortApp:
             for key, value in window_geometry(library.setting("ui.window"), T.SCALE).items():
                 setattr(page.window, key, value)
             page.window.on_event = self._on_window_event
+            self._log_window("ready")
             if sys.platform == "win32" and (icon := G.window_icon(Path(assets_dir()))):
                 page.window.icon = str(icon)  # source runs: FramePort's icon instead of Flet's
         page.on_keyboard_event = self._on_key
@@ -263,10 +264,18 @@ class FramePortApp:
         self.activity.set_open(open_activity)
         self.render()
 
+    def _log_window(self, event: str) -> None:
+        if sys.platform == "win32":
+            from ..diag import display
+
+            display.record_window(event, self.page.window, theme=T.THEME, reduce_motion=self.reduce_motion)
+
     def _on_window_event(self, e) -> None:
         """Remember the window's size and position (once a resize/move ends; not while maximized or full screen) and
         whether it is maximized."""
         win, change = self.page.window, None
+        if e.type not in (ft.WindowEventType.MOVE, ft.WindowEventType.RESIZE):
+            self._log_window(getattr(e.type, "value", str(e.type)))
         if e.type == ft.WindowEventType.CLOSE:
             _stop_link_watch()  # also when maximized (that returns below)
         if e.type in (ft.WindowEventType.MAXIMIZE, ft.WindowEventType.UNMAXIMIZE):

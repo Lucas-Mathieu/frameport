@@ -1,6 +1,76 @@
 from frameport.apk import axml
 
 
+def test_missing_application_label_uses_activity_resource():
+    from conftest import build_axml
+
+    manifest = build_axml([
+        ("start", "manifest", [("package", "str", "org.example.game")]),
+        ("start", "application", [("debuggable", "bool", False)]),
+        ("start", "activity", [("name", "str", "Main"), ("label", "ref", 0x7F020000)]),
+        ("end", "activity"), ("end", "application"), ("end", "manifest"),
+    ])
+    fixed = axml.copy_activity_label_to_application(manifest)
+    x = axml.Axml(fixed)
+    app = next(el for el in x.elements() if el.name == "application")
+    label = next(a for a in app.attrs if x.string(a.name) == "label")
+    assert label.dtype == axml.TYPE_REFERENCE and label.value == 0x7F020000
+    assert len(fixed) == len(manifest) + 20 and x.get_bool("application", "debuggable") is False
+    original = axml.Axml(manifest)
+    activity = next(el for el in original.elements() if el.name == "activity")
+    new_activity = next(el for el in x.elements() if el.name == "activity")
+    assert manifest[activity.offset:activity.offset + activity.size] == fixed[
+        new_activity.offset:new_activity.offset + new_activity.size]
+    assert axml.copy_activity_label_to_application(fixed) is None
+
+
+def test_application_label_is_never_replaced():
+    from conftest import build_axml
+
+    for kind, value in [("str", "Original"), ("ref", 0x7F020001)]:
+        manifest = build_axml([
+            ("start", "manifest", []), ("start", "application", [("label", kind, value)]),
+            ("start", "activity", [("label", "str", "Other")]), ("end", "activity"),
+            ("end", "application"), ("end", "manifest"),
+        ])
+        assert axml.copy_activity_label_to_application(manifest) is None
+    assert axml.copy_activity_label_to_application(build_axml([
+        ("start", "manifest", []), ("start", "application", []), ("end", "application"),
+        ("end", "manifest"),
+    ])) is None
+
+
+def test_copied_label_preserves_resource_order_and_special_attribute_indices():
+    import struct
+
+    from conftest import build_axml
+
+    manifest = build_axml([
+        ("start", "manifest", []),
+        ("start", "application", [("theme", "ref", 0x0103000A), ("debuggable", "bool", False)]),
+        ("start", "activity", [("label", "str", "Game")]), ("end", "activity"),
+        ("end", "application"), ("end", "manifest"),
+    ])
+    x = axml.Axml(manifest)
+    ids = [0] * x.count
+    for name, resource in [("theme", 0x01010000), ("label", 0x01010001), ("debuggable", 0x0101000F)]:
+        ids[x.index(name)] = resource
+    resource_map = struct.pack("<HHI", 0x0180, 8, 8 + len(ids) * 4) + struct.pack(f"<{len(ids)}I", *ids)
+    pos = x.pool_off + x.pool_size
+    data = bytearray(manifest[:pos] + resource_map + manifest[pos:])
+    struct.pack_into("<I", data, 4, len(data))
+    x = axml.Axml(data)
+    app = next(el for el in x.elements() if el.name == "application")
+    # All three special indices point at the second attribute, which the insertion moves to third.
+    ext = app.offset + 16
+    struct.pack_into("<HHH", data, ext + 14, 2, 2, 2)
+    fixed = axml.copy_activity_label_to_application(bytes(data))
+    x = axml.Axml(fixed)
+    app = next(el for el in x.elements() if el.name == "application")
+    assert [x.string(a.name) for a in app.attrs] == ["theme", "label", "debuggable"]
+    assert struct.unpack_from("<HHH", fixed, app.offset + 16 + 14) == (3, 3, 3)
+
+
 def test_parse(quest_manifest):
     x = axml.Axml(quest_manifest)
     names = [e.name for e in x.elements()]

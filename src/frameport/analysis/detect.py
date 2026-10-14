@@ -10,6 +10,7 @@ from pathlib import Path
 from ..apk import axml
 from ..core.models import Analysis
 from . import elf
+from .luajit import xlua_47bit, xlua_sha256
 from .unity_split import split_build as unity_split_build
 
 logging.getLogger("pyaxmlparser").setLevel(logging.ERROR)
@@ -37,7 +38,8 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 #     libAndroidLauncher.so + a .cryproject (Climb 1 has no libCrySystem.so, GitHub #238) (2026-10)
 # 13: validate monolithic CryEngine projects/config, OBB filename formats and foveation cvar (The Climb, GitHub #238)
 # 14: bhaptics_permission (bHaptics asks for Android 12's BLUETOOTH_CONNECT: frame.bhaptics_permission, GitHub #235)
-ANALYSIS_VERSION = 14
+# 15: verified xLua/LuaJIT 47-bit lightuserdata engine (frame.luajit_pointers, GitHub #257)
+ANALYSIS_VERSION = 15
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -302,6 +304,8 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         debuggable=bool(axml.Axml(manifest).get_bool("application", "debuggable")),
         extra={
             "analysis_version": ANALYSIS_VERSION,
+            "xlua_47bit": xlua_47bit(lib_bytes.get("libxlua.so", b"")),
+            "xlua_sha256": xlua_sha256(lib_bytes.get("libxlua.so", b"")),
             "frame_patched": "libframe_settings.so" in libset,  # already has FramePort's FrameBridge adapter
             # Team Beef's TBXR ports pick their OpenXR path by headset maker (frame.tbxr_vendor): their libraries
             # the game asks Meta's platform for asset files (content shipped as separate files, frame.asset_files)

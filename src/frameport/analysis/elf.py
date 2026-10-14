@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import struct
 from functools import lru_cache
 
 from elftools.elf.dynamic import DynamicSection
@@ -159,6 +160,30 @@ def hide_exports(data: bytes, names) -> tuple[bytes, list[str]]:
             buf[at] &= 0x0F
             hidden.append(sym.name)
     return bytes(buf), sorted(hidden)
+
+
+def redirect_exports(data: bytes, names) -> tuple[bytes, list[str]]:
+    """Turn definitions into imports, so both dlsym and this ELF's relocations use a dependency's implementation.
+
+    Unlike hide_exports, this also redirects self-references through the PLT. Code and symbol indices stay put;
+    callers using direct branch instructions are NOT redirected and must be reviewed before using this operation.
+    ELF64, little endian only. Returns (data, definitions actually redirected).
+    """
+    if not is_elf(data) or not is_64bit(data) or data[5] != 1:
+        return data, []
+    sec = _elf(data).get_section_by_name(".dynsym")
+    if not isinstance(sec, SymbolTableSection):
+        return data, []
+    wanted = set(names)
+    buf, redirected = bytearray(data), []
+    for i, sym in enumerate(sec.iter_symbols()):
+        if (sym.name in wanted and sym["st_shndx"] != "SHN_UNDEF"
+                and sym["st_info"]["bind"] in ("STB_GLOBAL", "STB_WEAK")
+                and sym["st_info"]["type"] == "STT_FUNC"):
+            at = sec["sh_offset"] + i * (sec["sh_entsize"] or 24)
+            struct.pack_into("<HQQ", buf, at + 6, 0, 0, 0)  # shndx, value, size; keep GLOBAL and the name
+            redirected.append(sym.name)
+    return bytes(buf), sorted(redirected)
 
 
 def rename_imports(data: bytes, renames: dict[str, str]) -> tuple[bytes, list[str]]:

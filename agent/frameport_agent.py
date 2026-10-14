@@ -44,7 +44,7 @@ try:
 except ImportError:  # Windows: pc_revive loads this file for its VDF code only (GitHub #131)
     fcntl = None
 
-AGENT_VERSION = 85
+AGENT_VERSION = 86
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -902,6 +902,32 @@ def shortcut_appid(exe, title):
     return zlib.crc32((exe + title).encode("utf-8")) | 0x80000000
 
 
+class VdfMap(dict):
+    """Steam's KeyValues names are case-insensitive; keep their spelling when writing back (#263)."""
+
+    def _key(self, key):
+        return next((k for k in self if k.casefold() == key.casefold()), key)
+
+    def __contains__(self, key):
+        return super().__contains__(self._key(key))
+
+    def __getitem__(self, key):
+        return super().__getitem__(self._key(key))
+
+    def __setitem__(self, key, value):
+        super().__setitem__(self._key(key), value)
+
+    def get(self, key, default=None):
+        return super().get(self._key(key), default)
+
+    def setdefault(self, key, default=None):
+        return super().setdefault(self._key(key), default)
+
+    def update(self, *args, **kwargs):
+        for key, value in dict(*args, **kwargs).items():
+            self[key] = value
+
+
 def vdf_decode(data):
     pos = 0
 
@@ -914,7 +940,7 @@ def vdf_decode(data):
 
     def node():
         nonlocal pos
-        out = {}
+        out = VdfMap()
         while True:
             kind = data[pos]
             pos += 1

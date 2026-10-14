@@ -1,5 +1,7 @@
 import zipfile
 
+import pytest
+
 from frameport.analysis.stubgen import build_stub_library
 from frameport.apk.workspace import ApkWorkspace
 from frameport.core.events import Reporter
@@ -443,6 +445,53 @@ def test_android_app_without_vr_gets_no_vr_translation():
 
 
 
+@pytest.mark.parametrize("info_activity,sdl_clipboard", [(False, False), (True, False), (False, True)])
+def test_saved_flat_android_recipe_keeps_its_build_mode(monkeypatch, info_activity, sdl_clipboard):
+    """Saving Plezy as known-good must not start an empty OVRPort conversion (#271)."""
+    from frameport.core import library
+    from frameport.recommend import catalog, engine
+
+    analysis = _analysis(package="org.example.savedflat", engine="Other", xr="?", libs=[],
+                         has_info_category=info_activity, is_overport_output=False,
+                         extra={"size": 1, "vr_kind": "none", "media_codec": True, "sdl_java": sdl_clipboard})
+    original = engine.suggest(analysis, use_catalog=False)
+    original.status, original.notes = "issues", "Some videos have color artifacts."
+    game = {"package": analysis.package, "title": "Flat app", "analysis": analysis.to_dict(),
+            "recipe": library.recipe_to_dict(original)}
+    catalog.save_user_entry(catalog.entry_from_library(game))
+    restored = engine.suggest(analysis)
+    assert restored.source == "catalog (user)"
+    assert not restored.overport and restored.as_is == original.as_is
+    assert restored.patches == original.patches
+    assert restored.status == "issues" and original.notes in restored.notes
+    assert "frame.hw_video_decode" in restored.patches and not engine.warnings(restored)
+
+    # Existing affected entries recover when the next app update re-derives their saved recipe.
+    broken = library.recipe_to_dict(original)
+    broken.update(as_is=False, overport=True, source="catalog (user)")
+    data = {"settings": {"recipes.app_version": "0.0.0"},
+            "games": {analysis.package: {**game, "recipe": broken}}}
+    monkeypatch.setattr(library, "REFRESH_ON_UPDATE", True)
+    assert library._follow_catalog(data)
+    repaired = library.recipe_from_dict(data["games"][analysis.package]["recipe"])
+    assert not repaired.overport and repaired.as_is == original.as_is
+
+
+def test_saved_already_patched_android_recipe_keeps_install_as_is():
+    from frameport.core import library
+    from frameport.recommend import catalog, engine
+
+    analysis = _analysis(package="org.example.savedpatched", has_info_category=False,
+                         extra={"size": 1, "frame_patched": True})
+    original = engine.suggest(analysis, use_catalog=False)
+    assert original.as_is
+    game = {"package": analysis.package, "title": "Patched app", "analysis": analysis.to_dict(),
+            "recipe": library.recipe_to_dict(original)}
+    catalog.save_user_entry(catalog.entry_from_library(game))
+    restored = engine.suggest(analysis)
+    assert restored.as_is
+
+
 def test_patch_registry_is_complete_for_every_thread(monkeypatch):
     """A lookup from a second thread while the first is still importing the patch modules waits for them."""
     import threading
@@ -774,6 +823,38 @@ def test_tbxr_vendor_on_lambda1vr():
     assert b"\0OPENXR_HMD\0" in xash and b"\0meta\0" in xash
     fixed, count = elf.replace_rodata_string(xash, "meta", "alve")
     assert count == 1 and b"\0alve\0" in fixed and len(fixed) == len(xash)
+
+
+@pytest.mark.parametrize("gl4es", [True, False])
+def test_tbxr_shim_leaves_desktop_draws_to_gl4es(tmp_path, quest_manifest, gl4es):
+    """#191: the same shim must preserve GL4ES dispatch without removing other games' GLES hooks."""
+    from frameport.analysis import elf
+    from frameport.patches.frame import artifact
+    from frameport.patches.frame.tbxr_vendor import GL4ES_DRAW_EXPORTS
+
+    original = artifact("arm64-v8a", "libglshim.so")
+    patch = base.get("frame.tbxr_vendor")
+    a = _analysis(libs=["libxash.so"], extra={"tbxr_libs": ["libxash.so"]})
+    with ApkWorkspace(_apk(tmp_path, quest_manifest)) as ws:
+        ws.put(ws.lib("libglshim.so"), original)
+        if gl4es:
+            ws.put(ws.lib("libgl4es.so"), build_stub_library(["glDrawElements"], soname="libgl4es.so"))
+        ctx = base.ApkContext(ws, a, {}, Reporter(), {patch.id: {}})
+        if gl4es:
+            assert patch.validate(ctx)[0][1] is False
+        assert patch.apply(ctx)
+        shim = ws.read_lib("libglshim.so")
+        _, visible = elf.hide_exports(shim, GL4ES_DRAW_EXPORTS)
+        assert bool(visible) is not gl4es
+        if gl4es:
+            assert patch.validate(ctx)[0][1] is True
+            # Functions remain callable inside the shim; its GL queries and framebuffer fix stay intact.
+            assert elf.find_symbols(shim, GL4ES_DRAW_EXPORTS) == elf.find_symbols(original, GL4ES_DRAW_EXPORTS)
+            assert elf.find_symbols(shim, ["eglGetProcAddress", "glGetString", "glGetIntegerv"]) == \
+                elf.find_symbols(original, ["eglGetProcAddress", "glGetString", "glGetIntegerv"])
+        else:
+            assert shim == original
+        assert not patch.apply(ctx)
 
 
 def test_unity_user_presence_points_the_xr_plugin_at_the_shim(tmp_path, quest_manifest):
