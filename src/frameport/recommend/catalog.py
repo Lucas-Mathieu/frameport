@@ -55,7 +55,7 @@ class CatalogEntry:
     pcvr_remove: list[str] = field(default_factory=list)
     proton_env: dict = field(default_factory=dict)
     proton_tool: str = ""
-    as_is: bool = False  # Rift: the dump runs unchanged (e.g. a SteamVR build: no Revive)
+    as_is: bool = False  # install the APK or Rift dump unchanged; device and launch settings still apply
     verified: dict = field(default_factory=dict)
     updated: str = ""  # date of the last maintainer change without a new headset test (e.g. a fix from a report)
     min_app: str = ""  # oldest FramePort version this entry is for (remote entries for a newer app are skipped)

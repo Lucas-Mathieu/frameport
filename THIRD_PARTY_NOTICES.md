@@ -5,6 +5,7 @@ FramePort is GPL-3.0-only (see `LICENSE`). It includes or downloads the followin
 ## Included in this repository / the release bundles
 | Component | Where | License |
 |---|---|---|
+| LuaJIT (Lua engine for verified xLua pointer compatibility, github.com/LuaJIT/LuaJIT) | `artifacts/arm64-v8a/libfp_luajit.so`; pinned build in `native/luajit/build.py` | MIT (`native/luajit/COPYRIGHT`, included in bundles as `artifacts/licenses/LuaJIT.txt`) |
 | OVRPort VrApi → OpenXR adapter (`native/vrapi`, github.com/Android-XR-Bridge/OVRPort), with FramePort's changes | `native/vrapi-bridge/`, `artifacts/arm64-v8a/libvrapi.so` | GPL-3.0 (`native/vrapi-bridge/LICENSE.upstream`) |
 | OVRPort platform compatibility library (`native/platform`) | `native/platformcompat/`, `artifacts/arm64-v8a/libovrplatformcompat.so` | GPL-3.0; Meta Platform SDK headers under the Meta Platform Technologies SDK License (`native/platformcompat/licenses/OCULUS-PLATFORM-SDK.txt`) |
 | Khronos OpenXR SDK headers | used to build the native layers | Apache-2.0 / MIT (`native/vrapi-bridge/licenses/OPENXR-SDK.txt`) |

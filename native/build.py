@@ -380,6 +380,11 @@ def build_tlskeys(tc: Path):
          "-Wl,-z,max-page-size=16384", "tlskeys.c", "-llog", "-o", ART / "arm64-v8a/libfp_tkeys.so"], cwd=src)
 
 
+def build_luajit(tc: Path):
+    run([sys.executable, HERE / "luajit/build.py", "--clang-dir", tc / "bin",
+         "--out", ART / "arm64-v8a/libfp_luajit.so"])
+
+
 def build_dex():
     javac = shutil.which("javac")
     if not javac:
@@ -424,7 +429,7 @@ def write_sums():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", default="adapter,bridge,compat,langpack,glshim,eglfmt,glmv,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,zinkfix,foveation,ovrpshim,tlskeys,vrsettings,venc")
+    ap.add_argument("--only", default="adapter,bridge,compat,langpack,glshim,eglfmt,glmv,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,zinkfix,foveation,ovrpshim,tlskeys,luajit,vrsettings,venc")
     ap.add_argument("--ndk")
     args = ap.parse_args()
     parts = set(args.only.split(","))
@@ -438,9 +443,10 @@ def main():
              "zinkfix": lambda: build_zinkfix(tc),
              "foveation": lambda: build_foveation(tc),
              "ovrpshim": lambda: build_ovrpshim(tc), "tlskeys": lambda: build_tlskeys(tc),
+             "luajit": lambda: build_luajit(tc),
              "vrsettings": lambda: build_vrsettings(tc), "venc": lambda: build_venc(tc),
              "vroverlay_probe": lambda: build_vroverlay_probe(tc)}
-    for name in ("adapter", "bridge", "compat", "langpack", "glshim", "eglfmt", "glmv", "ovrtrace", "xrshim", "vkshim", "zinkfix", "foveation", "ovrpshim", "tlskeys", "dex", "xrlayer", "oculushmd", "vrsettings", "venc",
+    for name in ("adapter", "bridge", "compat", "langpack", "glshim", "eglfmt", "glmv", "ovrtrace", "xrshim", "vkshim", "zinkfix", "foveation", "ovrpshim", "tlskeys", "luajit", "dex", "xrlayer", "oculushmd", "vrsettings", "venc",
                  "vroverlay_probe"):
         if name in parts:
             log(f"build {name}")

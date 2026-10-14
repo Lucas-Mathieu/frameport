@@ -1,0 +1,22 @@
+package: com.polyarc.Moss2
+title: 'Moss: Book II'
+status: works
+notes: Just played the very begining but controlls worked.  Did nothing other than install it.
+tested_version: 1.0.3.149619
+engine: Unreal
+xr: VrApi
+alt_overport:
+- patch_remove_unreal_force_quit
+frame:
+- frame.hw_video_decode
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-12'
+  known_good_sha256: 686db536ced97d8a151c82955174ec01d67987c466ecd326d3deb557d8c4fd1d
+  app: 1.0.4
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 79
+  issue: 248
+source_hint: Moss- Book II
