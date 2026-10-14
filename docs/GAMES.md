@@ -12,6 +12,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | AllInOneSports | Quest | ✅ Works |  |
 | Arkio | Quest | ✅ Works |  |
 | Asgard's Wrath 2 | Quest | ✅ Works |  |
+| Assassin's Creed Nexus | Quest | ✅ Works |  |
 | Audica | Quest | ✅ Works |  |
 | BAM | Quest | ✅ Works |  |
 | BARTENDER VR SIMULATOR | Quest | ✅ Works |  |
@@ -133,7 +134,6 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | ZombielandVR | Quest | ✅ Works |  |
 | Ancient_Dungeon | Quest | ⚠️ Works with issues | Multiplayer isn't available (offline). |
 | Arcsmith | Quest | ⚠️ Works with issues | Right eye distorts during movement (unresolved; swap, tracking, Valve layers, depth and pacing ruled out). |
-| Assassin's Creed Nexus | Quest | ⚠️ Works with issues | Some launch warning text is still upside down; the rest of the UI is fixed by flip emulation. |
 | Does it Stack? | Quest | ⚠️ Works with issues | Mixed reality mode does not work (works on Demeo), everything else seems to be OK |
 | Dungeons of Eternity | Quest | ⚠️ Works with issues | It can not connect to servers |
 | End Space | Quest | ⚠️ Works with issues | Controls stop responding after the first mission loads. |
