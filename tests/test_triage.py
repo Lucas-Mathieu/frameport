@@ -17,6 +17,20 @@ LOG_BAD = ("""
 """)
 
 
+def test_lua_pointer_error_and_cleanup_stack_are_distinguished():
+    pointer = triage("PANIC: bad light userdata pointer", "EXITED")
+    finding = next(f for f in pointer.findings if f.id == "lua-lightuserdata-pointer")
+    assert finding.suggest == ["frame.luajit_pointers"] and finding.severity == "fatal"
+    cleanup = ("FORTIFY: pthread_mutex_lock called on a destroyed mutex\n"
+               "libc.so (__cxa_finalize+148)\nlibc.so (exit+24)\n"
+               "libxlua.so (lj_err_throw+428)\nFatal signal 6 (SIGABRT)\n")
+    result = triage(cleanup, "EXITED")
+    finding = next(f for f in result.findings if f.id == "lua-startup-exit")
+    assert finding.suggest == []  # unhandled Lua errors have other causes too
+    assert "lua-lightuserdata-pointer" not in {f.id for f in result.findings}
+    assert "lua-startup-exit" not in {f.id for f in triage("Unknown Platform\n" + LOG_OK, "RUNNING").findings}
+
+
 def test_healthy_log():
     r = triage(LOG_OK, "RUNNING", "com.example.game")
     assert r.verdict == "pass"
@@ -117,6 +131,20 @@ def test_crash_logcat_signatures():
              "(xrCreateSwapchain+424)\n")
     r = triage(log.replace("11 (SIGSEGV)", "6 (SIGABRT)"), "EXITED", "com.example.game", crash=abort)
     assert [(f.id, f.suggest) for f in r.findings] == [("swapchain-size-abort", ["frame.swapchain_limit"])]
+
+
+def test_tbxr_fdm_crash_is_identified_as_vr_teardown():
+    log = "F libc: Fatal signal 11 (SIGSEGV), fault addr 0x0 in AppThreadFunction\n"
+    crash = ("#00 libVkLayer_VALVE_fdm_injection.so (fdm_injection_xrDestroySwapchain+136)\n"
+             "#01 libopenxr_loader_generic.so (xrDestroySwapchain+2600)\n"
+             "#03 libxash.so (ovrRenderer_Destroy+44)\n"
+             "#04 libxash.so (TBXR_LeaveVR+76)\n")
+    r = triage(log, "EXITED", "com.drbeef.lambda1vr", crash=crash)
+    assert [f.id for f in r.findings] == ["tbxr-fdm-shutdown-crash"]
+    assert r.suggestions() == []  # no unverified graphics or foveation fix
+    assert [f.id for f in triage(log, "EXITED", crash=crash.replace("TBXR_LeaveVR", "OtherCall")).findings] == \
+        ["native-crash"]
+    assert not triage(crash, "RUNNING").findings  # symbol names alone are not a crash
 
 
 def test_ovrplugin_extension_probe_is_not_a_scene_game():
