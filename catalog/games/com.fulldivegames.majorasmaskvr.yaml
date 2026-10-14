@@ -1,0 +1,24 @@
+package: com.fulldivegames.majorasmaskvr
+title: Majora's Mask VR
+status: issues
+notes: 'The file select screen audio is "crunchy". Downloaded the Quest version here. Everything else works fine
+  just need controller rebinds I''m currently working on.
+
+
+  https://github.com/fulldivegames/Majoras-Mask-VR'
+tested_version: '0.36'
+engine: Other
+xr: OpenXR
+frame:
+- frame.sdl_clipboard
+adapter:
+  refresh_rate: 144.0
+verified:
+  date: '2026-10-13'
+  known_good_sha256: 220096c70fb515ec7b8db1cc7a9075836b4d09f7df63026908af3c30e9fdb7e5
+  app: 1.1.0
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 85
+  issue: 268
+source_hint: MMVR-Quest-0.36
