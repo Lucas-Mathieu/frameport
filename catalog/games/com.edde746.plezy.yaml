@@ -1,0 +1,37 @@
+package: com.edde746.plezy
+title: Plezy
+status: issues
+notes: I'm not sure where the issue lies, but in my brief testing i found some videos played with significant artifacting
+  and color issues.  Otherwise it seemed great when it worked.
+tested_version: 2.22.0
+engine: Other
+xr: '?'
+overport_remove:
+- patch_copy_libraries
+- patch_copy_ovrplugin_vrapi
+- patch_replace_icon_label
+- patch_fix_min_android_sdk
+- patch_generate_config
+- patch_remove_localized_names
+- patch_clean_up_frida
+- patch_oculus_unity
+- patch_oculus_unreal
+- patch_vr_metadata
+- patch_launcher_entry
+- patch_remove_uses_library
+- patch_fix_unreal_crash
+- patch_meta_xr_audio
+- patch_mark_as_debuggable
+- patch_mark_allow_backup
+frame:
+- frame.hw_video_decode
+as_is: true
+verified:
+  date: '2026-10-13'
+  known_good_sha256: 893ae7c01d3d7688b27cbf4e7fc1260fb617614baeaf378fe5ca0af41febc92f
+  app: 1.1.0
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 85
+  issue: 270
+source_hint: plezy
