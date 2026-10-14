@@ -10,6 +10,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Accounting+ | Quest | ✅ Works |  |
 | AgeOfJoy | Quest | ✅ Works |  |
 | AllInOneSports | Quest | ✅ Works |  |
+| Arkio | Quest | ✅ Works |  |
 | Asgard's Wrath 2 | Quest | ✅ Works |  |
 | Audica | Quest | ✅ Works |  |
 | BAM | Quest | ✅ Works |  |
@@ -28,6 +29,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Carve Snowboarding | Quest | ✅ Works |  |
 | Caves | Quest | ✅ Works |  |
 | Clockwork | Quest | ✅ Works |  |
+| COMPOUND | Quest | ✅ Works |  |
 | Cook-Out | Quest | ✅ Works |  |
 | Cosmodread | Quest | ✅ Works |  |
 | Creed | Quest | ✅ Works |  |
@@ -40,6 +42,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Down the Rabbit Hole | Quest | ✅ Works |  |
 | Drunkn Bar Fight | Quest | ✅ Works |  |
 | Drunkn Bar Fight 2 - Early Access | Quest | ✅ Works |  |
+| Eleven Table Tennis | Quest | ✅ Works |  |
 | Eleven: Table Tennis VR | PC VR | ✅ Works |  |
 | Espire 2 | Quest | ✅ Works |  |
 | FrenzyVR | Quest | ✅ Works |  |
@@ -68,6 +71,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Medieval Dynasty New Settlement | Quest | ✅ Works |  |
 | Metro Awakening | Quest | ✅ Works |  |
 | Mobile Suit Gundam: Silver Phantom | Quest | ✅ Works |  |
+| Moss: Book II | Quest | ✅ Works |  |
 | Munkr Funkr (The Legacy Days) | Quest | ✅ Works |  |
 | Nano | Quest | ✅ Works |  |
 | NEX Player | Quest | ✅ Works |  |
@@ -81,6 +85,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | PowerWash Simulator VR | Quest | ✅ Works |  |
 | QuestCraft | Quest | ✅ Works |  |
 | Racket: Nx | Quest | ✅ Works |  |
+| RacketPinball | Quest | ✅ Works |  |
 | RC Pilot Trainer | Quest | ✅ Works |  |
 | Retronika | Quest | ✅ Works |  |
 | Retropolis | Quest | ✅ Works |  |
@@ -89,6 +94,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Riven | Quest | ✅ Works |  |
 | Robo Recall | Quest | ✅ Works |  |
 | RUINSMAGUS | Quest | ✅ Works |  |
+| Shoot The Zombirds VR | Quest | ✅ Works |  |
 | Shores of Loci | Quest | ✅ Works |  |
 | SilentSlayer | Quest | ✅ Works |  |
 | Sniper Elite VR | Quest | ✅ Works |  |
@@ -145,7 +151,6 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Time Stall | Quest | ⚠️ Works with issues | Both eyes distort during movement (unresolved). |
 | Vermillion | Quest | ⚠️ Works with issues | Runs. |
 | WiiCompiled VR | Quest | ⚠️ Works with issues | To add a game: in FramePort's Files tab, upload your .wcgame file to this game's storage, folder Android/data/org.wiicompiled.quest/files/WiiCompiledOpenXRVR… |
-| Eleven Table Tennis | Quest | ❌ Doesn't run | Stops at the splash screen. |
 | Espire 1: VR Operative (Quest Edition) | Quest | ❌ Doesn't run | Mesa GL driver crash during texture upload. |
 | GOLF+ | Quest | ❌ Doesn't run | Black screen. |
 | HITMAN 3 VR: Reloaded | Quest | ❌ Doesn't run | Vulkan driver crash (freedreno), even without Valve layers. |
