@@ -50,6 +50,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Fruit Ninja | Quest | ✅ Works |  |
 | Fruit Salon | Quest | ✅ Works |  |
 | Genotype | Quest | ✅ Works |  |
+| Ghostbusters: Rise of the Ghost Lord | Quest | ✅ Works |  |
 | GORN2 | Quest | ✅ Works |  |
 | Gravity Lab | Quest | ✅ Works |  |
 | H.U.N.T | Quest | ✅ Works |  |
