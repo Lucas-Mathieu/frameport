@@ -1046,11 +1046,18 @@ def install_game(package: str, target: Target, reporter: Reporter, apk_only: boo
             else:
                 reporter.log("APK, game data and runtime configuration already current")
                 result = {"base": deployment["base"], "appid": deployment["appid"]}
+            art = None
             if update.artwork or update.shortcut:
-                target.update_steam_art(package, reporter, title=steam_title(entry))
+                art = target.update_steam_art(package, reporter, title=steam_title(entry))
                 library.update_game(package, lambda game: game.pop("steam_art_stale", None))
+            # The deployment can't tell whether Steam still has the shortcut (a connection lost during "Add to
+            # Steam", or Steam putting its old shortcuts.vdf back, GitHub #21/#41): check it every time. The agent
+            # restarts Steam only when the library entry really changes.
+            check_shortcut = not (art or {}).get("library")
+            if add_to_library and check_shortcut:
+                target.add_to_library([package], reporter)
             result["launch_test_required"] = update.launch_test
-            result["shortcut_required"] = False
+            result["shortcut_required"] = check_shortcut
             result["stage_seconds"] = reporter.stage_timings()
             _record_install(package, target.label, {"result": result, "time": time.time()})
             return result
@@ -1079,11 +1086,10 @@ def install_game(package: str, target: Target, reporter: Reporter, apk_only: boo
     preserve_data = apk_only or (optimized and deployment is not None and not update.data and not force)
     result = target.install(package, title, apk, data_dir, recipe, reporter, preserve_data,
                             data_files=entry.get("data_files"))
-    shortcut = not optimized or update.shortcut
-    if add_to_library and shortcut:
+    if add_to_library:  # also after a reinstall: the agent restarts Steam only when the entry changes
         target.add_to_library([package], reporter)
     result["launch_test_required"] = True
-    result["shortcut_required"] = shortcut
+    result["shortcut_required"] = True
     result["stage_seconds"] = reporter.stage_timings()
     if optimized and update.artwork:
         library.update_game(package, lambda game: game.pop("steam_art_stale", None))

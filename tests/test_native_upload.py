@@ -96,6 +96,20 @@ def test_native_batches_resume_reset_oversize_and_verify(tmp_path, monkeypatch):
     assert all(process.wait.called for process in processes)
 
 
+def test_native_complete_parts_are_only_renamed(tmp_path, monkeypatch):
+    """A .part as big as its file (left by a cancelled run) isn't sent again: sftp's reput refuses it."""
+    frame, items, files, commands, processes = setup_batch(tmp_path, monkeypatch)
+    files["/incoming/main.obb.part"] = 10
+    assert native.upload(frame, items, "/incoming", Reporter(), 20, 0, 3) == 20
+    assert len(processes) == 1 and "main.obb" not in commands[0] and commands[0].startswith("put ")
+    assert "main.obb.part" in frame.run.call_args.args[0]
+    files["/incoming/patch.obb.part"] = 10
+    commands.clear()
+    processes.clear()
+    assert native.upload(frame, items, "/incoming", Reporter(), 20, 0, 3) == 20
+    assert not processes and frame.run.call_count == 2
+
+
 def test_native_failure_does_not_promote_files(tmp_path, monkeypatch):
     frame, items, files, commands, processes = setup_batch(tmp_path, monkeypatch, code=1)
     with pytest.raises(OSError, match="OpenSSH SFTP failed"):

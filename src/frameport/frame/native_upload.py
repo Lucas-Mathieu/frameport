@@ -117,8 +117,11 @@ def upload(frame, items, remote_root, reporter, total, sent, workers):
             offset = 0
         offsets[rel] = progress[rel] = offset
         sizes[rel] = size
+        if offset == size:
+            continue  # complete from an earlier attempt (sftp's reput refuses a target of the same size): rename only
         group = min(groups, key=lambda group: sum(item[2] for item in group))
         group.append((path, rel, size))
+    groups = [group for group in groups if group]
     speed = Speed(total - sent - sum(offsets.values()))
     reporter.log(f"uploading large files with OpenSSH SFTP ({len(groups)} workers)")
     setup_started = time.monotonic()

@@ -62,10 +62,13 @@ def acquire(path: Path | None = None) -> bool:
     f.write(str(os.getpid()))
     f.flush()
     _held = f
-    import psutil
+    try:
+        import psutil
 
-    # Windows denies reading the locked byte, so another launch cannot read the PID from gui.lock itself.
-    write_atomic(_owner_file(path), json.dumps({"pid": os.getpid(), "created": psutil.Process().create_time()}))
+        # Windows denies reading the locked byte, so another launch cannot read the PID from gui.lock itself.
+        write_atomic(_owner_file(path), json.dumps({"pid": os.getpid(), "created": psutil.Process().create_time()}))
+    except Exception:  # noqa: BLE001  the lock is ours; a missing owner file only costs a later launch's recovery
+        pass
     return True
 
 

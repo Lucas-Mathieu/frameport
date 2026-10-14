@@ -44,7 +44,7 @@ try:
 except ImportError:  # Windows: pc_revive loads this file for its VDF code only (GitHub #131)
     fcntl = None
 
-AGENT_VERSION = 87
+AGENT_VERSION = 88
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -3984,9 +3984,11 @@ def configure_install(args, prep, moved):
     config_sync = args.get("config_sync") if isinstance(args.get("config_sync"), dict) else {}
     write_launcher(anchor, base, pkg, title, appid, lepton, args.get("env"), hw_video, gamepad, bool(config_sync))
     art_in = os.path.join(base, "incoming-artwork")
+    art_moved = False
     if args.get("consume_artwork") and os.path.isdir(art_in):
         shutil.rmtree(os.path.join(anchor, "artwork"), ignore_errors=True)
         shutil.move(art_in, os.path.join(anchor, "artwork"))
+        art_moved = True
     dep = {**previous, "package": pkg, "appid": int(appid), "base": base, "title": title,
            "tags": args.get("tags", previous.get("tags")) or [],
            "apk": args.get("apk_name", previous.get("apk", "game.apk")),
@@ -3997,9 +3999,14 @@ def configure_install(args, prep, moved):
     if previous.get("eye_base"):  # the runtime's eye size learned from an earlier start (device.config_sync)
         dep["eye_base"] = previous["eye_base"]
     dep["managed_config_files"] = new_managed
+    # An app before agent v86 records none of these: what it installed is unknown, so a newer PC mustn't skip work
+    # on the strength of an older record. Art the agent didn't replace keeps its record.
+    art_replaced = bool(args.get("consume_artwork")) and art_moved
     for key in ("configuration", "configuration_fp", "apk_recipe_fp", "source_version", "artwork_manifest"):
         if key in args:
             dep[key] = args[key]
+        elif key != "artwork_manifest" or art_replaced:
+            dep.pop(key, None)
     if args.get("obb_manifest") is not None:
         dep["data_manifest"] = args["obb_manifest"]
     if "data_manifest" in dep:
@@ -5269,8 +5276,8 @@ def cmd_set_settings(args):
             if k:
                 current[k] = v
     for k, v in (args.get("settings") or {}).items():
-        if not re.fullmatch(r"[a-z_]+", k) or not re.fullmatch(r"-?[0-9.]+", str(v)):
-            raise AgentError(f"bad setting {k}={v}")
+        if not re.fullmatch(r"[a-z_]+", k) or not re.fullmatch(r"-?(?:[0-9]+\.?[0-9]*|\.[0-9]+)", str(v)):
+            raise AgentError(f"bad setting {k}={v}")  # checked before anything is written
         current[k] = str(v)
     text = "".join(f"{k}={v}\n" for k, v in current.items())
     with open(conf, "w") as f:
@@ -5286,8 +5293,10 @@ def cmd_set_settings(args):
         settings = applied.get("settings") or {}
         for key, value in (args.get("settings") or {}).items():
             if key in settings:
-                old = settings[key]
-                settings[key] = float(value) if isinstance(old, float) else int(float(value))
+                number = float(value)
+                # keep the recorded type (the PC's fingerprint uses it); an int setting given 1.5 stays 1.5
+                settings[key] = number if isinstance(settings[key], float) or not number.is_integer() \
+                    else int(number)
         dep["configuration_fp"] = hashlib.sha256(json.dumps(applied, sort_keys=True).encode()).hexdigest()[:32]
         write_deployment(pkg, dep)
     return {"settings": current, "controller_models": models, "config_sync": synced}

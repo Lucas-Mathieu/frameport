@@ -52,7 +52,9 @@ def test_window_events_are_cached_without_running_queries(monkeypatch, caplog):
 ])
 def test_event_query_distinguishes_empty_results_from_failures(monkeypatch, response, status):
     def run(args, **kwargs):
-        assert args[:4] == ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive"]
+        assert args[0].lower().endswith(("powershell.exe", "powershell"))
+        assert args[1:4] == ["-NoLogo", "-NoProfile", "-NonInteractive"]
+        assert not any(k.upper() == "PSMODULEPATH" for k in kwargs["env"])  # pwsh 7's modules break 5.1
         assert kwargs["timeout"] == 5 and kwargs["creationflags"] == 0x08000000
         assert "-FilterXPath" in args[-1] and "-MaxEvents 60" in args[-1]
         assert ".Message" not in args[-1]  # event metadata, not unrelated free text or device IDs

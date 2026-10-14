@@ -133,9 +133,9 @@ def test_pipeline_configure_without_any_local_apk(monkeypatch):
     store_game(monkeypatch, game)
     target = Target(dep)
     result = pipeline.install_game(PKG, target, Reporter())
-    assert target.calls == ["configure"]
+    assert target.calls == ["configure", "shortcut"]
     assert result["launch_test_required"] is False
-    assert result["shortcut_required"] is False
+    assert result["shortcut_required"] is True
 
 
 def test_pipeline_noop_and_artwork_skip_build_and_install(monkeypatch):
@@ -143,10 +143,30 @@ def test_pipeline_noop_and_artwork_skip_build_and_install(monkeypatch):
     store_game(monkeypatch, game)
     target = Target(dep)
     result = pipeline.install_game(PKG, target, Reporter())
-    assert target.calls == [] and result["launch_test_required"] is False
+    # nothing to send, but Steam may have lost the shortcut since: the agent checks it (no restart if present)
+    assert target.calls == ["shortcut"] and result["launch_test_required"] is False
+    target.calls.clear()
     library.update_game(PKG, lambda entry: entry.update(steam_art_stale=True))
     pipeline.install_game(PKG, target, Reporter())
-    assert target.calls == ["artwork"]
+    assert target.calls == ["artwork", "shortcut"]
+
+
+def test_pipeline_artwork_that_rewrote_the_shortcut_is_not_added_twice(monkeypatch):
+    game, dep = game_and_dep()
+    store_game(monkeypatch, game)
+    target = Target(dep)
+    target.update_steam_art = lambda *a, **k: (target.calls.append("artwork"), {"library": True})[1]
+    library.update_game(PKG, lambda entry: entry.update(steam_art_stale=True))
+    result = pipeline.install_game(PKG, target, Reporter())
+    assert target.calls == ["artwork"] and result["shortcut_required"] is False
+
+
+def test_pipeline_cli_mode_asks_for_the_shortcut_check(monkeypatch):
+    game, dep = game_and_dep()
+    store_game(monkeypatch, game)
+    target = Target(dep)
+    result = pipeline.install_game(PKG, target, Reporter(), add_to_library=False)
+    assert target.calls == [] and result["shortcut_required"] is True
 
 
 def test_pipeline_changed_data_without_local_apk(monkeypatch, tmp_path):
@@ -158,10 +178,10 @@ def test_pipeline_changed_data_without_local_apk(monkeypatch, tmp_path):
     store_game(monkeypatch, game)
     target = Target(dep)
     result = pipeline.install_game(PKG, target, Reporter())
-    assert target.calls == ["data"] and result["launch_test_required"] is True
+    assert target.calls == ["data", "shortcut"] and result["launch_test_required"] is True
     target.calls.clear()
     pipeline.install_game(PKG, target, Reporter(), apk_only=True)
-    assert target.calls == []
+    assert target.calls == ["shortcut"]
 
 
 def installed_agent(monkeypatch, tmp_path):
@@ -201,6 +221,11 @@ def test_agent_configuration_preserves_apk_data_tags_and_ignores_staging(monkeyp
     # Live writes update the applied baseline, including resetting a deleted recipe override.
     agent.cmd_set_settings({"package": PKG, "settings": {"scale": 1.0}})
     assert agent.deployment(PKG)["configuration_fp"] == configuration_fingerprint({"patches": {}}, PKG)
+    settings_conf = (base / "settings.conf").read_text()
+    for bad in (".", "1.2.3", "-", "abc"):  # refused before anything is written
+        with pytest.raises(agent.AgentError):
+            agent.cmd_set_settings({"package": PKG, "settings": {"scale": bad}})
+    assert (base / "settings.conf").read_text() == settings_conf
 
 
 @pytest.mark.parametrize("failure", ["running", "missing", "different", "drive"])
@@ -338,6 +363,35 @@ def test_artwork_update_transfers_only_changed_slot(monkeypatch, tmp_path):
     assert calls == ["list_installed"]
 
 
+def test_artwork_update_without_a_recorded_manifest_starts_clean(monkeypatch, tmp_path):
+    """Installs before agent v86 have no artwork_manifest: an old portrait.jpg must not stay next to portrait.png."""
+    from frameport.artwork import sources, steam
+    from frameport.install import installer
+
+    portrait = tmp_path / "portrait.png"
+    portrait.write_bytes(b"portrait")
+    monkeypatch.setattr(steam, "steam_set_for", lambda package: {"portrait": portrait})
+    monkeypatch.setattr(sources, "icon_source", lambda package: "custom")
+    monkeypatch.setattr(installer, "send_icon_source", lambda *a: None)
+    monkeypatch.setattr(installer, "add_to_steam", lambda *a: {"state": "done"})
+    dep = {"package": PKG, "title": "Example", "anchor": "/frame/anchor"}
+    commands, puts = [], []
+
+    class Frame:
+        def agent(self, command, **args):
+            return {"games": [dep]} if command == "list_installed" else {"verified": True}
+
+        def run(self, command):
+            commands.append(command)
+
+        def put(self, local, remote, **kwargs):
+            puts.append(remote)
+
+    result = installer.update_steam_art(Frame(), PKG, Reporter(), title="Example")
+    assert commands[0] == "rm -rf -- '/frame/anchor/artwork'" and commands[1].startswith("mkdir -p")
+    assert puts == ["/frame/anchor/artwork/portrait.png"] and result["library"] is True
+
+
 def test_agent_artwork_manifest_requires_matching_uploaded_content(monkeypatch, tmp_path):
     agent, base, _ = installed_agent(monkeypatch, tmp_path)
     art = base / "artwork"
@@ -426,3 +480,23 @@ def test_apk_recipe_update_preserves_unchanged_source_data(monkeypatch, tmp_path
     result = pipeline.install_game(PKG, target, Reporter(), force=force)
     assert installed == [preserve]
     assert result["launch_test_required"] is True
+
+
+def test_agent_drops_records_an_older_app_did_not_send(monkeypatch, tmp_path):
+    """An app before agent v86 installs without fingerprints: a newer PC mustn't skip work on the old record."""
+    agent, base, dep = installed_agent(monkeypatch, tmp_path)
+    agent.write_deployment(PKG, {**dep, "configuration_fp": "old", "apk_recipe_fp": "old",
+                                 "artwork_manifest": {"portrait.jpg": "a" * 64}})
+    anchor = tmp_path / "Applications/quest-frame" / PKG
+    prep = {"base": str(base), "anchor": str(anchor), "appid": 42, "lepton": "/lepton"}
+    # no new art: the record of the art in place stays
+    agent.configure_install({"package": PKG, "title": "Example", "settings": {}}, prep, 0)
+    record = agent.deployment(PKG)
+    assert "configuration_fp" not in record and "apk_recipe_fp" not in record
+    assert record["artwork_manifest"] == {"portrait.jpg": "a" * 64}
+    # new art moved in without a manifest: its record is dropped too
+    (base / "incoming-artwork").mkdir()
+    (base / "incoming-artwork/portrait.png").write_bytes(b"new")
+    agent.configure_install({"package": PKG, "title": "Example", "settings": {}, "consume_artwork": True}, prep, 0)
+    assert "artwork_manifest" not in agent.deployment(PKG)
+    assert (anchor / "artwork/portrait.png").exists()

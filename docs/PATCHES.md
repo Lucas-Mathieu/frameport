@@ -855,7 +855,7 @@ Allows very large pictures (8K video, theaters) instead of quitting.
 
 Lets Team Beef ports (for example Lambda1VR) start on the Frame.
 
-- `frame.tbxr_vendor`
+- `frame.tbxr_vendor` · revision 2
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** Team Beef port: it picks its OpenXR setup by headset maker, which the Frame reports as "valve".
 - **Catalog games (1):** Lambda1VR.

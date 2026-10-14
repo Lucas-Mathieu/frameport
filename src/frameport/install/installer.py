@@ -63,8 +63,9 @@ def update_existing(frame: Frame, entry: dict, deployment: dict, plan, recipe: R
                     reporter: Reporter, manifest: dict | None = None) -> dict:
     """No local converted APK is needed for runtime/data updates to a matching deployed build."""
     args = configuration_args(entry, recipe)
+    # the library's current Steam tags (user tags, genres): the shortcut check after this update writes them
     args.update(package=entry["package"], title=entry.get("title") or entry["package"],
-                apk_sha256=deployment["sha256"])
+                apk_sha256=deployment["sha256"], tags=_tags(entry["package"]))
     if plan.data:
         reporter.stage("Check game data")
         prep = frame.agent("prepare", package=entry["package"], title=args["title"])
@@ -79,8 +80,7 @@ def update_existing(frame: Frame, entry: dict, deployment: dict, plan, recipe: R
                 reporter.stage("Upload changed game data")
                 upload_files(xfer, pending, prep["incoming"], reporter, max(need, 1))
         args.update(obb_manifest=manifest, existing_only=True, consume_artwork=False,
-                    apk_name=deployment.get("apk", "game.apk"),
-                    tags=deployment.get("tags") or [])
+                    apk_name=deployment.get("apk", "game.apk"))
         reporter.stage("Finalize game data")
         return frame.agent("finalize", **args)
     reporter.stage("Apply game configuration")
@@ -710,7 +710,8 @@ def update_steam_art(frame: Frame, package: str, reporter: Reporter, title: str 
     """Replace an installed game's Steam library art with the current artwork (after the user picked new art):
     the art set goes to the game's anchor, then the shortcut is rewritten (Steam restarts once). `title`: the game's
     name in the library; a different name on the Frame is renamed first (agent v77 `rename`: the shortcut keeps its
-    appid, so Play, grid art and saves stay). Placeholder art shows the name, so it's sent again too."""
+    appid, so Play, grid art and saves stay). Placeholder art shows the name, so it's sent again too.
+    The result has `library: True` when the shortcut was rewritten too (else the caller still checks it)."""
     from ..artwork.steam import steam_set_for
 
     dep = next((d for d in frame.agent("list_installed")["games"] if d.get("package") == package), None)
@@ -727,15 +728,19 @@ def update_steam_art(frame: Frame, package: str, reporter: Reporter, title: str 
     art = steam_set_for(package)
     if not art:
         if renamed:
-            return add_to_steam(frame, [package], reporter)
+            return {**(add_to_steam(frame, [package], reporter) or {}), "library": True}
         raise RuntimeError("no artwork to send")
     manifest = art_manifest(package, art)
     previous = dep.get("artwork_manifest") or {}
     if manifest == previous:
         reporter.log("Steam artwork already current; not re-sending")
-        return add_to_steam(frame, [package], reporter) if renamed else {"unchanged": True}
+        return {**(add_to_steam(frame, [package], reporter) or {}), "library": True} if renamed else {"unchanged": True}
     reporter.stage("Artwork for the Steam library")
     remote = posixpath.join(dep["anchor"], "artwork")
+    if not previous:
+        # Unrecorded art (installs before agent v86): what's in the folder is unknown, and an old portrait.jpg next
+        # to a new portrait.png would be picked at random for the Steam grid. Start clean as before; all is sent.
+        frame.run(f"rm -rf -- {sh_quote(remote)}")
     frame.run(f"mkdir -p {sh_quote(remote)}")
     for name in previous.keys() - manifest.keys():
         # Deployment records are data, not shell paths. Never act on an unexpected name.
@@ -749,7 +754,7 @@ def update_steam_art(frame: Frame, package: str, reporter: Reporter, title: str 
         send_icon_source(frame, package, remote)
     frame.agent("record_artwork", package=package, manifest=manifest)
     reporter.check("Steam artwork", True, ", ".join(sorted(art)))
-    return add_to_steam(frame, [package], reporter)
+    return {**(add_to_steam(frame, [package], reporter) or {}), "library": True}
 
 
 def add_to_steam(frame: Frame, packages: list[str], reporter: Reporter, wait: float = 120) -> dict:

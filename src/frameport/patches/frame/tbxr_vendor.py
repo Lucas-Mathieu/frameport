@@ -38,6 +38,7 @@ class TbxrVendor(Patch):
                    "the Meta path. Keeps GL4ES in charge of its desktop OpenGL draw calls so animated models "
                    "don't turn into stretched triangles.")
     order = 47
+    revision = 2  # 2: GL4ES keeps its draw calls (#191). Ports without GL4ES rebuild to the same APK (nothing re-sent)
 
     def applies(self, a):
         return bool((a.extra or {}).get("tbxr_libs")) and "arm64-v8a" in a.abis

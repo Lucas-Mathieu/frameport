@@ -127,3 +127,15 @@ def test_claim_recovers_a_legacy_windows_holder_without_readable_pid(monkeypatch
     monkeypatch.setattr(instance, "end_leftover", lambda pid: ended.append(pid))
     assert instance.claim(lambda: False)
     assert ended == [123]
+
+
+def test_lock_is_kept_when_the_owner_file_cannot_be_written(tmp_path, monkeypatch):
+    """An antivirus or a read-only file must not stop the GUI from starting once it holds the lock."""
+    def fail(*args, **kwargs):
+        raise PermissionError("locked by another program")
+
+    monkeypatch.setattr(instance, "write_atomic", fail)
+    try:
+        assert instance.acquire(tmp_path / "gui.lock")
+    finally:
+        instance.release()

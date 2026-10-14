@@ -154,10 +154,14 @@ try {
 
 
 def _recent_events() -> dict:
+    from ..updates import _powershell
+
     try:
-        result = subprocess.run(["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+        # Windows PowerShell 5.1 without pwsh's PSModulePath: started from pwsh 7 it can't load Get-WinEvent's module
+        exe, env = _powershell()
+        result = subprocess.run([exe, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
                                  _EVENT_SCRIPT], capture_output=True, encoding="utf-8", errors="replace",
-                                timeout=EVENT_TIMEOUT, creationflags=0x08000000)
+                                timeout=EVENT_TIMEOUT, creationflags=0x08000000, env=env)
         if result.returncode:
             return {"status": "error", "error": (result.stderr or "PowerShell query failed")[-512:]}
         data = json.loads(result.stdout.lstrip("\ufeff"))
