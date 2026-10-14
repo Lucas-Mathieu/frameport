@@ -1,0 +1,19 @@
+package: com.NiVision.RacketPinball
+title: RacketPinball
+status: works
+tested_version: '2.06'
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-13'
+  known_good_sha256: 80e850f81c24112e8c35a560a333846163a3e783da391290db7663b9015ca58f
+  app: 1.0.4
+  overport_cli: 1.2.5
+  issue: 262
+source_hint: RacketPinball
