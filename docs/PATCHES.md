@@ -110,7 +110,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [360° sharpness](#adapter-equirect_res) | `adapter.equirect_res` | Game settings |  |
 | [360° 3D](#adapter-equirect_stereo) | `adapter.equirect_stereo` | Game settings |  |
 | [Per-eye diagnostics (log)](#adapter-eye_debug) | `adapter.eye_debug` | Game settings |  |
-| [Draw fades over the picture](#adapter-fade_quad) | `adapter.fade_quad` | Game settings |  |
+| [Draw fades over the picture](#adapter-fade_quad) | `adapter.fade_quad` | Game settings | 2 |
 | [Fix upside-down menus](#adapter-flip_emul) | `adapter.flip_emul` | Game settings |  |
 | [Rotate panels 180°](#adapter-flip_quads) | `adapter.flip_quads` | Game settings |  |
 | [Don't pause on short interruptions](#adapter-focus_hold) | `adapter.focus_hold` | Game settings | 4 |
@@ -1378,6 +1378,7 @@ For games whose fades to black don't show, so you see the level loading (for exa
 - **Options:**
   - Value: int, default `0`.
   - Game settings → Picture → "Draw fades over the picture" (advanced).
+- **Catalog games (2):** Batman: Arkham Shadow, Marvel's Iron Man VR.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > Games that fade to black by dimming their picture with a layer color scale (XR_KHR_composition_layer_color_scale_bias, for example Batman: Arkham Shadow's loading screens) can show the level loading instead of black on the Frame. FrameBridge then draws the fade itself: a black quad in front of the eyes whose opacity follows the game's dimming. 2 also removes the game's own dimming (if both show, the fade is doubled).
