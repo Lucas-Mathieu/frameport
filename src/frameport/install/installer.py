@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import contextlib
 import posixpath
+import threading
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..artwork import fetch as artwork
 from ..build import sha256
-from ..core.events import Reporter
+from ..core.events import Cancelled, Reporter
 from ..core.models import Recipe, data_manifest
 from ..frame.connection import Frame, sh_quote
 from ..patches import base
@@ -39,6 +41,56 @@ def install_context(recipe: Recipe) -> base.InstallContext:
     return ctx
 
 
+def configuration_args(entry: dict, recipe: Recipe) -> dict:
+    """One complete configuration for both an APK install and the configuration-only path."""
+    from ..game_update import configuration, configuration_fingerprint
+
+    ctx = install_context(recipe)
+    original = entry["recipe"]
+    build = entry.get("build") or {}
+    applied = configuration(original, recipe.package, build.get("superseded"))
+    settings = applied["settings"]
+    return dict(settings=settings, files={k: v.decode() if isinstance(v, bytes) else v
+                                        for k, v in ctx.files.items()}, env=ctx.env,
+                flatscreen=show_window(ctx, _flatscreen(recipe.package)), config_sync=ctx.config_sync,
+                recipe={"patches": sorted(recipe.patches), "source": recipe.source, "alt": recipe.use_alt},
+                configuration=applied,
+                configuration_fp=configuration_fingerprint(original, recipe.package, build.get("superseded")),
+                apk_recipe_fp=build.get("apk_recipe_fp"), source_version=build.get("source_version"))
+
+
+def update_existing(frame: Frame, entry: dict, deployment: dict, plan, recipe: Recipe,
+                    reporter: Reporter, manifest: dict | None = None) -> dict:
+    """No local converted APK is needed for runtime/data updates to a matching deployed build."""
+    args = configuration_args(entry, recipe)
+    args.update(package=entry["package"], title=entry.get("title") or entry["package"],
+                apk_sha256=deployment["sha256"])
+    if plan.data:
+        reporter.stage("Check game data")
+        prep = frame.agent("prepare", package=entry["package"], title=args["title"])
+        manifest = manifest or {}
+        pending = [(Path(entry["data_dir"]) / rel, f"obb/{rel}", size)
+                   for rel, size in manifest.items() if prep["existing_obb"].get(rel) != size]
+        need = sum(size for _, _, size in pending)
+        if need > prep["free_bytes"] - (1 << 30):
+            raise RuntimeError("not enough space on the Frame for the changed game data + 1 GiB headroom")
+        with transfer_link(frame, reporter, need) as xfer:
+            if pending:
+                reporter.stage("Upload changed game data")
+                upload_files(xfer, pending, prep["incoming"], reporter, max(need, 1))
+        args.update(obb_manifest=manifest, existing_only=True, consume_artwork=False,
+                    apk_name=deployment.get("apk", "game.apk"),
+                    tags=deployment.get("tags") or [])
+        reporter.stage("Finalize game data")
+        return frame.agent("finalize", **args)
+    reporter.stage("Apply game configuration")
+    result = frame.agent("configure", **args)
+    if result.get("deployment", {}).get("configuration_fp") != args["configuration_fp"]:
+        raise RuntimeError("the Frame did not confirm the applied configuration")
+    reporter.check("Game configuration", True, "applied; used from the game's next start")
+    return result
+
+
 def local_data_manifest(data_dir: Path | None, files: list[str] | None = None) -> dict[str, int]:
     return data_manifest(data_dir, files)
 
@@ -66,6 +118,9 @@ class Speed:
 
 
 def install(frame: Frame, plan: InstallPlan, reporter: Reporter) -> dict:
+    from ..core import library
+
+    entry = library.game(plan.package)
     reporter.stage("Prepare Frame")
     apk_sha = sha256(plan.apk)
     prep = frame.agent("prepare", package=plan.package, title=plan.title, dest=plan.dest,
@@ -102,19 +157,25 @@ def install(frame: Frame, plan: InstallPlan, reporter: Reporter) -> dict:
         elif manifest:
             reporter.log("game data already on the Frame; not re-sending")
 
-    artwork.fetch(plan.package, plan.apk)
-    upload_steam_art(frame, plan.package, prep["base"], reporter)
+    artwork_manifest = None
+    if not prep.get("installed") or (entry or {}).get("steam_art_stale"):
+        artwork.fetch(plan.package, plan.apk)
+        artwork_manifest = upload_steam_art(frame, plan.package, prep["base"], reporter)
 
     reporter.stage("Finalize install")
     ctx = install_context(plan.recipe)
+    config = configuration_args(entry, plan.recipe) if entry else dict(
+        settings=ctx.adapter_settings, files={k: v.decode() if isinstance(v, bytes) else v
+                                            for k, v in ctx.files.items()}, env=ctx.env,
+        flatscreen=show_window(ctx, _flatscreen(plan.package)), config_sync=ctx.config_sync or None,
+        recipe={"patches": sorted(plan.recipe.patches), "source": plan.recipe.source, "alt": plan.recipe.use_alt})
+    if artwork_manifest is not None:
+        config["artwork_manifest"] = artwork_manifest
     result = frame.agent(
         "finalize", package=plan.package, title=plan.title, dest=plan.dest, apk_sha256=apk_sha,
         tags=_tags(plan.package),
-        apk_name=plan.apk.name, settings=ctx.adapter_settings,
-        files={k: v.decode() if isinstance(v, bytes) else v for k, v in ctx.files.items()}, env=ctx.env,
-        obb_manifest=manifest or None, flatscreen=show_window(ctx, _flatscreen(plan.package)),
-        config_sync=ctx.config_sync or None,
-        recipe={"patches": sorted(plan.recipe.patches), "source": plan.recipe.source, "alt": plan.recipe.use_alt},
+        apk_name=plan.apk.name, obb_manifest=manifest if not plan.apk_only else None,
+        preserve_data=plan.apk_only, consume_artwork=artwork_manifest is not None, **config,
     )
     reporter.log(f"installed at {result['base']} (Steam shortcut id {result['appid']})")
     log_controller_models(result.get("controller_models"), reporter)
@@ -356,8 +417,100 @@ def ensure_proton(frame: Frame, reporter: Reporter, tool: str | None = None, tim
     raise RuntimeError(f"{name} didn't finish installing on the Frame in time; check Steam's downloads on the Frame")
 
 
-BIG_FILE = 8 << 20  # bigger files go one by one (resumable); smaller ones are streamed in batches
+BIG_FILE = 8 << 20  # bigger files use resumable SFTP; smaller ones are streamed in batches
 BATCH_BYTES, BATCH_FILES = 256 << 20, 2000
+
+
+def upload_threads(value=None) -> int:
+    """Bound the saved preference; the one-job FIFO still bounds concurrent installs."""
+    from ..core import library
+
+    if value is None:
+        value = library.setting("install.upload_threads", 2)
+    try:
+        return max(1, min(8, int(value)))
+    except (TypeError, ValueError, OverflowError):
+        return 2
+
+
+def _upload_parallel(frame, items, remote_root, reporter, total, sent, workers):
+    """Each worker owns one transport; failures stop the cohort and leave resumable .part files."""
+    lock, stop, local = threading.Lock(), threading.Event(), threading.local()
+    sessions, errors, progress, offsets = [], [], {}, {}
+    speed = Speed(total - sent)
+
+    def upload(item):
+        path, rel, size = item
+        try:
+            reporter.check_cancel()
+            if stop.is_set():
+                raise Cancelled()
+            if not hasattr(local, "frame"):
+                session = frame.upload_session()
+                with lock:
+                    sessions.append(session)
+                if stop.is_set():
+                    session.close()
+                    raise Cancelled()
+                local.frame = session
+
+            def show(done, size):
+                reporter.check_cancel()
+                if stop.is_set():
+                    raise Cancelled()
+                with lock:
+                    offsets.setdefault(rel, done)
+                    progress[rel] = max(progress.get(rel, 0), done)
+                    completed = sum(progress.values())
+                    resumed = sum(offsets.values())
+                    speed.total = total - sent - resumed
+                    reporter.progress((sent + completed) / max(total, 1),
+                                      f"{rel} {done / 2**20:.0f}/{size / 2**20:.0f} MiB",
+                                      speed=speed.text(completed - resumed))
+            def check_cancel():
+                reporter.check_cancel()
+                if stop.is_set():
+                    raise Cancelled()
+            local.frame.put(path, posixpath.join(remote_root, rel), show, mkdir=False, check_cancel=check_cancel)
+        except Exception as exc:
+            with lock:
+                if not errors:
+                    errors.append(exc)
+            stop.set()
+            raise
+
+    try:
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="frameport-upload") as pool:
+            pending = {pool.submit(upload, item) for item in items}
+            interrupted = False
+            while pending:
+                if reporter.cancelled.is_set():
+                    with lock:
+                        if not errors:
+                            errors.append(Cancelled())
+                    stop.set()
+                done, pending = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+                for future in done:
+                    if not future.cancelled():
+                        try:
+                            future.result()
+                        except Exception:
+                            stop.set()
+                if stop.is_set() and not interrupted:
+                    interrupted = True
+                    for future in pending:
+                        future.cancel()
+                    pending = {future for future in pending if not future.cancelled()}
+                    with lock:
+                        active = list(sessions)
+                    for session in active:
+                        session.close()  # interrupt blocked transfers; never close the control connection
+            if errors:
+                raise errors[0]
+    finally:
+        for session in sessions:
+            session.close()
+    return sent + sum(size for _, _, size in items)
 
 
 FAST_LINK_MIN = 64 << 20  # below this a second connection isn't worth it
@@ -384,12 +537,13 @@ def transfer_link(frame: Frame, reporter: Reporter, need: int):
 
 
 def upload_files(frame: Frame, items: list[tuple[Path, str, int]], remote_root: str, reporter: Reporter,
-                 total: int, sent: int = 0, speed: Speed | None = None) -> int:
+                 total: int, sent: int = 0, speed: Speed | None = None, workers: int | None = None) -> int:
     """Upload (local, relative path, size) items under remote_root. Interruptible (Cancel, dropped connection) and
     resumable: finished files are skipped next time (the agent counts files already in incoming/), a cut-off big file
     continues from its .part. Returns bytes sent."""
-    big = [i for i in items if i[2] >= BIG_FILE]
+    big = sorted((i for i in items if i[2] >= BIG_FILE), key=lambda item: item[2], reverse=True)
     small = [i for i in items if i[2] < BIG_FILE]
+    reporter.check_cancel()
     frame.mkdirs(posixpath.dirname(posixpath.join(remote_root, rel)) for _, rel, _ in big)
     state = {"sent": sent}
     speed = speed or Speed(total)
@@ -398,12 +552,18 @@ def upload_files(frame: Frame, items: list[tuple[Path, str, int]], remote_root: 
         reporter.check_cancel()
         done = state["sent"] + extra
         reporter.progress(done / total, label, speed=speed.text(done))
-    for local, rel, size in big:
-        reporter.check_cancel()
-        frame.put(local, posixpath.join(remote_root, rel),
-                  lambda done, size, rel=rel: show(done, f"{rel} {done / 2**20:.0f}/{size / 2**20:.0f} MiB"),
-                  mkdir=False)
-        state["sent"] += size
+    threads = min(upload_threads(workers), len(big))
+    if threads > 1 and hasattr(frame, "upload_session"):
+        reporter.log(f"uploading large files with {threads} workers")
+        state["sent"] = _upload_parallel(frame, big, remote_root, reporter, total, sent, threads)
+        speed.samples.clear()
+    else:
+        for local, rel, size in big:
+            reporter.check_cancel()
+            frame.put(local, posixpath.join(remote_root, rel),
+                      lambda done, size, rel=rel: show(done, f"{rel} {done / 2**20:.0f}/{size / 2**20:.0f} MiB"),
+                      mkdir=False)
+            state["sent"] += size
     batch: list[tuple[Path, str]] = []
     batch_bytes = 0
 
@@ -455,7 +615,16 @@ def _flatscreen(package: str) -> bool:
     return bool(g.get("analysis")) and library.analysis_from_dict(g["analysis"]).vr_kind == "none"
 
 
-def upload_steam_art(frame: Frame, package: str, base: str, reporter: Reporter) -> None:
+def art_manifest(package: str, art: dict) -> dict[str, str]:
+    import hashlib
+
+    from ..artwork.sources import icon_source
+
+    return {**{f"{kind}{path.suffix}": sha256(path) for kind, path in art.items()},
+            ".icon-source": hashlib.sha256(icon_source(package).encode()).hexdigest()}
+
+
+def upload_steam_art(frame: Frame, package: str, base: str, reporter: Reporter) -> dict[str, str]:
     """The complete Steam art set (portrait, wide, hero, logo, icon — composed where the store has no such shape)."""
     from ..artwork.steam import steam_set_for
 
@@ -467,6 +636,7 @@ def upload_steam_art(frame: Frame, package: str, base: str, reporter: Reporter) 
         frame.put(f, posixpath.join(remote_art, f"{kind}{f.suffix}"), resume=False)
     send_icon_source(frame, package, remote_art)
     reporter.check("Steam artwork", bool(art) or None, ", ".join(sorted(art)) or "none found")
+    return art_manifest(package, art)
 
 
 def send_icon_source(frame: Frame, package: str, remote_art: str) -> None:
@@ -528,12 +698,25 @@ def update_steam_art(frame: Frame, package: str, reporter: Reporter, title: str 
         if renamed:
             return add_to_steam(frame, [package], reporter)
         raise RuntimeError("no artwork to send")
+    manifest = art_manifest(package, art)
+    previous = dep.get("artwork_manifest") or {}
+    if manifest == previous:
+        reporter.log("Steam artwork already current; not re-sending")
+        return add_to_steam(frame, [package], reporter) if renamed else {"unchanged": True}
     reporter.stage("Artwork for the Steam library")
     remote = posixpath.join(dep["anchor"], "artwork")
-    frame.run(f"rm -rf {sh_quote(remote)} && mkdir -p {sh_quote(remote)}")
+    frame.run(f"mkdir -p {sh_quote(remote)}")
+    for name in previous.keys() - manifest.keys():
+        # Deployment records are data, not shell paths. Never act on an unexpected name.
+        if "/" not in name and name not in (".", ".."):
+            frame.run(f"rm -f -- {sh_quote(posixpath.join(remote, name))}")
     for kind, f in art.items():
-        frame.put(f, posixpath.join(remote, f"{kind}{f.suffix}"), resume=False)
-    send_icon_source(frame, package, remote)
+        name = f"{kind}{f.suffix}"
+        if previous.get(name) != manifest[name]:
+            frame.put(f, posixpath.join(remote, name), resume=False)
+    if previous.get(".icon-source") != manifest[".icon-source"]:
+        send_icon_source(frame, package, remote)
+    frame.agent("record_artwork", package=package, manifest=manifest)
     reporter.check("Steam artwork", True, ", ".join(sorted(art)))
     return add_to_steam(frame, [package], reporter)
 

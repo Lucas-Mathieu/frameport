@@ -25,6 +25,8 @@ class Reporter:
         self._sinks = list(sinks or [])
         self._lock = threading.Lock()
         self.stage_name = ""
+        self._stage_started = time.monotonic()
+        self._stage_seconds: dict[str, float] = {}
         self.cancelled = threading.Event()
 
     def subscribe(self, sink: Callable[[Event], None]) -> None:
@@ -44,8 +46,21 @@ class Reporter:
         self.emit(Event("log", message, self.stage_name, data=data))
 
     def stage(self, name: str, message: str = "") -> None:
-        self.stage_name = name
-        self.emit(Event("stage", message or name, name))
+        now = time.monotonic()
+        previous = self.stage_name
+        elapsed = now - self._stage_started
+        if previous:
+            self._stage_seconds[previous] = self._stage_seconds.get(previous, 0.0) + elapsed
+        self.stage_name, self._stage_started = name, now
+        self.emit(Event("stage", message or name, name,
+                        data={"previous_stage": previous, "previous_stage_seconds": elapsed} if previous else {}))
+
+    def stage_timings(self) -> dict[str, float]:
+        """Completed stages plus the current stage, for install diagnostics and benchmark comparisons."""
+        result = dict(self._stage_seconds)
+        if self.stage_name:
+            result[self.stage_name] = result.get(self.stage_name, 0.0) + time.monotonic() - self._stage_started
+        return result
 
     def progress(self, fraction: float, message: str = "", **data) -> None:
         """`data` may carry `speed` (e.g. "42.1 MB/s · ~3 min left") for transfers."""

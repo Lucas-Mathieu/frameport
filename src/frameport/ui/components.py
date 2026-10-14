@@ -174,6 +174,10 @@ def install_state(game: dict, frame_info: dict | None) -> str | None:
     if not dep or (dep.get("apk_present") is False and not dep.get("drive_missing")):
         return "missing"
     b = game.get("build") or {}
+    if game.get("kind") not in ("linux", "rift") and b.get("apk_recipe_fp") and dep.get("configuration_fp"):
+        from ..game_update import plan_update
+
+        return "outdated" if plan_update(game, dep).changed else "installed"
     built = {b.get("sha256"), b.get("alt_sha256")} - {None}
     if built and dep.get("sha256") and dep["sha256"] not in built:
         return "outdated"

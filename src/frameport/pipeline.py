@@ -598,7 +598,10 @@ def install_linux(package: str, target: Target, reporter: Reporter, add_to_libra
 def add_game(src: SourceGame, reporter: Reporter | None = None) -> dict:
     if reporter:
         reporter.log(f"analyzing {src.apk.name}")
-    a = analyze(src.apk, data_bytes=src.data_bytes())
+    from .core.models import data_manifest
+
+    manifest = data_manifest(src.data_dir, src.data_files)
+    a = analyze(src.apk, data_bytes=sum(manifest.values()))
     a.extra["lang_packs"] = langpacks.find_tags(_data_folder(src))
     a.extra["asset_files"] = langpacks.find_content_files(_data_folder(src))
     recipe = engine.suggest(a)
@@ -607,7 +610,8 @@ def add_game(src: SourceGame, reporter: Reporter | None = None) -> dict:
     names = {"auto_title": recipe.title or a.label} if old.get("title_locked") else {"title": recipe.title or a.label}
     return library.upsert_game(
         a.package, **names, name=src.name, apk=str(src.apk),
-        data_dir=str(src.data_dir) if src.data_dir else None, data_files=src.data_files, data_bytes=src.data_bytes(),
+        data_dir=str(src.data_dir) if src.data_dir else None, data_files=src.data_files,
+        data_bytes=sum(manifest.values()), data_manifest=manifest, source_sha256=builder.sha256(src.apk),
         origin=str(src.origin),
         analysis=a.to_dict(), recipe=library.recipe_to_dict(recipe), suggested=library.recipe_to_dict(recipe),
         status=recipe.status,
@@ -852,8 +856,10 @@ def prepare_as_is(package: str, reporter: Reporter) -> dict:
     art, store_title = artwork.fetch(package, apk)
     info = {"apk": str(apk), "alt_apk": None, "sha256": sha256(apk), "alt_sha256": None, "applied": [],
             "checks": checks, "ok": all(c["ok"] is not False for c in checks), "as_is": True,
-            "recipe_fp": recipe_fingerprint(entry["recipe"], package), "source_version": _source_version(entry)}
-    library.upsert_game(package, build=info, title=entry.get("title") or store_title)
+            "recipe_fp": recipe_fingerprint(entry["recipe"], package), "source_version": _source_version(entry),
+            **_build_record(entry)}
+    library.upsert_game(package, build=info, title=entry.get("title") or store_title,
+                        source_sha256=info["source_sha256"])
     return info
 
 
@@ -877,6 +883,78 @@ def _build_lock(package: str) -> threading.Lock:
         return _build_locks.setdefault(package, threading.Lock())
 
 
+def _build_inputs(entry: dict, native_names: list[str] | None = None) -> dict:
+    """Only the native assets carried by this APK and the local converter; no downloads or Java invocations."""
+    from .core.paths import artifacts_dir
+    from .tools import toolchain
+
+    build = entry.get("build") or {}
+    previous = build.get("build_inputs") or {}
+    recipe = entry.get("recipe") or {}
+    native_names = native_names if native_names is not None else build.get("native_names") or []
+    native = previous.get("native") or {}
+    manifest = artifacts_dir() / "SHA256SUMS"
+    if manifest.is_file():
+        checksums = {line.split(maxsplit=1)[1].strip().removeprefix("./"): line.split()[0]
+                     for line in manifest.read_text().splitlines() if len(line.split()) == 2}
+        native = {name: checksums.get(name) for name in native_names}
+    jar = toolchain.overport_jar() if recipe.get("overport", True) and not recipe.get("as_is") else None
+    converter = previous.get("overport")
+    if jar and jar.is_file():
+        st = jar.stat()
+        stat = {"path": str(jar), "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+        if stat != build.get("overport_stat"):
+            converter = builder.sha256(jar)
+    return {"native": native, "overport": converter}
+
+
+def _source_stat(entry: dict) -> dict | None:
+    source = Path(entry["apk"])
+    try:
+        st = source.stat()
+    except OSError:
+        return None
+    return {"path": str(source.resolve()), "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+
+
+def _build_record(entry: dict, apk: Path | None = None, superseded=None) -> dict:
+    import zipfile
+
+    from .core.paths import artifacts_dir
+    from .game_update import apk_recipe_fingerprint
+    from .tools import toolchain
+
+    native_names = []
+    if apk and not entry["recipe"].get("as_is"):
+        with zipfile.ZipFile(apk) as archive:
+            native_names = [name.removeprefix("lib/") for name in archive.namelist()
+                            if name.startswith("lib/") and (artifacts_dir() / name.removeprefix("lib/")).is_file()]
+        if "frame.oculusos" in (entry["recipe"].get("patches") or {}):
+            native_names.append("dex/oculusos-stubs.dex")
+    jar = toolchain.overport_jar()
+    converter_stat = None
+    if jar and jar.is_file():
+        st = jar.stat()
+        converter_stat = {"path": str(jar), "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+    return {"apk_recipe_fp": apk_recipe_fingerprint(entry["recipe"], entry["package"], superseded),
+            "source_stat": _source_stat(entry), "source_sha256": builder.sha256(Path(entry["apk"])),
+            "build_inputs": _build_inputs(entry, native_names), "native_names": native_names,
+            "overport_stat": converter_stat}
+
+
+def _build_inputs_changed(entry: dict) -> bool:
+    build = entry.get("build") or {}
+    if not build.get("build_inputs") or build["build_inputs"] != _build_inputs(entry):
+        return True
+    stat = _source_stat(entry)
+    if stat is None:
+        # An unavailable dump does not prevent configuration updates to a known installed APK.
+        return False
+    if stat != build.get("source_stat"):
+        return builder.sha256(Path(entry["apk"])) != build.get("source_sha256")
+    return False
+
+
 def build_game(package: str, reporter: Reporter, outdir: Path | None = None) -> dict:
     if analysis_outdated(library.game(package) or {}):  # analysed by an older FramePort: new fields first
         refresh_analyses([package], reporter)
@@ -897,8 +975,10 @@ def build_game(package: str, reporter: Reporter, outdir: Path | None = None) -> 
     build_info = {"apk": str(res.apk), "alt_apk": str(res.alt_apk) if res.alt_apk else None, "sha256": res.sha256,
                   "alt_sha256": res.alt_sha256, "applied": res.applied, "checks": res.checks, "ok": res.ok,
                   "overport": res.meta.get("overport"), "recipe_fp": recipe_fingerprint(entry["recipe"], package),
-                  "superseded": res.meta.get("superseded") or {}, "source_version": _source_version(entry)}
-    library.upsert_game(package, build=build_info, title=entry.get("title") or store_title)
+                  "superseded": res.meta.get("superseded") or {}, "source_version": _source_version(entry),
+                  **_build_record(entry, res.apk, res.meta.get("superseded"))}
+    library.upsert_game(package, build=build_info, title=entry.get("title") or store_title,
+                        source_sha256=build_info["source_sha256"])
     return build_info
 
 
@@ -918,33 +998,95 @@ def _find_late_data(entry: dict, reporter: Reporter | None = None) -> dict:
 
 
 def install_game(package: str, target: Target, reporter: Reporter, apk_only: bool = False,
-                 add_to_library: bool = True, apk: Path | None = None) -> dict:
+                 add_to_library: bool = True, apk: Path | None = None, force: bool = False) -> dict:
     """Install the game's last build (or `apk`, e.g. a test build of the same package signed with the same key)."""
+    reporter = reporter or Reporter()
     entry = library.game(package)
     if is_linux(entry):
         return install_linux(package, target, reporter, add_to_library)
     if is_rift(entry):
         return install_rift(package, target, reporter, add_to_library)
+    from .game_update import plan_update
+
     test_build = apk is not None
+    optimized = not test_build and hasattr(target, "update_existing")
+    deployment, update, manifest = None, None, None
+    if optimized:
+        reporter.stage("Check update requirements")
+        deployment = next((d for d in target.installed() if d.get("package") == package), None)
+        if not apk_only:
+            entry = _find_late_data(entry, reporter) if not entry.get("data_dir") and entry.get("apk") else entry
+            from .core.models import data_manifest
+
+            manifest = data_manifest(Path(entry["data_dir"]) if entry.get("data_dir") else None,
+                                     entry.get("data_files"))
+            # Cache desired data for badges without doing filesystem I/O in render paths.
+            library.update_game(package, lambda game: game.update(data_manifest=manifest))
+            entry["data_manifest"] = manifest
+        update = plan_update(entry, deployment, apk_only=apk_only, data_manifest=manifest)
+        if update.data and not update.apk and hasattr(target, "deployment"):
+            deployment = target.deployment(package)
+            update = plan_update(entry, deployment, apk_only=apk_only, data_manifest=manifest)
+        if force or _build_inputs_changed(entry):
+            update = dataclasses.replace(update, rebuild=True, apk=True, configure=True)
+        for reason in update.reasons:
+            reporter.log(reason)
+        if update.rebuild:
+            info = build_game(package, reporter)
+            if not info["ok"]:
+                raise RuntimeError("the game failed its checks (see the list above)")
+            entry = library.game(package)
+        b = entry.get("build") or {}
+        recipe = library.recipe_from_dict(entry["recipe"])
+        if b.get("superseded"):
+            recipe = dataclasses.replace(recipe, patches=upstream.without_superseded(recipe.patches, b["superseded"]))
+        if deployment and not update.apk:
+            if update.configure or update.data:
+                result = target.update_existing(entry, deployment, update, recipe, reporter, manifest)
+            else:
+                reporter.log("APK, game data and runtime configuration already current")
+                result = {"base": deployment["base"], "appid": deployment["appid"]}
+            if update.artwork or update.shortcut:
+                target.update_steam_art(package, reporter, title=steam_title(entry))
+                library.update_game(package, lambda game: game.pop("steam_art_stale", None))
+            result["launch_test_required"] = update.launch_test
+            result["shortcut_required"] = False
+            result["stage_seconds"] = reporter.stage_timings()
+            _record_install(package, target.label, {"result": result, "time": time.time()})
+            return result
     b = entry.get("build") or {}
     recipe = library.recipe_from_dict(entry["recipe"])
-    if not test_build and not b.get("apk"):  # never built yet (e.g. `frameport install` right after a scan)
+    if not test_build and not b.get("apk"):
         build_game(package, reporter)
         return install_game(package, target, reporter, apk_only, add_to_library)
     apk = Path(apk) if apk else Path(b["alt_apk"] if recipe.use_alt and b.get("alt_apk") else b["apk"])
-    if not test_build and not apk.exists():  # the converted copy was removed after an earlier install: make it again
+    if not test_build and not apk.is_file():
         build_game(package, reporter)
         return install_game(package, target, reporter, apk_only, add_to_library)
-    if not test_build and b.get("superseded"):  # workarounds this build left out (upstream fixed): not in settings.conf
+    if optimized and not update.rebuild:
+        expected_sha = b.get("alt_sha256") if recipe.use_alt else b.get("sha256")
+        reporter.check_cancel()
+        if builder.sha256(apk) != expected_sha:
+            reporter.log("the cached APK changed; rebuilding before installation")
+            build_game(package, reporter)
+            return install_game(package, target, reporter, apk_only, add_to_library)
+    if not test_build and b.get("superseded"):
         recipe = dataclasses.replace(recipe, patches=upstream.without_superseded(recipe.patches, b["superseded"]))
     if not entry.get("data_dir") and entry.get("apk") and not apk_only:
         entry = _find_late_data(entry, reporter)  # OBBs copied next to the APK after it was added (GitHub #156)
     data_dir = Path(entry["data_dir"]) if entry.get("data_dir") else None
     title = steam_title(entry)
-    result = target.install(package, title, apk, data_dir, recipe, reporter, apk_only,
+    preserve_data = apk_only or (optimized and deployment is not None and not update.data and not force)
+    result = target.install(package, title, apk, data_dir, recipe, reporter, preserve_data,
                             data_files=entry.get("data_files"))
-    if add_to_library:
+    shortcut = not optimized or update.shortcut
+    if add_to_library and shortcut:
         target.add_to_library([package], reporter)
+    result["launch_test_required"] = True
+    result["shortcut_required"] = shortcut
+    result["stage_seconds"] = reporter.stage_timings()
+    if optimized and update.artwork:
+        library.update_game(package, lambda game: game.pop("steam_art_stale", None))
     _record_install(package, target.label, {"apk": str(apk), "result": result, "time": time.time()})
     if not test_build:
         remove_converted_copies(package)
