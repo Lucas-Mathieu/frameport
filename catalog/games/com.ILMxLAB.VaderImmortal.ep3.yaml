@@ -18,7 +18,9 @@ frame:
 - frame.unreal_thumb_touch
 adapter:
   pose_time_fix: 1
+  gl_error_clear: 1
 verified:
   date: '2026-10-09'
+updated: '2026-10-14'
 min_app: 0.12.1
 source_hint: Vader Immortal- Episode III

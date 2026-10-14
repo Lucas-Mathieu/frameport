@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 166 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 168 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -12,7 +12,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 
 - [Patches from OVRPort](#group-overport) (25)
 - [Steam Frame patches](#group-frame) (54)
-- [Game settings](#group-adapter) (66)
+- [Game settings](#group-adapter) (68)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
 
@@ -114,11 +114,13 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [360° 3D](#adapter-equirect_stereo) | `adapter.equirect_stereo` | Game settings |  |
 | [Per-eye diagnostics (log)](#adapter-eye_debug) | `adapter.eye_debug` | Game settings |  |
 | [Draw fades over the picture](#adapter-fade_quad) | `adapter.fade_quad` | Game settings | 2 |
+| [Upside-down panel images (diagnostics)](#adapter-flip_dump) | `adapter.flip_dump` | Game settings |  |
 | [Fix upside-down menus](#adapter-flip_emul) | `adapter.flip_emul` | Game settings |  |
 | [Rotate panels 180°](#adapter-flip_quads) | `adapter.flip_quads` | Game settings |  |
 | [Don't pause on short interruptions](#adapter-focus_hold) | `adapter.focus_hold` | Game settings | 4 |
 | [Ignore focus dips up to](#adapter-focus_hold_ms) | `adapter.focus_hold_ms` | Game settings | 2 |
 | [Hide Quest foveation](#adapter-foveation_fix) | `adapter.foveation_fix` | Game settings |  |
+| [Clear the game's GL errors (GLES)](#adapter-gl_error_clear) | `adapter.gl_error_clear` | Game settings | 3 |
 | [Hide fast anti-aliasing (OpenGL ES)](#adapter-gl_hide_msrtt) | `adapter.gl_hide_msrtt` | Game settings | 1 |
 | [Draw each eye separately (OpenGL ES)](#adapter-gl_hide_multiview) | `adapter.gl_hide_multiview` | Game settings | 1 |
 | [GL shim: high-precision vertex shaders](#adapter-gl_highp_markers) | `adapter.gl_highp_markers` | Game settings | 1 |
@@ -1425,6 +1427,20 @@ For games whose fades to black don't show, so you see the level loading (for exa
 
 > Games that fade to black by dimming their picture with a layer color scale (XR_KHR_composition_layer_color_scale_bias, for example Batman: Arkham Shadow's loading screens) can show the level loading instead of black on the Frame. FrameBridge then draws the fade itself: a black quad in front of the eyes whose opacity follows the game's dimming. 2 also removes the game's own dimming (if both show, the fade is doubled).
 
+### <a id="adapter-flip_dump"></a>Upside-down panel images (diagnostics)
+
+Saves a few UI panels before and after FrameBridge turns them upright, for testing without the headset.
+
+- `adapter.flip_dump`
+- **Changes:** Game setting: stored in the build and on the Frame (settings.conf); can be changed without a rebuild.
+- **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
+- **Options:**
+  - Value: int, default `0`.
+  - Game settings → Troubleshooting → "Upside-down panel images (diagnostics)" (advanced).
+- **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
+
+> Saves the first N UI panels that FrameBridge turns upright (Vulkan games whose panels are stored upside down), before and after the flip, as fb_flip_&lt;n&gt;_raw.ppm / fb_flip_&lt;n&gt;_upright.ppm in the game's files folder on the Frame. Shows what the runtime gets without anyone wearing the headset.
+
 ### <a id="adapter-flip_emul"></a>Fix upside-down menus
 
 Turns menus and text the right way up.
@@ -1498,6 +1514,21 @@ Hides a Quest-only way of saving GPU power that the Frame lacks. Leave it on.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > Hides Quest foveation extensions the Frame runtime lacks.
+
+### <a id="adapter-gl_error_clear"></a>Clear the game's GL errors (GLES)
+
+For OpenGL ES games whose memory use keeps growing (e.g. Vader Immortal).
+
+- `adapter.gl_error_clear`
+- **Changes:** Game setting: stored in the build and on the Frame (settings.conf); can be changed without a rebuild.
+- **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
+- **Options:**
+  - Value: int, default `0`.
+  - Game settings → Troubleshooting → "Clear the game's GL errors (GLES)" (advanced).
+- **Catalog games (3):** Vader Immortal: Episode I, Vader Immortal: Episode II, Vader Immortal: Episode III.
+- **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
+
+> Clears OpenGL errors the game left pending before FrameBridge calls the Frame's runtime. The runtime's GL code fails on any pending error; after one such failure at the start it allocated GPU memory every frame without freeing it (e.g. Vader Immortal, ~20 MB a second).
 
 ### <a id="adapter-gl_hide_msrtt"></a>Hide fast anti-aliasing (OpenGL ES)
 
@@ -1957,7 +1988,7 @@ For games whose menus or screens jump to wherever you look.
 
 ### <a id="adapter-strip_color_bias"></a>Drop layer color fades
 
-For games whose memory use keeps growing (for example Vader Immortal). Some fades no longer show.
+Diagnostics: removes layer color fades. Some fades no longer show.
 
 - `adapter.strip_color_bias`
 - **Changes:** Game setting: stored in the build and on the Frame (settings.conf); can be changed without a rebuild.
@@ -1967,7 +1998,7 @@ For games whose memory use keeps growing (for example Vader Immortal). Some fade
   - Game settings → Troubleshooting → "Drop layer color fades" (advanced).
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
-> Removes the color scale/bias (XR_KHR_composition_layer_color_scale_bias) from the game's layers, so the runtime doesn't apply it. The Frame's runtime allocates GPU memory for it every frame without freeing it, for example Vader Immortal leaked ~20 MB/s on its loading screen. Fades done this way no longer show.
+> Removes the color scale/bias (XR_KHR_composition_layer_color_scale_bias) from the game's layers, so the runtime doesn't apply it (diagnostics). Fades done this way no longer show.
 
 ### <a id="adapter-strip_depth"></a>Strip depth layers
 

@@ -22,10 +22,17 @@ SETTINGS = [
      "Every N seconds, saves the left-eye image the game submits (a quarter of its size) as fb_snap_0-7.ppm in the "
      "game's files folder on the Frame. Launch tests run without anyone wearing the headset, so the headset view stays "
      "black; this shows what the game itself draws. OpenGL ES games only."),
+    ("gl_error_clear", "int", 0, "Clear the game's GL errors (GLES)",
+     "Clears OpenGL errors the game left pending before FrameBridge calls the Frame's runtime. The runtime's GL code "
+     "fails on any pending error; after one such failure at the start it allocated GPU memory every frame without "
+     "freeing it (e.g. Vader Immortal, ~20 MB a second)."),
+    ("flip_dump", "int", 0, "Upside-down panel images (diagnostics)",
+     "Saves the first N UI panels that FrameBridge turns upright (Vulkan games whose panels are stored upside down), "
+     "before and after the flip, as fb_flip_<n>_raw.ppm / fb_flip_<n>_upright.ppm in the game's files folder on the "
+     "Frame. Shows what the runtime gets without anyone wearing the headset."),
     ("strip_color_bias", "int", 0, "Drop layer color fades",
      "Removes the color scale/bias (XR_KHR_composition_layer_color_scale_bias) from the game's layers, so the runtime "
-     "doesn't apply it. The Frame's runtime allocates GPU memory for it every frame without freeing it, for example "
-     "Vader Immortal leaked ~20 MB/s on its loading screen. Fades done this way no longer show."),
+     "doesn't apply it (diagnostics). Fades done this way no longer show."),
     ("fade_quad", "int", 0, "Draw fades over the picture",
      "Games that fade to black by dimming their picture with a layer color scale (XR_KHR_composition_layer_color_"
      "scale_bias, for example Batman: Arkham Shadow's loading screens) can show the level loading instead of black on "
@@ -392,11 +399,15 @@ UI: dict[str, dict] = {
                 help="For Unity games that crash when they turn on anti-aliasing (for example The Room "
                      "VR).", control=("switch",)),
     "strip_color_bias": dict(group="troubleshooting", level="advanced", label="Drop layer color fades",
-                help="For games whose memory use keeps growing (for example Vader Immortal). Some fades no"
-                     " longer show.", control=("switch",)),
+                help="Diagnostics: removes layer color fades. Some fades no longer show.", control=("switch",)),
     "snapshot": dict(group="troubleshooting", level="advanced", label="Eye-image snapshots (diagnostics)",
                 help="Saves what the game draws every few seconds, for testing without the headset.",
                 control=("switch",)),
+    "gl_error_clear": dict(group="troubleshooting", level="advanced", label="Clear the game's GL errors (GLES)",
+                help="For OpenGL ES games whose memory use keeps growing (e.g. Vader Immortal).", control=("switch",)),
+    "flip_dump": dict(group="troubleshooting", level="advanced", label="Upside-down panel images (diagnostics)",
+                help="Saves a few UI panels before and after FrameBridge turns them upright, for testing without the "
+                     "headset.", control=("switch",)),
     "strip_depth": dict(group="troubleshooting", level="advanced", label="Strip depth layers",
                 help="Removes depth information from the game's layers. For testing.", control=("switch",)),
     "respace_kick": dict(group="troubleshooting", level="advanced", label="Re-create play space",

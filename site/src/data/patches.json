@@ -74,6 +74,11 @@
   "title": "Draw fades over the picture",
   "group": "Game settings"
  },
+ "adapter.flip_dump": {
+  "anchor": "adapter-flip_dump",
+  "title": "Upside-down panel images (diagnostics)",
+  "group": "Game settings"
+ },
  "adapter.flip_emul": {
   "anchor": "adapter-flip_emul",
   "title": "Fix upside-down menus",
@@ -97,6 +102,11 @@
  "adapter.foveation_fix": {
   "anchor": "adapter-foveation_fix",
   "title": "Hide Quest foveation",
+  "group": "Game settings"
+ },
+ "adapter.gl_error_clear": {
+  "anchor": "adapter-gl_error_clear",
+  "title": "Clear the game's GL errors (GLES)",
   "group": "Game settings"
  },
  "adapter.gl_hide_msrtt": {
