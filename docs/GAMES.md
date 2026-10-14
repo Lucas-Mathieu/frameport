@@ -50,6 +50,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Fruit Ninja | Quest | ✅ Works |  |
 | Fruit Salon | Quest | ✅ Works |  |
 | Genotype | Quest | ✅ Works |  |
+| Ghostbusters: Rise of the Ghost Lord | Quest | ✅ Works |  |
 | GORN2 | Quest | ✅ Works |  |
 | Gravity Lab | Quest | ✅ Works |  |
 | H.U.N.T | Quest | ✅ Works |  |
@@ -141,9 +142,11 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Fisherman | Quest | ⚠️ Works with issues | Loading screens have corruption, but everything works otherwise. |
 | Freedom | Quest | ⚠️ Works with issues | Volume can't be changed in the game. |
 | MacacoVR | Quest | ⚠️ Works with issues | 2d loading screens are glitchy, otherwise main gameplay is fine |
+| Majora's Mask VR | Quest | ⚠️ Works with issues | Audio on the file select screen sounds crunchy. |
 | Myst | Quest | ⚠️ Works with issues | Minor graphical glitches on some objects. |
 | Phantom: Covert Ops | Quest | ⚠️ Works with issues | DLC/store button crashes (no Meta store). |
 | Pinball FX VR | Quest | ⚠️ Works with issues | Plays; mixed reality mode not working yet. |
+| Plezy | Quest | ⚠️ Works with issues | Some videos play with strong artifacts and wrong colours; the cause is unknown, possibly hardware video decoding. |
 | Silhouette | Quest | ⚠️ Works with issues | Hand-tracking game; the Frame synthesizes hands from controllers, so it is janky. |
 | Swarm 2 | Quest | ⚠️ Works with issues | MSAA creates visible seams around edge geometry and also the skybox edge |
 | The Light Brigade | Quest | ⚠️ Works with issues | Judder in weapons |
