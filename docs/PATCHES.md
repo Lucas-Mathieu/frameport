@@ -70,7 +70,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Platform compat (ovrMessageType_ToString)](#frame-ovrplatformcompat) | `frame.ovrplatformcompat` | Steam Frame patches | default |
 | [Stub missing Meta platform functions](#frame-ovrstubs) | `frame.ovrstubs` | Steam Frame patches | default |
 | [Unpaired pointer-authentication checks](#frame-pac_hints) | `frame.pac_hints` | Steam Frame patches | 1 |
-| [SDL apps: start without a clipboard service](#frame-sdl_clipboard) | `frame.sdl_clipboard` | Steam Frame patches | 3 |
+| [SDL apps: start without a clipboard service](#frame-sdl_clipboard) | `frame.sdl_clipboard` | Steam Frame patches | 4 |
 | [Stress Level Zero: let Unity start Vulkan itself](#frame-slz_vulkan_hooks) | `frame.slz_vulkan_hooks` | Steam Frame patches | 1 |
 | [Start straight in VR (skip the 2D launcher)](#frame-start_activity) | `frame.start_activity` | Steam Frame patches |  |
 | [Allow swapchains larger than 4096 px](#frame-swapchain_limit) | `frame.swapchain_limit` | Steam Frame patches | default |
@@ -142,7 +142,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Treat newer Quest controllers as Touch](#adapter-profile_remap) | `adapter.profile_remap` | Game settings |  |
 | [Animate fingers from touch](#adapter-proximity_emul) | `adapter.proximity_emul` | Game settings |  |
 | [Keep pictures in bounds](#adapter-rect_clamp) | `adapter.rect_clamp` | Game settings |  |
-| [Refresh rate](#adapter-refresh_rate) | `adapter.refresh_rate` | Game settings | 2 |
+| [Refresh rate](#adapter-refresh_rate) | `adapter.refresh_rate` | Game settings | 3 |
 | [Wait for the game's GPU](#adapter-release_wait) | `adapter.release_wait` | Game settings |  |
 | [Re-create play space](#adapter-respace_kick) | `adapter.respace_kick` | Game settings |  |
 | [Sharpness](#adapter-scale) | `adapter.scale` | Game settings | 4 |
@@ -821,7 +821,7 @@ Lets SDL and LÖVE games start on the Frame (they'd crash looking for a clipboar
 - `frame.sdl_clipboard` · also for 2D apps
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** SDL app: it crashes at start in Lepton, which has no clipboard service.
-- **Catalog games (3):** Time Crisis II VR (Test), Time Crisis VR (Experimental), WiiCompiled VR.
+- **Catalog games (4):** Majora's Mask VR, Time Crisis II VR (Test), Time Crisis VR (Experimental), WiiCompiled VR.
 - **Suggested by launch-test signatures:**
   - `sdl-no-clipboard` (fatal): The app crashed at start because the Frame's Android has no clipboard.
 - **Source:** [patches/frame/sdl_clipboard.py](../src/frameport/patches/frame/sdl_clipboard.py)
@@ -1849,7 +1849,7 @@ How often the picture updates. Higher is smoother if the game can keep up.
 - **Options:**
   - Value: float, default `0.0`.
   - Game settings → Picture → "Refresh rate": Game's choice (`0`), 72 Hz (`72`), 80 Hz (`80`), 90 Hz (`90`), 96 Hz (`96`), 108 Hz (`108`), 120 Hz (`120`), 144 Hz (`144`).
-- **Catalog games (2):** Does it Stack?, Vacation Simulator.
+- **Catalog games (3):** Does it Stack?, Majora's Mask VR, Vacation Simulator.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > Display refresh rate for this game (72, 80, 90, 96, 108, 120 or 144; 0 = the game's choice). A video's frame rate that divides the refresh rate plays smoothest (for example 30 fps at 90 Hz, 24 fps at 72 Hz).
