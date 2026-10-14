@@ -23,6 +23,9 @@ manifest.json                versions (app, agent, tools, SteamOS build, Proton)
 app/app.log                  the app's log (<data>/logs/app.log, rotated 2 MB × 3)
 app/jobs/*.log               saved GUI job logs (<data>/logs/jobs, last 30): build, install, test, ...
 app/settings.json            library settings, catalog sources
+app/display.json             Flet/Flutter versions and last window state; on native Windows, display layout,
+                             resolution, refresh rate, GPU driver metadata and up to 60 recent display/device
+                             System event records (last 30 minutes; timestamps, providers and IDs only)
 frame/info.json              agent `info` (SteamOS build, Lepton, Proton, installed games, kernel keys)
 frame/host.json              OpenXR runtime + explicit layers, podman containers, containers.conf, uptime
 frame/XRService-*.log        the Frame's OpenXR runtime (SteamVR XRService) log, newest
@@ -56,6 +59,12 @@ after the logs were cut); OpenGL ES (no index): the newest modules (by time writ
 `<seq> <ms since the first module> <unix ms> <size>_<sha256>.spv new|known|again|failed`; match the unix time with
 the kernel's `hangcheck detected gpu lockup` line (this-boot-kernel.txt). All modules stay in the game's storage on
 the Frame (`Android/data/<pkg>/files/fp_vk_shaders/`, Files tab → the game's storage).
+
+Display queries run only while collecting logs. The Windows event query has a five-second timeout and runs without
+a console window; the result distinguishes no matching events from a failed or timed-out query. Window visibility,
+focus and completed move/resize events are recorded in `app.log`, with UTC timestamps for comparison with Windows
+events. There is no display polling loop or change to display settings. Empty System event results do not rule out
+a rendering or monitor-link problem.
 
 ## Redaction
 `diag/redact.py` runs on every file and on the issue text.
