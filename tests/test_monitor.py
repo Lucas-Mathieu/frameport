@@ -254,3 +254,42 @@ def test_modules_need_the_agent_that_has_them():
     assert not M.MonitorSession.supports_modules.fget(s)
     s.static["agent"] = 73
     assert M.MonitorSession.supports_modules.fget(s)
+
+
+def test_smoother_steadies_flickering_numbers_whatever_the_interval():
+    # fps flickering 71/73 every 0.1 s settles near 72 instead of jumping with each tick
+    sm = M.Smoother()
+    shown = [sm.value("fps", 71 if i % 2 else 73, i * 0.1) for i in range(60)]
+    assert max(shown[30:]) - min(shown[30:]) < 0.3
+    # a real change still comes through within a few seconds, at 0.1 s and at 2 s ticks alike
+    for dt in (0.1, 2.0):
+        sm = M.Smoother()
+        sm.value("cpu", 10, 0.0)
+        t, v = 0.0, 10.0
+        while t < 4.5:
+            t += dt
+            v = sm.value("cpu", 50, t)
+        assert v > 45
+
+
+def test_smoother_restarts_after_a_gap_or_a_missing_value():
+    sm = M.Smoother()
+    sm.value("gpu", 10, 0.0)
+    assert sm.value("gpu", 90, 30.0) == 90  # paused / reconnected: no slow slide from old numbers
+    assert sm.value("gpu", None, 30.5) is None
+    assert sm.value("gpu", 40, 31.0) == 40
+
+
+def test_smoother_sample_smooths_tiles_and_games_and_keeps_the_rest():
+    sm = M.Smoother()
+    s1 = {"t": 0.0, "cpu": {"total": 20.0, "mhz": [2000]}, "mem": {"total": 100, "avail": 50},
+          "temps": {"cpu": 40.0}, "power": {"system": 5.0}, "battery": {"percent": 80},
+          "games": [{"package": "a.b", "fps": 72.0, "title": "A"}]}
+    sm.sample(s1)
+    s2 = {**s1, "t": 0.5, "cpu": {"total": 60.0, "mhz": [2400]},
+          "games": [{"package": "a.b", "fps": 60.0, "title": "A"}]}
+    out = sm.sample(s2)
+    assert 20 < out["cpu"]["total"] < 60 and out["cpu"]["mhz"] == [2400]
+    assert 60 < out["games"][0]["fps"] < 72 and out["games"][0]["title"] == "A"
+    assert out["battery"] == {"percent": 80} and out["mem"]["total"] == 100
+    assert s2["cpu"]["total"] == 60.0  # the raw sample (history, details, processes) is untouched

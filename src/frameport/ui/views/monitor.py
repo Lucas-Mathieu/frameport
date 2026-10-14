@@ -146,6 +146,7 @@ class MonitorView:
         self.stopped = True          # not subscribed to the app's monitor hub (the tab isn't shown)
         self.root = None
         self.history = M.History()
+        self.smooth = M.Smoother()  # the big numbers (sparklines keep their per-second averages)
         self.static: dict = {}
         self.procs: list[dict] = []
         self.sort_key, self.descending = "cpu", True
@@ -448,7 +449,8 @@ class MonitorView:
         self.last_sample = s
         for name, value in M.series_of(s).items():
             self.history.add(name, value, s.get("t"))
-        changed = [self._apply_tiles(s), self._apply_game(s), self._apply_details(s)]
+        shown = self.smooth.sample(s)
+        changed = [self._apply_tiles(shown), self._apply_game(shown), self._apply_details(s)]
         if "procs" in s:
             self.procs = s.get("procs") or []
             changed.append(self._bind_rows(update=False))
