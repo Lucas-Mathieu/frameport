@@ -1,5 +1,7 @@
 import zipfile
 
+import pytest
+
 from frameport.analysis.stubgen import build_stub_library
 from frameport.apk.workspace import ApkWorkspace
 from frameport.core.events import Reporter
@@ -441,6 +443,53 @@ def test_android_app_without_vr_gets_no_vr_translation():
     quest = _analysis(libs=["libOVRPlugin.so"], extra={"size": 1})  # old library entries: no vr_kind = Quest
     assert engine.suggest(quest).overport and "patch_copy_libraries" in engine.suggest(quest).patches
 
+
+
+@pytest.mark.parametrize("info_activity,sdl_clipboard", [(False, False), (True, False), (False, True)])
+def test_saved_flat_android_recipe_keeps_its_build_mode(monkeypatch, info_activity, sdl_clipboard):
+    """Saving Plezy as known-good must not start an empty OVRPort conversion (#271)."""
+    from frameport.core import library
+    from frameport.recommend import catalog, engine
+
+    analysis = _analysis(package="org.example.savedflat", engine="Other", xr="?", libs=[],
+                         has_info_category=info_activity, is_overport_output=False,
+                         extra={"size": 1, "vr_kind": "none", "media_codec": True, "sdl_java": sdl_clipboard})
+    original = engine.suggest(analysis, use_catalog=False)
+    original.status, original.notes = "issues", "Some videos have color artifacts."
+    game = {"package": analysis.package, "title": "Flat app", "analysis": analysis.to_dict(),
+            "recipe": library.recipe_to_dict(original)}
+    catalog.save_user_entry(catalog.entry_from_library(game))
+    restored = engine.suggest(analysis)
+    assert restored.source == "catalog (user)"
+    assert not restored.overport and restored.as_is == original.as_is
+    assert restored.patches == original.patches
+    assert restored.status == "issues" and original.notes in restored.notes
+    assert "frame.hw_video_decode" in restored.patches and not engine.warnings(restored)
+
+    # Existing affected entries recover when the next app update re-derives their saved recipe.
+    broken = library.recipe_to_dict(original)
+    broken.update(as_is=False, overport=True, source="catalog (user)")
+    data = {"settings": {"recipes.app_version": "0.0.0"},
+            "games": {analysis.package: {**game, "recipe": broken}}}
+    monkeypatch.setattr(library, "REFRESH_ON_UPDATE", True)
+    assert library._follow_catalog(data)
+    repaired = library.recipe_from_dict(data["games"][analysis.package]["recipe"])
+    assert not repaired.overport and repaired.as_is == original.as_is
+
+
+def test_saved_already_patched_android_recipe_keeps_install_as_is():
+    from frameport.core import library
+    from frameport.recommend import catalog, engine
+
+    analysis = _analysis(package="org.example.savedpatched", has_info_category=False,
+                         extra={"size": 1, "frame_patched": True})
+    original = engine.suggest(analysis, use_catalog=False)
+    assert original.as_is
+    game = {"package": analysis.package, "title": "Patched app", "analysis": analysis.to_dict(),
+            "recipe": library.recipe_to_dict(original)}
+    catalog.save_user_entry(catalog.entry_from_library(game))
+    restored = engine.suggest(analysis)
+    assert restored.as_is
 
 
 def test_patch_registry_is_complete_for_every_thread(monkeypatch):
