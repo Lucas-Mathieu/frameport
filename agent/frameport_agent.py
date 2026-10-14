@@ -3969,7 +3969,10 @@ def configure_install(args, prep, moved):
         os.makedirs(os.path.dirname(target), exist_ok=True)
         record = managed.get(rel)
         backup = target + ".frameport-config-backup"
-        had_original = bool(record.get("backup")) if record else os.path.isfile(target)
+        # no record: an existing file is the user's, unless it already has exactly this content (written by
+        # FramePort before agent v86 kept records; backing it up would bring it back when the recipe drops it)
+        had_original = bool(record.get("backup")) if record else os.path.isfile(target) and \
+            open(target, "rb").read() != content.encode()
         if not record and had_original:
             shutil.copy2(target, backup)
         with open(target, "w") as f:

@@ -500,3 +500,20 @@ def test_agent_drops_records_an_older_app_did_not_send(monkeypatch, tmp_path):
     agent.configure_install({"package": PKG, "title": "Example", "settings": {}, "consume_artwork": True}, prep, 0)
     assert "artwork_manifest" not in agent.deployment(PKG)
     assert (anchor / "artwork/portrait.png").exists()
+
+
+def test_agent_config_written_by_an_older_frameport_is_not_kept_as_the_users(monkeypatch, tmp_path):
+    agent, base, dep = installed_agent(monkeypatch, tmp_path)
+    files = base / "lepton-data/external/Android/data" / PKG / "files"
+    files.mkdir(parents=True)
+    (files / "user.cfg").write_text("r_x=0\n")  # FramePort's own, from before agent v86 kept records
+    (files / "mine.cfg").write_text("users own\n")
+    prep = {"base": str(base), "anchor": str(tmp_path / "Applications/quest-frame" / PKG), "appid": 42,
+            "lepton": "/lepton"}
+    agent.configure_install({"package": PKG, "title": "Example", "settings": {},
+                             "files": {"user.cfg": "r_x=0\n", "mine.cfg": "r_y=1\n"}}, prep, 0)
+    managed = agent.deployment(PKG)["managed_config_files"]
+    assert managed["user.cfg"]["backup"] is False and managed["mine.cfg"]["backup"] is True
+    # the recipe drops both: FramePort's file goes away, the user's own comes back
+    agent.configure_install({"package": PKG, "title": "Example", "settings": {}, "files": {}}, prep, 0)
+    assert not (files / "user.cfg").exists() and (files / "mine.cfg").read_text() == "users own\n"
