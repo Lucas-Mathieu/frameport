@@ -1,0 +1,31 @@
+package: com.nDreams.Ghostbusters
+title: 'Ghostbusters: Rise of the Ghost Lord'
+status: works
+notes: 'So far the game just works, I have only played through a few missions though. Only issues that are notable
+  is that it requires offline mode to run since the game itself is very online oriented and due to that your name
+  is also a random number every time you load in since no profile is attached.
+
+
+  And also when loading into areas the flat loading screen does not stick to your headset and instead floats in
+  front of you which shows assets loading in like all the effects from the particle throwers and ghosts which can
+  be very disorienting at times.'
+tested_version: 1.325635.prod.shipping
+engine: Unreal
+xr: OpenXR
+alt_overport:
+- patch_remove_unreal_force_quit
+frame:
+- frame.unreal_ovrp_entrypoints
+- frame.hw_video_decode
+adapter:
+  haptic_fix: 1
+  scene_emul: 1
+verified:
+  date: '2026-10-14'
+  known_good_sha256: 7556a78c8772aed70c38fc4781677c0900e9dfd4be085a79c421a31323af7888
+  app: 1.1.0
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 85
+  issue: 279
+source_hint: GBRotgl
