@@ -14,7 +14,7 @@ details: Unreal Engine 4 (GLES). Found and verified in gameplay on a Frame by Kl
   the layer logs that). OVRPlugin asks for poses at its own clock (pose_time_fix). Unreal's Oculus input animates the
   thumbs from near-touch, which the Frame never reports (frame.unreal_thumb_touch reads the touches instead; binding
   the proximity to the touch inputs in FrameBridge didn't reach the game). The Frame's SteamVR runtime
-  leaks about 20 MB a second while the game runs (reported to Valve).
+  leaks about 20 MB a second while the game runs (a Valve bug; no FramePort fix).
 tested_version: 1.1.1+667256.cl.387770
 engine: Unreal
 xr: VrApi
