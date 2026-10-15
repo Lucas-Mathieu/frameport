@@ -41,6 +41,26 @@ entries with status `unsupported` are excluded from both headline and runtime su
 separate metrics and per-game diffs. Converted analyses are included and marked. JSON contains all metrics per
 engine, all game signatures, split assignments, and missing/extra decisions.
 
+## Dated score: catalog gaps vs. detection errors
+
+The strict score treats the catalog as complete, but older entries were verified before many patches existed, and
+a catalog recipe inherits every heuristic adapter setting and device patch (except `device.text_input_window`)
+without listing them (`engine.suggest`), so the verified build had those. The dated score (`headline_dated`, printed
+under "Dated") sets aside, on both sides:
+
+- patches first committed after the entry's `verified.date` (the verifier couldn't have chosen them), and
+- inherited adapter/device picks (`inherited_decisions`).
+
+What remains are real disagreements: an extra on an entry verified after the patch existed, or a catalog choice
+the heuristics don't make. Gaps are counted per patch ("Catalog gaps by patch"). The dated score needs the intro
+date cache that `--fit-report` writes; without it only inherited picks are set aside.
+
+Before tuning a rule to remove an "extra", check which kind it is: a gap on an old entry is a candidate for the
+catalog (fit report), not a detection error. Before adding a patch to a working entry, weigh its benefit (does it
+fix something the game hits?) against a rebuild prompt for everyone who installed it; adapter settings never need
+adding (inherited). Results 2026-10-15: strict 5/65 exact, F1 73.8%; dated 39/65, F1 88.6% (dev 90.5%, holdout
+79.5%). Remaining misses are one-game fixes found at runtime (e.g. Vader's gl_error_clear, BlazeRush's GL settings).
+
 An evaluation writes JSON even when its headline has differences, then exits 1 for compatibility with the original
 script. It exits 0 when exact, or after producing a fit report.
 
@@ -52,7 +72,8 @@ applicable and recommended by its own `detect()`. Entries already listing or exp
 excluded; a listed adapter key is excluded regardless of its value. This report proposes additions, not value edits.
 
 Each candidate includes its reason, experimental/strict flags, first local git introduction date, catalog entry
-date (the later of verified/updated), and whether the patch is newer. Unknown dates are marked unknown. Warnings
+date (`verified.date`; `updated` only without one, since it also moves for unrelated edits), and whether the
+patch is newer. Unknown dates are marked unknown. Warnings
 come from the full catalog recipe plus that one candidate; they may include pre-existing conflicts. Missing-analysis
 entries appear as metadata-only rows. Intro dates, including unknown results, are cached in
 `patch-intro-dates.json` beside the snapshot (or dumps folder); subsequent runs only query uncached patch IDs.

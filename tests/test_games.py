@@ -8,10 +8,11 @@ from frameport.sources import quest_dump
 
 pytestmark = pytest.mark.games
 
-# 2026-10-15 snapshot baseline: 3/65 supported games exact, patch F1=240/495; rounded down to two decimals.
-# See scripts/eval_heuristics.py; runtime-only choices and unsupported catalog entries are excluded.
+# 2026-10-15 full snapshot (80 dumps, 65 supported catalog games), strict score: 5/65 exact, patch F1 73.8%;
+# rounded down. The dated score (--fit-report's date cache) was 39/65, F1 88.6%. See docs/HEURISTICS_EVAL.md;
+# runtime-only choices and unsupported catalog entries are excluded.
 MIN_HEURISTICS_EXACT_RATIO = 0.07
-MIN_HEURISTICS_PATCH_F1 = 0.65
+MIN_HEURISTICS_PATCH_F1 = 0.73
 
 
 @pytest.fixture(scope="module")

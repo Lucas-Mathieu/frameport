@@ -1100,9 +1100,15 @@ MR-only (PASSTHROUGH required + BOUNDARYLESS_APP) → force_passthrough, + USE_S
 hand tracking required → controller_fix=0; OVRPlugin + ≥20 GiB → disable_space_warp; Unreal ≤4.21 or Unreal Meta XR
 Audio → nodebug; Oculus-OS class referenced by the Unreal audio build or ≥2 Meta libs → oculusos; legacy-VrApi Unity
 GLES with MSAA → unity_no_msaa; CryEngine → user.cfg r_variable_rate_shading=0; direct VrApi → bridge (+GL shim for
-GLAD/GLES); Unreal → alternate no-ForceQuit build. Score changes with
-`python scripts/eval_heuristics.py "<dumps>"` (catalog off vs verified recipes; currently 33/34 exact — Phantom's
-"use the no-ForceQuit build" is only detectable at runtime via triage). Add a rule → re-run the eval + `pytest -m games`.
+GLAD/GLES); Unreal → alternate no-ForceQuit build. Scoring (docs/HEURISTICS_EVAL.md, 2026-10-15): analyse the dumps
+once (`scripts/heuristics_snapshot.py <out.json> "<VR CyberDeck Portable>" "<PATCHED>"`, ~30 min, keep out of git),
+then `scripts/eval_heuristics.py --snapshot <out.json> --split dev|holdout|all [--fit-report]` (catalog-only truth,
+per-patch precision/recall, a fixed 20% holdout to catch rules fitted to one game). Read the **dated** score: an
+"extra" on an entry verified before the patch existed is a catalog gap, and adapter/device picks are inherited by
+catalog recipes anyway. 2026-10-15: strict 5/65 exact, F1 73.8%; dated 39/65, F1 88.6%; remaining misses are
+one-game runtime fixes. Don't key a rule on one game's code fingerprint (an Unreal splash/depth "detect" matching
+only Star Wars Tales + FNAF HW was rejected: it would also have bumped ANALYSIS_VERSION for every user). Add a rule →
+re-run dev + holdout + `pytest -m games`.
 
 ## Frame operations
 - Find/connect: `frameport frame discover` / `frame info` (the remembered Frame is in `<user data>/frames.json`).
