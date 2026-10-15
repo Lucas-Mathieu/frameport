@@ -31,7 +31,6 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | BONELAB | Quest | ✅ Works |  |
 | Carve Snowboarding | Quest | ✅ Works |  |
 | Caves | Quest | ✅ Works |  |
-| Clockwork | Quest | ✅ Works |  |
 | COMPOUND | Quest | ✅ Works |  |
 | Cook-Out | Quest | ✅ Works |  |
 | Cosmodread | Quest | ✅ Works |  |
@@ -129,6 +128,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | TetrisEffect | Quest | ✅ Works |  |
 | The Boys VR | Quest | ✅ Works |  |
 | The Climb 2 | Quest | ✅ Works |  |
+| The Last Clockwinder | Quest | ✅ Works |  |
 | The Room VR | Quest | ✅ Works |  |
 | The Tale of Onogoro | Quest | ✅ Works |  |
 | Time Crisis II VR (Test) | Quest | ✅ Works |  |

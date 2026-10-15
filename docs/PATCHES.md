@@ -904,7 +904,7 @@ Stops a gray or frozen screen in Unity games that turn on anti-aliasing while ru
 - `frame.unity_gl_shim`
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** Unity GLES game that may switch to MSAA at runtime: hide multisampled render-to-texture, which crashes the Frame's GL driver (for example The Room VR).
-- **Catalog games (23):** Audica, BattleSisters, Beat Saber, Clockwork, COMPOUND, Cosmodread, Down the Rabbit Hole, Drunkn Bar Fight and 15 more.
+- **Catalog games (23):** Audica, BattleSisters, Beat Saber, COMPOUND, Cosmodread, Down the Rabbit Hole, Drunkn Bar Fight, End Space and 15 more.
 - **Suggested by launch-test signatures:**
   - `unreal-msrtt-crash` (fatal): The game's graphics crashed a few seconds after start.
 - **Source:** [patches/frame/vrapi_bridge.py](../src/frameport/patches/frame/vrapi_bridge.py)
@@ -973,7 +973,7 @@ Keeps a smoothing setting off that the game turns on itself and that can freeze 
 - `frame.unity_runtime_msaa_off` · revision 2
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** GLES Unity game whose OVRManager turns 4x MSAA on at runtime: multisampled render-to-texture can hang the Frame's GPU.
-- **Catalog games (28):** Audica, BattleSisters, Beat Saber, Clockwork, COMPOUND, Cosmodread, Down the Rabbit Hole, Drunkn Bar Fight and 20 more.
+- **Catalog games (28):** Audica, BattleSisters, Beat Saber, COMPOUND, Cosmodread, Down the Rabbit Hole, Drunkn Bar Fight, End Space and 20 more.
 - **Suggested by launch-test signatures:**
   - `unity-render-crash` (fatal): The game's graphics crashed, so the picture freezes or stays gray.
   - `unity-runtime-msaa` (info): The game turns MSAA on at runtime, which can hang the Frame's GPU.
