@@ -275,3 +275,69 @@ def test_triage_offers_delivery_when_crc_patch_already_enabled(monkeypatch):
     })
     assert pipeline.useful_suggestions(PKG, triage(STUCK, "RUNNING", PKG).suggestions()) == [
         "frame.unreal_skip_obb_delivery"]
+
+
+def _obfuscated_delivery_dex(cls=None, *, log="Checking for file : ", called=True, helpers=True, ret="Z"):
+    from test_vivox_audio_route import build_dex
+
+    cls = cls or f"L{PKG.replace('.', '/')}/DownloaderActivity;"
+    helper = "Lcom/google/android/vending/expansion/downloader/d;"
+    # onCreate calls both obfuscated delivery predicates. The CRC predicate b() shares helper references,
+    # but has no delivery log and is not a delivery check.
+    code = [0x0012, 0x0000, 0x001A, 0, 0x1071, 0, 0, 0x1071, 1, 0, 0x000F]
+    return build_dex([
+        (helper if helpers else "Lother/Helper;", "a", "Ljava/lang/String;", None),
+        (helper if helpers else "Lother/Helper;", "b", "Z", None),
+        (cls, "a", ret, code), (cls, "d", ret, code),
+        (cls, "b", "Z", [0x1071, 1, 0, 0x000A, 0x000F]),
+        (cls, "onCreate", "V", [0x106E, 2, 0, 0x106E, 3, 0, 0x000E] if called else [0x000E]),
+    ], strings_first=(log, "Checking for file : "))
+
+
+def test_obfuscated_delivery_detection_apply_and_triage(tmp_path, monkeypatch):
+    from dataclasses import asdict
+
+    from frameport import pipeline
+    from frameport.apk.dex import Dex
+    from frameport.patches.frame.unreal_obb_check import UnrealSkipObbDelivery, delivery_methods, patch_dex
+
+    raw = _obfuscated_delivery_dex()
+    path = _apk(tmp_path, _manifest(verify=False))
+    with zipfile.ZipFile(path, "a") as z:
+        z.writestr("classes2.dex", raw)
+    analysis = analyze(path)
+    assert analysis.extra["unreal_obb_delivery"] is True
+    assert analysis.extra["unreal_verify_obb"] is False
+    patch = UnrealSkipObbDelivery()
+    assert patch.applies(analysis) and patch.detect(analysis) is None  # opt-in after a stuck-downloader report
+    monkeypatch.setattr(pipeline.library, "game", lambda _pkg: {
+        "analysis": asdict(analysis), "recipe": {"patches": {}},
+    })
+    assert pipeline.useful_suggestions(PKG, triage(STUCK, "RUNNING", PKG).suggestions()) == [patch.id]
+    with ApkWorkspace(path) as ws:
+        ctx = base.ApkContext(ws, analysis, {}, Reporter(), {patch.id: {}})
+        assert len(patch.validate(ctx)) == 2 and not any(ok for _, ok, _ in patch.validate(ctx))
+        assert patch.apply(ctx)
+        out = ws.read("classes2.dex")
+        assert len(out) == len(raw)
+        assert len(patch.validate(ctx)) == 2 and all(ok for _, ok, _ in patch.validate(ctx))
+        assert ws.read("AndroidManifest.xml") == _manifest(verify=False)
+        assert ws.read("classes.dex") == b"dex\n035\0"
+        before, after = Dex(raw), Dex(out)
+        offsets = [code for _, code in delivery_methods(before, PKG)]
+        changed = {i for i, (a, b) in enumerate(zip(raw, out, strict=True)) if a != b}
+        assert changed <= set(range(8, 32)) | {o + 16 + i for o in offsets for i in range(4)}
+        assert after.code_items(f"L{PKG.replace('.', '/')}/DownloaderActivity;", "b") == before.code_items(
+            f"L{PKG.replace('.', '/')}/DownloaderActivity;", "b")
+        assert not patch.apply(ctx) and patch_dex(after, PKG) == []
+
+
+def test_obfuscated_delivery_requires_activity_calls_log_and_helpers():
+    from frameport.patches.frame.unreal_obb_check import has_delivery_check
+
+    assert has_delivery_check(_obfuscated_delivery_dex(), PKG)
+    for raw in (_obfuscated_delivery_dex(cls="Lother/DownloaderActivity;"),
+                _obfuscated_delivery_dex(log="Checking something else"),
+                _obfuscated_delivery_dex(called=False), _obfuscated_delivery_dex(helpers=False),
+                _obfuscated_delivery_dex(ret="I")):
+        assert not has_delivery_check(raw, PKG)

@@ -1107,7 +1107,7 @@ Skips a separate data-file check when an Unreal game still hangs at startup with
   - `unreal-obb-check-stuck` (fatal): The game stays on Unreal's OBB check screen (DownloaderActivity), which the Frame doesn't show, and never starts VR (for example Contractors, GitHub #159).
 - **Source:** [patches/frame/unreal_obb_check.py](../src/frameport/patches/frame/unreal_obb_check.py)
 
-> Unreal's Java OBB delivery check can leave a game on an invisible DownloaderActivity screen even with the manifest CRC check off (e.g. Into The Radius). Makes known Unreal expansionFilesDelivered methods return true, bypassing the Java name and size gate. Experimental: the native engine still needs complete, matching, readable OBB data.
+> Unreal's Java OBB delivery check can leave a game on an invisible DownloaderActivity screen even with the manifest CRC check off (e.g. Into The Radius). Makes known Unreal delivery predicates return true, including recognized obfuscated versions, bypassing the Java name and size gate. Experimental: the native engine still needs complete, matching, readable OBB data.
 
 ### <a id="frame-unreal_splash_bypass"></a>Unreal: bypass the stalled loading splash
 

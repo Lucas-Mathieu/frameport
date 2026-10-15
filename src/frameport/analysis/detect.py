@@ -43,7 +43,7 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 # 17: headset (the Meta headset a VR app was made for: Gear VR / Go games run through frame.a32_bridge) (2026-10)
 # 18: headset "quest" also for 32-bit apps that require 6DoF head tracking (Santa Cruz builds, e.g. Sports
 #     Scramble: Touch controllers on the a32 bridge) (2026-10)
-ANALYSIS_VERSION = 18
+ANALYSIS_VERSION = 19
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -251,6 +251,7 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         media_codec = any(m in d for d in dexes for m in MEDIA_CODEC_MARKERS) or "libvlc.so" in libs
         from ..patches.frame.unreal_obb_check import has_delivery_check
 
+        # Includes obfuscated DownloaderActivity predicates; CRC verification is a separate manifest switch.
         unreal_obb_delivery = any(has_delivery_check(d, package) for d in dexes)
         del dexes
         manifest = z.read("AndroidManifest.xml")
