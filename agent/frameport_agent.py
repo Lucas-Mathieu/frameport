@@ -957,7 +957,10 @@ def vdf_decode(data):
             else:
                 raise AgentError(f"unsupported VDF value type {kind}; not modifying shortcuts.vdf")
             if key in out:
-                raise AgentError("duplicate VDF key; not modifying shortcuts.vdf")
+                old_key = out._key(key)
+                # Older agents wrote lowercase twins of Steam's capitalized keys. Keep their position.
+                if key[:1].isupper() and not old_key[:1].isupper():
+                    out = VdfMap((key if k == old_key else k, v) for k, v in out.items())
             out[key] = value
 
     root = node()

@@ -87,14 +87,40 @@ def test_capitalized_shortcuts_are_found_by_library_and_devkit_checks(monkeypatc
     assert a.shortcuts_lost(["42"], ["com.x.y"], wait=0) == []
 
 
-def test_case_variant_duplicate_vdf_keys_are_not_overwritten(monkeypatch, tmp_path):
+@pytest.mark.parametrize("names", [("appname", "AppName"), ("AppName", "appname"), ("appname", "appname")])
+def test_duplicate_shortcut_keys_are_merged_and_upserted(monkeypatch, tmp_path, names):
     a = load_agent(monkeypatch, tmp_path)
     vdf = tmp_path / "shortcuts.vdf"
-    data = a.vdf_encode({"Shortcuts": {"0": {"appid": 1}}, "shortcuts": {"0": {"appid": 2}}})
+    exe = '"/game/launch.sh"'
+    entry = {"appid": 123, "name_slot": "Old", "Exe": exe, "duplicate_slot": "Latest", "LastPlayTime": 99}
+    data = a.vdf_encode({"Shortcuts": {"0": entry}})
+    data = data.replace(b"name_slot\0", names[0].encode() + b"\0")
+    data = data.replace(b"duplicate_slot\0", names[1].encode() + b"\0")
     vdf.write_bytes(data)
-    with pytest.raises(a.AgentError, match="duplicate VDF key"):
-        a.upsert_shortcut(str(vdf), '"/game"', "Game", "/")
-    assert vdf.read_bytes() == data
+    spelling = "AppName" if "AppName" in names else "appname"
+    root = a.vdf_decode(data)
+    merged = root["shortcuts"]["0"]
+    assert list(merged) == ["appid", spelling, "Exe", "LastPlayTime"]
+    assert merged["appname"] == "Latest"
+    clean = a.vdf_encode(root)
+    assert clean == a.vdf_encode({"Shortcuts": {"0": {
+        "appid": 123, spelling: "Latest", "Exe": exe, "LastPlayTime": 99}}})
+    assert a.vdf_encode(a.vdf_decode(clean)) == clean
+    assert a.upsert_shortcut(str(vdf), exe, "Updated", "/game") == 123
+    written = vdf.read_bytes()
+    assert written.count(spelling.encode() + b"\0") == 1
+    other_spelling = "appname" if spelling == "AppName" else "AppName"
+    assert other_spelling.encode() + b"\0" not in written
+    updated = a.vdf_decode(written)["shortcuts"]["0"]
+    assert updated["appname"] == "Updated" and updated["LastPlayTime"] == 99
+
+
+def test_duplicate_vdf_nodes_keep_last_value(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    data = a.vdf_encode({"Shortcuts": {"0": {"appid": 1}}, "shortcuts": {"0": {"appid": 2}}})
+    root = a.vdf_decode(data)
+    assert list(root) == ["Shortcuts"]
+    assert root["shortcuts"]["0"]["appid"] == 2
 
 
 def test_launcher_template(monkeypatch, tmp_path):
