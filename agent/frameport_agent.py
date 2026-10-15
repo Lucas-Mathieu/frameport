@@ -44,7 +44,7 @@ try:
 except ImportError:  # Windows: pc_revive loads this file for its VDF code only (GitHub #131)
     fcntl = None
 
-AGENT_VERSION = 90
+AGENT_VERSION = 91
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -3070,10 +3070,11 @@ SINGLE_LINE = ('exec 9>"$app_dir/.launch.lock"; flock -n 9 || '
                'exit 0; }')
 
 
-# Lepton mirrors the game's logcat into launch.log, and that reader sometimes dies right after the game starts
-# ("logcat: Unexpected EOF!", seen with Vader Immortal on Lepton 3.0.5 and Under Cover on 2.8.14). The game runs on,
-# but launch.log stays empty: no dashboard auto-hide, no launch-test result. _logcat_keeper then reads the
-# container's logcat itself and appends it to launch.log.
+# Lepton mirrors the game's logcat into launch.log, and that reader sometimes fails: it dies right after the game
+# starts ("logcat: Unexpected EOF!", Vader Immortal on Lepton 3.0.5, Under Cover on 2.8.14), can't read ("Logcat read
+# failure"), or runs and writes nothing (Lepton 3.0.5, 2026-10-14). The game runs on, but launch.log stays empty: no
+# dashboard auto-hide, no launch-test result, no session triage. _logcat_keeper then reads the container's logcat
+# itself and appends it to launch.log.
 LOGCAT_LINE = ('python3 {agent_q} _logcat_keeper "$app_dir/launch.log" "$SteamAppId" $$ '
                '>"$app_dir/logcat-keeper.log" 2>&1 9>&- &')
 
@@ -6852,15 +6853,42 @@ def user_opened_dashboard(log, pos):
 
 
 LOGCAT_EOF = "logcat: Unexpected EOF"
+# Lepton's mirror fails in more ways than one: it ends ("Unexpected EOF"), can't read ("Logcat read failure"), or
+# prints nothing at all after "Waiting for app" (seen on a first start after an APK change, 2026-10-14)
+LOGCAT_FAILURES = (LOGCAT_EOF, "logcat: Logcat read failure")
+LOGCAT_ROW = re.compile(r"\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} +\d+ +\d+ [VDIWEF] ")  # a logcat -v threadtime line
+LEPTON_ROW = re.compile(r"\x1b\[[0-9;]*m\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} ")  # Lepton's mirror colours its lines
+LOGCAT_SILENCE = 20.0  # seconds without a logcat line after "Waiting for app" = the mirror isn't working (a running
+# game's container logs all the time: FrameBridge alone every 5 s)
+LOGCAT_BUFFER = "16M"  # the container's log buffer: a chatty game overwrote its own first minutes in the default one
 
 
-def logcat_keeper(log, appid, parent, poll=2.0, restarts=5, popen=None):
-    """Keep launch.log filling when Lepton's logcat mirror dies while the game runs (LOGCAT_LINE): once the log shows
-    LOGCAT_EOF after "Waiting for app", read the container's logcat ourselves (from its last 2000 lines, so the start
-    of the game isn't lost) and append it; restart it if it ends while the game still runs (at most `restarts` times).
-    Ends with the launcher."""
+def logcat_keeper(log, appid, parent, poll=2.0, restarts=5, popen=None, run=None, clock=None,
+                  silence=LOGCAT_SILENCE):
+    """Keep launch.log filling when Lepton's logcat mirror doesn't (LOGCAT_LINE): after "Waiting for app", a failure
+    line (LOGCAT_FAILURES) or `silence` seconds without a logcat line start our own reader of the container's logcat
+    (`logcat -T <epoch>`: from the launcher's start when the mirror never wrote a line, else from just before its
+    last one; nothing is lost while the buffer holds it); restarted from where it stopped if it ends while the game
+    runs (at most `restarts` times), stopped again when Lepton's own (coloured) lines come back. Enlarges the
+    container's log buffer once it has booted. Every decision is printed (the launcher sends it to
+    logcat-keeper.log). Ends with the launcher."""
     popen = popen or subprocess.Popen
+    run = run or subprocess.run
+    clock = clock or time.time
     container = f"lepton-steamlaunch-{appid}"
+    start = clock()  # the keeper starts with the launcher
+    # (Steam's LD_PRELOAD overlay libraries only add "ld.so: ... cannot be preloaded" lines to the log)
+    env = {k: v for k, v in os.environ.items() if k != "LD_PRELOAD"}
+
+    def say(text):
+        print(f"{time.strftime('%H:%M:%S')} {text}", flush=True)
+
+    def note(text):  # also into launch.log, where triage and the dashboard worker read
+        try:
+            with open(log, "a") as f:
+                f.write(f"FramePort: {text}\n")
+        except OSError:
+            pass
 
     def alive():
         try:
@@ -6869,31 +6897,79 @@ def logcat_keeper(log, appid, parent, poll=2.0, restarts=5, popen=None):
         except (OSError, ValueError):
             return False
 
-    proc, started = None, 0
+    pos, booted, buffer_tries, waiting_since = 0, False, 0, None
+    lepton_rows, last_row, failure, proc, started = False, None, None, None, 0
     while alive():
-        if proc is None or proc.poll() is not None:
+        try:
+            with open(log, "rb") as f:
+                f.seek(pos)
+                chunk = f.read().decode("utf-8", "replace")
+                pos = f.tell()
+        except OSError:
+            chunk = ""
+        if not booted and "Boot complete!" in chunk:
+            booted = True
+        if booted and buffer_tries < 5:
+            buffer_tries += 1
             try:
-                with open(log, errors="replace") as f:
-                    text = f.read()
-            except OSError:
-                text = ""
-            i = text.find("Waiting for app")
-            if i >= 0 and LOGCAT_EOF in text[i:] and started < restarts:
+                r = run(["podman", "exec", container, "logcat", "-G", LOGCAT_BUFFER], capture_output=True,
+                        text=True, timeout=15, env=env)
+                ok = r.returncode == 0
+                say(f"log buffer {LOGCAT_BUFFER}: {'set' if ok else (r.stdout + r.stderr).strip()[:200]}")
+            except (OSError, subprocess.SubprocessError) as exc:
+                ok = False
+                say(f"log buffer {LOGCAT_BUFFER}: {exc}")
+            if ok:
+                buffer_tries = 5
+        if waiting_since is None:
+            i = chunk.find("Waiting for app")
+            if i >= 0:
+                waiting_since, chunk = clock(), chunk[i:]
+                say("Lepton is waiting for the app; watching its logcat mirror")
+        if waiting_since is not None and chunk:
+            ours = proc is not None and proc.poll() is None
+            if ours and LEPTON_ROW.search(chunk):
+                proc.terminate()
+                proc, failure, lepton_rows, last_row = None, None, True, clock()
+                say("Lepton's mirror is writing again: stopped our reader")
+                note("Lepton's logcat is back; stopped FramePort's reader")
+            elif not ours:
+                if any(m in chunk for m in LOGCAT_FAILURES):
+                    failure = next(m for m in LOGCAT_FAILURES if m in chunk)
+                elif LOGCAT_ROW.search(chunk):
+                    lepton_rows, last_row = True, clock()
+        if waiting_since is not None and (proc is None or proc.poll() is not None):
+            if proc is not None:  # our reader ended while the game runs: go on from where it stopped
+                say(f"our reader ended ({proc.poll()})")
+                proc, lepton_rows, last_row = None, True, clock()  # (go on from about now)
+                failure = failure or "FramePort's reader ended"
+            quiet = clock() - (last_row or waiting_since)
+            after = "" if lepton_rows else " after the app started"
+            reason = failure or (None if quiet < silence else f"no logcat line for {quiet:.0f} s{after}")
+            if reason and started < restarts:
                 started += 1
-                with open(log, "a") as f:
-                    f.write(f"FramePort: Lepton's logcat ended; reading {container}'s logcat again ({started})\n")
+                # nothing came through yet: everything since the start; else from just before the last line seen
+                since = start if not lepton_rows else last_row - poll - 1
+                say(f"reading {container}'s logcat ourselves since {since:.3f} ({started}): {reason}")
+                note(f"Lepton's logcat isn't coming through ({reason}); reading {container}'s logcat ({started})")
                 out = open(log, "ab")
                 try:
-                    proc = popen(["podman", "exec", container, "logcat", "-v", "threadtime", "-T", "2000"],
-                                 stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+                    proc = popen(["podman", "exec", container, "logcat", "-v", "threadtime", "-T", f"{since:.3f}"],
+                                 stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env)
                 except OSError as exc:
-                    print(f"logcat_keeper: {exc}", flush=True)
+                    say(f"could not start logcat: {exc}")
                     proc = None
                 finally:
                     out.close()
+                # what our reader writes is ours: only Lepton's coloured lines count from here on
+                try:
+                    pos = os.path.getsize(log)
+                except OSError:
+                    pass
         time.sleep(poll)
     if proc is not None and proc.poll() is None:
         proc.terminate()
+    say("launcher ended")
 
 
 def dashboard_worker(log, parent, wait_start=240, window=120, poll=0.5, ui_log=None, max_hides=10):

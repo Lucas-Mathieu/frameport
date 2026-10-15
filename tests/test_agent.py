@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -1704,41 +1705,125 @@ def test_game_logs_collect_unity_player_log(monkeypatch, tmp_path):
     assert "not this game" in text and "old unity" in text
 
 
-def test_logcat_keeper_reads_the_container_logcat_after_leptons_mirror_died(monkeypatch, tmp_path):
-    """Lepton's logcat mirror died right after Vader Immortal started ("logcat: Unexpected EOF!"): launch.log stayed
-    empty, so the dashboard was never closed. The keeper reads the container's logcat itself."""
-    a = load_agent(monkeypatch, tmp_path)
-    monkeypatch.setattr(a.time, "sleep", lambda s: None)
-    log = tmp_path / "launch.log"
-    log.write_text("Boot complete!\nWaiting for app com.x.y to exit...\nlogcat: Unexpected EOF!\n")
-    calls, alive = [], iter([True, True, False])
-    monkeypatch.setattr(a.os, "kill", lambda pid, sig: None if next(alive) else (_ for _ in ()).throw(OSError()))
+LEPTON = "\x1b[38;5;40m10-14 22:56:43.690  1225  1256 I FrameBridge: pacing: 72.0 fps\x1b[0m\n"
 
-    class Proc:
-        def __init__(self, argv, stdout, **kw):
+
+def run_keeper(a, monkeypatch, log, loops, writes=None, procs=None, tick=2.0, **kw):
+    """Run logcat_keeper for `loops` polls on a fake clock (`tick` s each). writes: {loop: text appended to the log
+    before that poll}. Returns (popen calls, run calls); each started reader is a FakeProc that `procs` can end."""
+    monkeypatch.setattr(a.time, "sleep", lambda s: None)
+    state = {"loop": -1, "now": 1000.0}
+    calls, runs, started = [], [], []
+
+    def kill(pid, sig):
+        state["loop"] += 1
+        state["now"] += tick
+        if state["loop"] >= loops:
+            raise OSError()
+        text = (writes or {}).get(state["loop"])
+        if text:
+            with open(log, "a") as f:
+                f.write(text)
+        for i, end in (procs or {}).items():
+            if state["loop"] == end and i < len(started):
+                started[i].code = 0
+
+    monkeypatch.setattr(a.os, "kill", kill)
+
+    class FakeProc:
+        def __init__(self, argv, stdout, **k):
             calls.append(argv)
-            stdout.write(b"10-09 10:01:00.000 1 2 I FrameBridge: new layer: type=35\n")
+            stdout.write(b"10-14 22:56:44.000  1225  1256 I FrameBridge: new layer: type=35\n")
+            self.code = None
+            started.append(self)
 
         def poll(self):
-            return None
+            return self.code
 
         def terminate(self):
             calls.append("terminated")
+            self.code = -15
 
-    a.logcat_keeper(str(log), "123", os.getpid(), popen=Proc)
-    assert calls[0][:4] == ["podman", "exec", "lepton-steamlaunch-123", "logcat"] and calls[-1] == "terminated"
+    def run(argv, **k):
+        runs.append(argv)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    a.logcat_keeper(str(log), "123", os.getpid(), popen=FakeProc, run=run, clock=lambda: state["now"], **kw)
+    return calls, runs
+
+
+def test_logcat_keeper_reads_on_after_leptons_mirror_ended(monkeypatch, tmp_path):
+    """Lepton's logcat mirror died right after Vader Immortal started ("logcat: Unexpected EOF!"): launch.log stopped
+    filling, so the dashboard was never closed. The keeper reads the container's logcat itself from about the moment
+    the mirror stopped (what came before is already in the log)."""
+    a = load_agent(monkeypatch, tmp_path)
+    log = tmp_path / "launch.log"
+    log.write_text("Boot complete!\nWaiting for app com.x.y to exit...\n")
+    calls, runs = run_keeper(a, monkeypatch, log, 8, writes={3: LEPTON, 5: "logcat: Unexpected EOF!\n"})
+    argv = calls[0]
+    assert argv[:4] == ["podman", "exec", "lepton-steamlaunch-123", "logcat"] and calls[-1] == "terminated"
+    assert float(argv[argv.index("-T") + 1]) > 1002  # not from the start: Lepton's lines are already there
+    assert runs[0] == ["podman", "exec", "lepton-steamlaunch-123", "logcat", "-G", "16M"]
     text = log.read_text()
-    assert "reading lepton-steamlaunch-123's logcat again" in text and "new layer: type=35" in text
+    assert "Lepton's logcat isn't coming through (logcat: Unexpected EOF)" in text and "new layer: type=35" in text
+
+
+def test_logcat_keeper_reads_from_the_start_when_the_mirror_stays_silent(monkeypatch, tmp_path):
+    """The owner's verifying session of Journey of the Gods (first start after an APK change): Lepton printed
+    "Waiting for app" and then nothing at all, no EOF. Silence starts the reader too, from the launcher's start."""
+    a = load_agent(monkeypatch, tmp_path)
+    log = tmp_path / "launch.log"
+    log.write_text("Lepton v3.0.5 starting up\nBoot complete!\nWaiting for app gg.trs.grappa to exit...\n")
+    calls, _ = run_keeper(a, monkeypatch, log, 13)  # 2 s polls: 20 s of silence after the 1st poll
+    assert len([c for c in calls if c != "terminated"]) == 1
+    argv = calls[0]
+    assert argv[argv.index("-T") + 1] == "1000.000"
+    assert re.search(r"no logcat line for 2\d s after the app started", log.read_text())
+
+
+def test_logcat_keeper_waits_out_a_short_silence(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    log = tmp_path / "launch.log"
+    log.write_text("Waiting for app com.x.y to exit...\n")
+    calls, _ = run_keeper(a, monkeypatch, log, 8)  # 16 s: under the 20 s threshold
+    assert calls == []
+
+
+def test_logcat_keeper_starts_on_a_logcat_read_failure(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    log = tmp_path / "launch.log"
+    log.write_text("Waiting for app com.x.y to exit...\nlogcat: Logcat read failure: No such file or directory\n")
+    calls, runs = run_keeper(a, monkeypatch, log, 3)
+    assert calls and calls[0][3] == "logcat" and not runs  # (no "Boot complete!": the buffer is left alone)
+    assert "Logcat read failure" in log.read_text()
 
 
 def test_logcat_keeper_does_nothing_while_leptons_mirror_works(monkeypatch, tmp_path):
     a = load_agent(monkeypatch, tmp_path)
-    monkeypatch.setattr(a.time, "sleep", lambda s: None)
     log = tmp_path / "launch.log"
-    log.write_text("Waiting for app com.x.y to exit...\n10-09 I FrameBridge: pacing: 72 fps\n")
-    alive = iter([True, True, False])
-    monkeypatch.setattr(a.os, "kill", lambda pid, sig: None if next(alive) else (_ for _ in ()).throw(OSError()))
-    a.logcat_keeper(str(log), "123", os.getpid(), popen=lambda *x, **k: pytest.fail("must not start logcat"))
+    log.write_text("Boot complete!\nWaiting for app com.x.y to exit...\n" + LEPTON)
+    calls, runs = run_keeper(a, monkeypatch, log, 20, writes={i: LEPTON for i in range(20)})
+    assert calls == [] and len(runs) == 1  # only the log buffer
+
+
+def test_logcat_keeper_stops_its_reader_when_leptons_mirror_comes_back(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    log = tmp_path / "launch.log"
+    log.write_text("Waiting for app com.x.y to exit...\n")
+    calls, _ = run_keeper(a, monkeypatch, log, 16, writes={14: LEPTON})
+    assert calls[-1] == "terminated" and len(calls) == 2
+    assert "Lepton's logcat is back" in log.read_text()
+
+
+def test_logcat_keeper_restarts_its_reader_from_where_it_ended(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    log = tmp_path / "launch.log"
+    log.write_text("Waiting for app com.x.y to exit...\nlogcat: Unexpected EOF!\n")
+    calls, _ = run_keeper(a, monkeypatch, log, 6, procs={0: 3})
+    readers = [c for c in calls if c != "terminated"]
+    assert len(readers) == 2
+    first, second = (float(r[r.index("-T") + 1]) for r in readers)
+    assert first == 1000.0 and second > first + 4  # the second goes on from about when the first ended
 
 
 def test_upgrade_launchers_adds_logcat_keeper(monkeypatch, tmp_path):
