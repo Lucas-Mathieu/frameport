@@ -6,9 +6,15 @@ engine: Unity
 xr: OpenXR
 status: works
 notes: Co-op unavailable.
+  frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
 details: 'Release notes: for DLC use an older version. Co-op likely unavailable.'
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
   overport_runtime: 3.4.3-23204ea
   known_good_sha256: 06428a6328a49b3ca769e070dd0d2bb55c2122c8fba5d07a69b1b206a532c212
+updated: '2026-10-15'

@@ -7,6 +7,9 @@ xr: OpenXR
 status: works
 notes: Needs Oculus OS telemetry class stubs and the no-ForceQuit build (the normal build quits right after
   starting).
+  frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
+device:
+- device.text_input_window
 verified:
   date: '2026-10-02'  # owner-confirmed with the no-ForceQuit build
   overport_cli: 1.2.3
@@ -14,6 +17,8 @@ verified:
   known_good_sha256: 31469d50b8ee292597291db7cc3bc3eca8e851f533cd92bba0d64214893580cc
 frame:
 - frame.oculusos
+- frame.unity_text_input
 alt_overport:
 - patch_remove_unreal_force_quit
 use_alt: true
+updated: '2026-10-15'

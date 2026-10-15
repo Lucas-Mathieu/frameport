@@ -6,9 +6,15 @@ engine: Unity
 xr: OpenXR
 status: works
 notes: Needed the GLES/sRGB swapchain fallback.
+  frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
 details: Also available as a native PC SteamVR title.
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
   overport_runtime: 3.4.3-23204ea
   known_good_sha256: 158f7c4f5e8558029dc8cc5e8dcb4e67e846b261bf34e3e448fee7f657c74597
+updated: '2026-10-15'

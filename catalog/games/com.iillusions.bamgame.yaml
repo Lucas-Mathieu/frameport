@@ -6,11 +6,17 @@ engine: Unity
 xr: OpenXR
 status: works
 notes: Passthrough emulated with the Frame cameras (greyscale).
+  frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
 details: Mixed-reality-only title; relies on passthrough (emulated).
 overport_extra:
 - patch_force_passthrough
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
   overport_runtime: 3.4.3-23204ea
   known_good_sha256: 65ca3a8f46cc9acfd268949418f9adeecb0cf9f59d11591ba95fe2ba9ea966d8
+updated: '2026-10-15'

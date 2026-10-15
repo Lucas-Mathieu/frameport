@@ -7,8 +7,14 @@ xr: OpenXR
 status: works
 notes: Uses Meta XR Audio via FMOD (not covered by patch_meta_xr_audio); if audio is missing, that is the likely
   cause.
+  frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
   overport_runtime: 3.4.3-23204ea
   known_good_sha256: 63fff470777f2753d55ad50f8355573ced8fa48bcaee0f5e6a0c10369f951a38
+updated: '2026-10-15'

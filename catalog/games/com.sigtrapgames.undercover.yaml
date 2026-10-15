@@ -6,8 +6,14 @@ engine: Unity
 xr: OpenXR
 status: works
 notes: Layers with failed swapchains are dropped by the adapter.
+  frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
   overport_runtime: 3.4.3-23204ea
   known_good_sha256: c3f8cba1c22762231b6a6fbd881668db859d83224884ebeae0c1a3ba716f298c
+updated: '2026-10-15'

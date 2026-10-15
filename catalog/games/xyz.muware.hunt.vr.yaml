@@ -5,9 +5,14 @@ source_hint: H.U.N.T
 engine: Unity
 xr: OpenXR
 status: works
-notes: ''
+notes: frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
   overport_runtime: 3.4.3-23204ea
   known_good_sha256: c35373d0f7c870ade148e3259abcc74098b6bc89fe2c2f3a2e55168df642e391
+updated: '2026-10-15'

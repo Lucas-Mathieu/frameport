@@ -6,11 +6,14 @@ engine: Unity
 xr: OpenXR
 status: works
 notes: Passthrough + Meta scene/room emulated from the Steam guardian (scene_emul=1).
+  frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
 details: Mixed-reality-only; builds its level from the room model, which the adapter emulates from the Steam guardian.
 overport_extra:
 - patch_force_passthrough
 adapter:
   scene_emul: 1
+device:
+- device.text_input_window
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
@@ -18,3 +21,5 @@ verified:
   known_good_sha256: 9f900fc86fbb2663abe83c82ab79cc72bbf1f93fea54f7583fd274dd07e3d09c
 frame:
 - frame.meta_permissions
+- frame.unity_text_input
+updated: '2026-10-15'

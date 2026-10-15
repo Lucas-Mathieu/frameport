@@ -5,9 +5,14 @@ source_hint: Toy Master
 engine: Unity
 xr: OpenXR
 status: works
-notes: ''
+notes: frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
   overport_runtime: 3.4.3-23204ea
   known_good_sha256: e951595c67b6e448f3fb4afd07e6b83e98e589094bb3b73374cfb28aa01e96ee
+updated: '2026-10-15'

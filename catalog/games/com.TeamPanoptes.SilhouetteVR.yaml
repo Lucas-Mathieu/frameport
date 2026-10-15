@@ -6,12 +6,18 @@ engine: Unity
 xr: OpenXR
 status: issues
 notes: Hand-tracking game; the Frame synthesizes hands from controllers, so it is janky.
+  frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
 details: Hand-tracking-only game; Steam Frame has no optical hand tracking. Built with controller_fix=0 so hand
   data passes through if the runtime ever provides it.
 adapter:
   controller_fix: 0
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
   overport_runtime: 3.4.3-23204ea
   known_good_sha256: a19b80db0c300d422cbba35a4924ab59211b39bcb6485e200d310e3e1372ddb7
+updated: '2026-10-15'

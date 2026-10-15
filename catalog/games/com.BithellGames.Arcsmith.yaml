@@ -6,9 +6,15 @@ engine: Unity
 xr: VrApi
 status: issues
 notes: Right eye distorts during movement (unresolved; swap, tracking, Valve layers, depth and pacing ruled out).
+  frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
 details: Legacy VrApi via OVRPlugin; overport swaps in an OpenXR OVRPlugin. Do not remove VrApi.
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
   overport_runtime: 3.4.3-23204ea
   known_good_sha256: 192ff250f5fbec38b9c4e898f0b8408edc25901f46bb4b227f7ca60bbd9f0bba
+updated: '2026-10-15'

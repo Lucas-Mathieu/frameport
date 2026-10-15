@@ -5,9 +5,14 @@ source_hint: 'Sniper Elite VR- Winter Warrior'
 engine: Unity
 xr: OpenXR
 status: works
-notes: ''
+notes: frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
   overport_runtime: 3.4.3-23204ea
   known_good_sha256: 6b8170da5826b9a35326a20967a0e5a242d46fb569a0a3c669e1cbd368102dd3
+updated: '2026-10-15'

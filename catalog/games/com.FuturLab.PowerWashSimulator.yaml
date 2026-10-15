@@ -6,8 +6,14 @@ engine: Unity
 xr: OpenXR
 status: works
 notes: Recommended pilot title.
+  frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
   overport_runtime: 3.4.3-23204ea
   known_good_sha256: 2300f628ce04c1da60b52fed18335d6a31b88cc88313fd6d2c0e1a8e7785126f
+updated: '2026-10-15'

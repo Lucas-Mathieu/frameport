@@ -6,9 +6,15 @@ engine: Unity
 xr: OpenXR
 status: works
 notes: Use VR mode.
+  frame.unity_text_input and device.text_input_window added from detection (not headset-verified).
 details: Has VR and MR modes; use VR mode (passthrough not forced).
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
 verified:
   date: '2026-09-28'
   overport_cli: 1.2.3
   overport_runtime: 3.4.3-23204ea
   known_good_sha256: 5ba09a2bc0046c8cb587272ab81e8d32739334fef523b10ab26531a733d54f12
+updated: '2026-10-15'
