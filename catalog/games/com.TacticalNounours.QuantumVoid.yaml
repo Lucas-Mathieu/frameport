@@ -1,0 +1,25 @@
+package: com.TacticalNounours.QuantumVoid
+title: Quantum Void
+status: issues
+notes: no hands
+tested_version: '1.11'
+engine: Unity
+xr: OpenXR
+frame:
+- frame.bhaptics_permission
+- frame.unity_text_input
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+  pose_time_fix: 1
+foveation: tracked
+verified:
+  date: '2026-10-14'
+  known_good_sha256: 1c7afccbd627b9bd2342884679aeca0efc2429df700f3c73ec162498db320098
+  app: 1.1.1
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 88
+  issue: 307
+source_hint: Quantum Void

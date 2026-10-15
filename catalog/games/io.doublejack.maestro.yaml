@@ -1,0 +1,22 @@
+package: io.doublejack.maestro
+title: Maestro
+status: works
+tested_version: 0.0.397
+engine: Unreal
+xr: OpenXR
+alt_overport:
+- patch_remove_unreal_force_quit
+frame:
+- frame.unreal_skip_obb_check
+- frame.hw_video_decode
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-15'
+  known_good_sha256: 4ca71bf4464691ab2c675fbeca1ecc5f4d34599c0a810fd3a67374c91d47f6ee
+  app: 1.1.1
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 88
+  issue: 316
+source_hint: io.doublejack.maestro

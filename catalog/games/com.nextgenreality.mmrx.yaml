@@ -1,0 +1,26 @@
+package: com.nextgenreality.mmrx
+title: Mini Motor Racing X
+status: works
+tested_version: 1.3.6
+engine: Unity
+xr: VrApi
+frame:
+- frame.unity_no_msaa
+- frame.unity_oculus_check
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.unity_gl_shim
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+  pose_time_fix: 1
+verified:
+  date: '2026-10-15'
+  known_good_sha256: f1df011117c918794b9d9da0c5a170fc7ac7cb7ec10eddc2dd4db649d855a531
+  app: 1.1.1
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 88
+  issue: 317
+source_hint: com.nextgenreality.mmrx

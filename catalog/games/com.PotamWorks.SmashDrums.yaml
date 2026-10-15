@@ -1,0 +1,23 @@
+package: com.PotamWorks.SmashDrums
+title: Smash Drums
+status: works
+tested_version: 5.2.1.4
+engine: Unity
+xr: OpenXR
+frame:
+- frame.bhaptics_permission
+- frame.unity_text_input
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+  scene_emul: 1
+verified:
+  date: '2026-10-15'
+  known_good_sha256: 67d36cdcadaf14c2f744849ae25af4f92bf8ea14ff935318562f40d7f2ddc88f
+  app: 1.1.1
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 88
+  issue: 320
+source_hint: com.PotamWorks.SmashDrums

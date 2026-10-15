@@ -1,0 +1,22 @@
+package: com.polyarc.MossGame
+title: Moss
+status: works
+notes: The initial loading image looks glitchy, but otherwise it works well.
+tested_version: 1.0.3.151047
+engine: Unreal
+xr: VrApi
+alt_overport:
+- patch_remove_unreal_force_quit
+frame:
+- frame.hw_video_decode
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-15'
+  known_good_sha256: 4aaae261dcc67de1d04309e31c0ea17dbc980b431adc8ce1917ae72ac4f9d417
+  app: 1.2.0
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 91
+  issue: 315
+source_hint: com.polyarc.MossGame

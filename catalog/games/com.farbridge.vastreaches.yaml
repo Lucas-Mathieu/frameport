@@ -1,0 +1,22 @@
+package: com.farbridge.vastreaches
+title: 'Homeworld: Vast Reaches'
+status: issues
+notes: The game starts but after selecting to start a new game it seems to crash.
+tested_version: 1.2.0-25215
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-15'
+  known_good_sha256: 6c5cb4b56fd01d20cb854e834b1611c2b2e8f10d889585606e631104d2a9323e
+  app: 1.1.1
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 88
+  issue: 314
+source_hint: com.farbridge.vastreaches

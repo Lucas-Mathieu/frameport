@@ -1,0 +1,21 @@
+package: com.voidroom.TeaForGodEmperor
+title: Tea For God
+status: works
+tested_version: 1.1.1
+engine: Other
+xr: OpenXR+VrApi
+frame:
+- frame.bhaptics_permission
+- frame.hw_video_decode
+adapter:
+  equirect_emul: 1
+foveation: tracked
+verified:
+  date: '2026-10-14'
+  known_good_sha256: 89b0b20d5a5b414604163def76b50aaed26961ac283dab08ff7eb469f5bacde6
+  app: 1.1.1
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 88
+  issue: 295
+source_hint: Tea For God

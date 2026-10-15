@@ -1,0 +1,27 @@
+package: com.picselica.OceanRiftFullQuest
+title: Ocean Rift
+status: works
+notes: eye tracked foveated rendering works great!
+tested_version: '2.09'
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.unity_gl_shim
+device:
+- device.text_input_window
+adapter:
+  controller_models: 1
+  haptic_fix: 1
+  scene_emul: 1
+foveation: tracked
+verified:
+  date: '2026-10-14'
+  known_good_sha256: 63020505f27af3d463798679999000e2d9bc671e72913138a16171461e3c95d2
+  app: 1.1.1
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 88
+  issue: 304
+source_hint: Ocean Rift

@@ -1,0 +1,24 @@
+package: com.RuneSkovboJohansen.EyeOfTheTemple
+title: Eye of the Temple
+status: works
+tested_version: '1.528'
+engine: Unity
+xr: VrApi
+frame:
+- frame.unity_no_msaa
+- frame.unity_oculus_check
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.hw_video_decode
+- frame.unity_gl_shim
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-15'
+  known_good_sha256: 78ad96eaf4383b02666e0a1af99c5985f718f97982466e5dca9ebb636974af00
+  app: 1.1.1
+  overport_cli: 1.2.5
+  issue: 302
+source_hint: Eye of the Temple

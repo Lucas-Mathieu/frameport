@@ -1,0 +1,24 @@
+package: com.MeatSpace.Nakatomi
+title: Vendetta Forever
+status: works
+tested_version: 1.0.4.0
+engine: Unity
+xr: OpenXR
+frame:
+- frame.bhaptics_permission
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.unity_gl_shim
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-15'
+  known_good_sha256: 72885ad42f1b730a1bd7fad271b87665914e3cf14fde60409395868458ac7b06
+  app: 1.1.1
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 88
+  issue: 321
+source_hint: com.MeatSpace.Nakatomi

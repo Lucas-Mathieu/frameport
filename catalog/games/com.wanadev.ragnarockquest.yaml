@@ -1,0 +1,23 @@
+package: com.wanadev.ragnarockquest
+title: Ragnarock
+status: issues
+tested_version: 2.8.0
+engine: Unreal
+xr: VrApi
+alt_overport:
+- patch_remove_unreal_force_quit
+frame:
+- frame.unreal_skip_obb_check
+- frame.bhaptics_permission
+- frame.hw_video_decode
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-15'
+  known_good_sha256: 365f26d9a4991e2340311dfb40d14f097a066653f97fff55c632aa1876519d70
+  app: 1.1.1
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 88
+  issue: 319
+source_hint: com.wanadev.ragnarockquest

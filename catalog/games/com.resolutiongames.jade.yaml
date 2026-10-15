@@ -1,0 +1,24 @@
+package: com.resolutiongames.jade
+title: Battlemarked
+status: works
+tested_version: 7.2.39817-release
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+- frame.hw_video_decode
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+  pose_time_fix: 1
+  scene_emul: 1
+verified:
+  date: '2026-10-15'
+  known_good_sha256: 670c7c16ec8d85b3865b120d143143dc73387ec325feaa028320608b1f377e7d
+  app: 1.1.1
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 88
+  issue: 312
+source_hint: com.resolutiongames.jade
