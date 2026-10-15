@@ -76,6 +76,8 @@ class Patch:
     default_on: bool = False  # part of the always-recommended baseline
     experimental: bool = False
     needs_vr: bool = True  # only matters for VR apps (hidden for Android apps without VR)
+    # works on a 32-bit game through the a32 bridge (frame.a32_bridge); None = by category (works_on_a32)
+    a32: bool | None = None
     revision: int = 1  # bump when apply() writes something different: installed builds then show "Update on Frame"
     package_revisions: dict[str, int] = {}  # narrower updates to otherwise shared patches
 
@@ -139,6 +141,15 @@ def for_game(patch: Patch, analysis: Analysis) -> bool:
     """Quest patches only for Quest games, PC VR (Revive) patches only for Rift games."""
     rift = (analysis.extra or {}).get("kind") == "rift"
     return (patch.category == "pcvr") == rift
+
+
+def works_on_a32(patch: Patch) -> bool:
+    """Whether the patch can take effect in a 32-bit game on the bridge. OVRPort doesn't run there and the Frame
+    fixes edit 64-bit libraries, so those two categories are off unless a patch says otherwise (`a32 = True`: the
+    bridge, the adapter, the launcher entry); FrameBridge settings and device options work unless they say not."""
+    if patch.a32 is not None:
+        return patch.a32
+    return patch.category not in ("overport", "frame")
 
 
 def all_patches() -> list[Patch]:

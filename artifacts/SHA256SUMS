@@ -1,5 +1,8 @@
 1a4dce5c4a6d0dfc5f20e55ac29e70c73cc2cc124c21ca6a7e1b316e6afb1c79  ./arm64-v8a/libVkLayer_fdm_darken.so
 5becb96ee86fbda0ce98c0e0fd064f8ba092314aceaa400e3dcc785705dc3c23  ./arm64-v8a/libVkLayer_fp_shaderfix.so
+fbc3b0238462d976d234fee6740db92b873c85d6bb22a6b01428e64e9058ed83  ./arm64-v8a/liba32bridge.so
+c9c3da5cac224c38e2210b781bd12b7f97e02bd6b0ebb0ef85543e4ea4b76671  ./arm64-v8a/liba32rt.so
+18d8d917e83a6d87008f41908eb478dff635e798844e125abd1e8a5cf31805e2  ./arm64-v8a/liba32stub.so
 d6337034fb0bdcca7ef9b7063d85b7586b8508b63b435959e8fffaba0691091c  ./arm64-v8a/libfp_langpack.so
 69102b128e00fa1809489a7308e09c1505f563bf7091bbdd3fe5a58e4cc96c2c  ./arm64-v8a/libfp_luajit.so
 321da502e0f8f46f0880aad39fe6b84bdef88f925164568814cf704a1b31a577  ./arm64-v8a/libfp_ovrp.so
@@ -12,8 +15,8 @@ e8c0965c188665a4e565e4a3af983ef1866d1cf9225665cc90d8df286bc96ef3  ./arm64-v8a/li
 19ba5ed3c4b780f5ae46251f6958f552acfc5f13c8bb39f995579593fa8990c6  ./arm64-v8a/libglshim.so
 51f5e0c5b3d3556baab27ece2936257782d6b590183ae59601cc6d8158c96ee2  ./arm64-v8a/libopenxr_loader_generic.so
 1feaeafad467c4cafdf2b018a4d84b0bee200c3f711697b4ce97e66a3ba256ca  ./arm64-v8a/libovrplatformcompat.so
-001218759411033797d686842944b268e05aa91f98f971caa4934c7b59cfd426  ./arm64-v8a/libvrapi.so
-001218759411033797d686842944b268e05aa91f98f971caa4934c7b59cfd426  ./arm64-v8a/libvrapi_foveation.so
+a4ed80ae45ca90758239f152ea5a2e8c127d491e1e697ea5680db6fd7f72db07  ./arm64-v8a/libvrapi.so
+a4ed80ae45ca90758239f152ea5a2e8c127d491e1e697ea5680db6fd7f72db07  ./arm64-v8a/libvrapi_foveation.so
 6927f100536283a8c26b784af73ee400140dd910e9294e4a9d55f855547ffaf2  ./armeabi-v7a/libopenxr_loader_generic.so
 1871eae093432d277da4bc751bf5f3269dfcf11f9168260b0c3caadb0dedb19d  ./dex/oculusos-stubs.dex
 b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe  ./hevc/COPYING.FFmpeg

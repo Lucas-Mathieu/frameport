@@ -21,6 +21,7 @@ def settings_text(recipe_patches: dict) -> bytes:
 
 class FrameBridgeAdapter(Patch):
     id = "frame.adapter"
+    a32 = True  # also for 32-bit games on the bridge
     title = "FrameBridge OpenXR adapter"
     description = (
         "Wraps OVRPort's generic OpenXR loader (renamed libopenxr_loader_original.so). Fixes the Frame runtime's "
@@ -76,11 +77,10 @@ class FrameBridgeAdapter(Patch):
 
 def needs_xrshim(recipe_patches: dict) -> bool:
     """Adapter features whose functions OVRPort's dispatcher doesn't forward (it only knows a fixed table)."""
-    from ..settings import adapter_settings
+    from ..settings import XRSHIM_SETTINGS, adapter_settings
 
     s = adapter_settings(recipe_patches)
-    # surface_native: Batman's native video renderer hooks Vulkan functions OVRPort's dispatcher doesn't know
-    return bool(s.get("controller_models") or s.get("haptic_fix") or s.get("surface_native"))
+    return any(s.get(key) for key in XRSHIM_SETTINGS)
 
 
 def add_xrshim(ctx: ApkContext) -> bool:

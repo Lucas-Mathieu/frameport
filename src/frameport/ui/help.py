@@ -27,6 +27,9 @@ HELP: dict[str, str] = _Translated({
                  "pick it.",
     "platform_quest": "A Meta Quest game. FramePort patches it for the Frame, where it runs in Lepton, Valve's Android "
                       "container.",
+    "platform_gearvr": "A Samsung Gear VR or Oculus Go game (32-bit). The Frame only runs 64-bit code, so FramePort's "
+                       "32-bit bridge translates it inside the app (experimental). The right controller acts as the "
+                       "Gear VR / Go controller.",
     "platform_windows": "A Windows game without VR. On the Frame, Proton runs it in a window from the Steam library.",
     "platform_pcvr": "A Windows VR game. It runs on this PC with SteamVR, or on the Frame with Proton. Oculus-only "
                      "games also need Revive.",
@@ -74,7 +77,7 @@ HELP: dict[str, str] = _Translated({
     "uninstall": "Removes the game from the Frame. Saves are kept, so a reinstall picks up where you left off.",
     "experimental": "Not tested on many games yet. Try it if the game doesn't work without it.",
     "abis": "The processor types the game has code for. The Frame runs only 64-bit ARM (arm64-v8a); 32-bit-only "
-            "games can't run on it.",
+            "games (Gear VR, Oculus Go) run through FramePort's 32-bit bridge (experimental).",
     "graphics": "OpenGL ES games run through a translation to Vulkan that is stricter than Quest drivers. Vulkan "
                 "games run directly.",
     "recipe_source": "Where the recipe came from: catalog (tested on a Frame), heuristics (suggested by FramePort) or "

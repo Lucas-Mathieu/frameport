@@ -40,7 +40,10 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 # 14: bhaptics_permission (bHaptics asks for Android 12's BLUETOOTH_CONNECT: frame.bhaptics_permission, GitHub #235)
 # 15: verified xLua/LuaJIT 47-bit lightuserdata engine (frame.luajit_pointers, GitHub #257)
 # 16: unreal_obb_delivery (Java expansionFilesDelivered gate, GitHub #283) (2026-10)
-ANALYSIS_VERSION = 16
+# 17: headset (the Meta headset a VR app was made for: Gear VR / Go games run through frame.a32_bridge) (2026-10)
+# 18: headset "quest" also for 32-bit apps that require 6DoF head tracking (Santa Cruz builds, e.g. Sports
+#     Scramble: Touch controllers on the a32 bridge) (2026-10)
+ANALYSIS_VERSION = 18
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -157,6 +160,20 @@ def _features(manifest: bytes) -> dict[str, bool]:
     return out
 
 
+def requires_6dof(manifest: bytes) -> bool:
+    """The app requires 6DoF head tracking (uses-feature android.hardware.vr.headtracking, version 1, required): Meta's
+    Quest declaration, which Gear VR and Go apps don't make."""
+    x = axml.Axml(manifest)
+    names = x.strings()
+    for el in x.elements():
+        if el.name != "uses-feature" or x.attr_str(el, "name") != "android.hardware.vr.headtracking":
+            continue
+        attrs = {names[a.name]: a.value for a in el.attrs if a.name < len(names)}
+        if attrs.get("required", 1) != 0 and (attrs.get("version") or 0) >= 1:
+            return True
+    return False
+
+
 def vr_kind(libs: set[str], manifest_strings: list[str]) -> str:
     """What kind of Android app this is, for choosing how to port it:
     quest       Meta Quest app (VrApi / OVRPlugin / Meta's OpenXR loader + Oculus manifest entries): OVRPort
@@ -182,6 +199,24 @@ def vr_kind(libs: set[str], manifest_strings: list[str]) -> str:
 
 # Kotlin's message for a failed non-null cast to ClipboardManager (Godot 4.2-4.4; 4.1 is Java, 4.5+ uses `as?`)
 GODOT_CLIPBOARD_CAST = b"null cannot be cast to non-null type android.content.ClipboardManager"
+
+
+def headset(meta: dict, abis: list[str], kind: str, six_dof: bool = False) -> str:
+    """The Meta headset a VR app was made for: "quest", "go" (Oculus Go), "gearvr" (Samsung Gear VR, which most Go
+    games also kept) or "" (not a Meta VR app). Quest games list their devices in com.oculus.supportedDevices or
+    require 6DoF head tracking (six_dof: 32-bit Santa Cruz builds, which also kept Samsung's VR mode); Gear VR and Go
+    games declare Samsung's VR mode and only ship 32-bit code (the Quest needs arm64)."""
+    if kind != "quest":
+        return ""
+    devices = str(meta.get("com.oculus.supportedDevices") or "").lower()
+    if "quest" in devices or "eureka" in devices or "arm64-v8a" in abis or six_dof:
+        return "quest"
+    if "go" in devices.split("|") or "pacific" in devices:
+        return "go"
+    if meta.get("com.samsung.android.vr.application.mode") or "armeabi-v7a" in abis:
+        return "gearvr"
+    return "quest"
+
 
 # dex type names of Android's video decoding APIs (frame.hw_video_decode)
 MEDIA_CODEC_MARKERS = (b"Landroid/media/MediaCodec;", b"Landroidx/media3/exoplayer", b"Lcom/google/android/exoplayer2/")
@@ -335,6 +370,7 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             "oculus_os_refs": sorted(oculus_os_refs),
             "xr_layer_exts": sorted(layer_exts),  # composition-layer extensions the game's own libraries request
             "vr_kind": vr_kind(libset, manifest_strings),
+            "headset": headset(meta, abis, vr_kind(libset, manifest_strings), requires_6dof(manifest)),
             # the base of a split APK set (Play "app bundle" installs): the code/libraries live in split APKs
             "split_apk": bool({"isSplitRequired", "requiredSplitTypes"} & set(manifest_strings)),
             # Unity (IL2CPP) text fields: they close at once on the Frame (frame.unity_text_input)
@@ -362,8 +398,10 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             # Unreal packaged its content as an OBB (expansion file), or a Unity split build keeps all but its first
             # scene in one; CryEngine's launcher formats external OBB paths (including versionless ones).
             # Without it the game hangs or crashes at start (GitHub #85, #92, #238).
-            "expects_obb": (expects_obb(meta) or unity_split or engine == "CryEngine" and any(
-                b"\0%s/%s.%i.%s.obb\0" in d or b"\0%s/%s.%s.obb\0" in d for d in lib_bytes.values())),
+            # (not when the APK carries it: older Unreal's "OBB inside the APK", assets/main.obb.png, e.g. Gunjack)
+            "expects_obb": ((expects_obb(meta) and "assets/main.obb.png" not in names) or unity_split
+                            or engine == "CryEngine" and any(b"\0%s/%s.%i.%s.obb\0" in d or b"\0%s/%s.%s.obb\0" in d
+                                                             for d in lib_bytes.values())),
             # The Climb uses the older foveation cvar, not The Climb 2's r_variable_rate_shading.
             "cryengine_vr_foveated": engine == "CryEngine" and any(
                 b"\0r_vr_foveated\0" in d for d in lib_bytes.values()),

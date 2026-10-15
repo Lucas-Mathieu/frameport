@@ -1,0 +1,20 @@
+package: com.ccpgames.gunjack
+title: Gunjack
+status: works
+notes: 'Gear VR game (32-bit only), runs through FramePort''s 32-bit bridge (experimental). Controls (right
+  controller): trigger = fire (hold the touchpad), A = tap, stick down = reload (swipe back), stick up = special
+  weapon (swipe forward), B = back.'
+details: 'Unreal Engine 4.10 NativeActivity, VrApi, GLES, OBB inside the APK (assets/main.obb.png). The bridge answers
+  the game''s APK signature check with the original APK''s certificate and keeps the GLES session when Unreal leaves
+  and re-enters VR after loading. Controller input goes into the game''s AInputQueue as Gear VR touchpad events.
+  Runs in the headset (owner, 2026-10-12).'
+tested_version: 1.4.1
+engine: Unreal
+xr: VrApi
+headset: gearvr
+frame:
+- frame.a32_bridge
+verified:
+  date: '2026-10-12'
+min_app: 0.12.1
+source_hint: Gunjack (Gear VR)

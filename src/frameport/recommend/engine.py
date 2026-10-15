@@ -48,6 +48,8 @@ def suggest(analysis: Analysis, use_catalog: bool = True) -> Recipe:
             recipe.reasons[pid] = why
         # heuristic-only suggestions the catalog didn't choose are dropped for exact reproducibility
         chosen = set(entry.overport_extra) | set(entry.frame) | set(entry.device)
+        if _a32_predates_bridge(analysis, entry):
+            chosen.add("frame.a32_bridge")  # the entry's verdict ("no AArch32") is from before the bridge
         for pid in list(recipe.patches):
             p = base.get(pid)
             if pid not in chosen and not p.default_on and (p.category in ("overport", "frame")
@@ -76,14 +78,18 @@ def suggest(analysis: Analysis, use_catalog: bool = True) -> Recipe:
             recipe.reasons["device.foveation"] = why
         recipe.alt_patches = list(entry.alt_overport)
         recipe.use_alt = entry.use_alt
+        if _a32_predates_bridge(analysis, entry) and "frame.a32_bridge" in recipe.patches:
+            recipe.reasons["frame.a32_bridge"] = base.get("frame.a32_bridge").detect(analysis).reason
+            if recipe.status == "unsupported":
+                recipe.status = "unknown"
+            recipe.notes = A32_NOTE + " Not yet tested with the bridge (the catalog's earlier verdict: " + \
+                f"{entry.notes or entry.status})"
     else:
         recipe.source = "heuristics"
         if analysis.engine == "Unreal":
             recipe.alt_patches = ["patch_remove_unreal_force_quit"]  # build a fallback in case it quits itself
         if analysis.only_32bit:
-            recipe.status = "unsupported"
-            recipe.notes = ("32-bit only: the Steam Frame has no AArch32 support. Consider the PC (Rift) version "
-                            "via Revive.")
+            recipe.notes = A32_NOTE
         elif analysis.no_arm64:
             recipe.status = "unsupported"
             recipe.notes = f"No 64-bit ARM code ({', '.join(analysis.abis)}): the Steam Frame can't run it."
@@ -92,6 +98,8 @@ def suggest(analysis: Analysis, use_catalog: bool = True) -> Recipe:
     if not rift and (not entry or analysis.vr_kind == "none"):
         # Saved recipes still need the flat-app build rules: no OVRPort, and APK fixes only when needed (#271).
         _non_quest(analysis, recipe)
+    if not rift:
+        a32_recipe(analysis, recipe)
     if not rift and not entry and (analysis.extra or {}).get("frame_patched"):
         # already has FramePort's adapter (e.g. a PATCHED/ build): installing it unchanged is the safe default
         recipe.as_is = True
@@ -182,8 +190,14 @@ def _rift_recipe(analysis: Analysis, recipe: Recipe, entry) -> None:
     recipe.notes = " ".join(notes)
 
 
-def warnings(recipe: Recipe) -> list[str]:
+def warnings(recipe: Recipe, analysis: Analysis | None = None) -> list[str]:
     out = []
+    if analysis is not None and analysis.only_32bit and not recipe.as_is:
+        if "frame.a32_bridge" not in recipe.patches:
+            return [f"This game has only 32-bit ARM code, which the Steam Frame can't run: without "
+                    f"'{base.get('frame.a32_bridge').title}' it can't be built."]
+        return [f"{base.get(pid).title} doesn't work with the 32-bit bridge." for pid in recipe.patches
+                if not base.works_on_a32(base.get(pid))]
     if recipe.package.startswith("rift."):
         for pid in recipe.patches:
             for r in base.get(pid).requires:
@@ -274,6 +288,45 @@ def _non_quest(analysis: Analysis, recipe: Recipe) -> None:
                                           "headset's own extensions and store/platform services aren't available.")
 
 
+A32_NOTE = ("32-bit only (e.g. a Gear VR or Oculus Go game): the Steam Frame has no 32-bit ARM support, so the game "
+            "runs through FramePort's 32-bit bridge (experimental).")
+
+
+def _a32_predates_bridge(analysis: Analysis, entry) -> bool:
+    """A catalog entry for a 32-bit game that neither uses nor removes the bridge was written before it existed
+    (e.g. "unsupported: the Frame has no AArch32"): the bridge is suggested anyway."""
+    return analysis.only_32bit and "frame.a32_bridge" not in (*entry.frame, *entry.frame_remove)
+
+
+def a32_recipe(analysis: Analysis, recipe: Recipe, newly: bool = True) -> bool:
+    """A 32-bit-only game through the 32-bit bridge (frame.a32_bridge): OVRPort (64-bit apps only) doesn't run; the
+    bridge ships OVRPort's loaders itself. Unity needs its Android window focused (Lepton runs VR apps headless,
+    without a focused window, and Unity's built-in VR then never starts rendering). Also applied to recipes edited
+    by hand (pipeline.set_recipe, builds): turning the bridge on switches off what it replaces. `newly` = the bridge
+    was just turned on: also add what it needs and lift an "unsupported" from before the bridge (a later save mustn't
+    bring back a patch the user turned off). True = changed."""
+    if not analysis.only_32bit or "frame.a32_bridge" not in recipe.patches:
+        return False
+    before = (recipe.overport, list(recipe.alt_patches), set(recipe.patches), recipe.status)
+    recipe.overport = False
+    recipe.alt_patches = []
+    # the 64-bit library fixes don't apply to translated code (the bridge does its own: Unity's Oculus check,
+    # Meta's platform loader); adapter settings that need OVRPlugin's own arm64 lookups (xrshim) neither
+    for pid in [p for p in recipe.patches if not base.works_on_a32(base.get(p))]:
+        recipe.patches.pop(pid)
+        recipe.reasons.pop(pid, None)
+    if newly and analysis.engine == "Unity" and "device.text_input_window" not in recipe.patches:
+        recipe.patches["device.text_input_window"] = {}
+        recipe.reasons["device.text_input_window"] = ("Unity on the 32-bit bridge starts rendering only with its "
+                                                      "Android window focused.")
+    if newly and recipe.status == "unsupported":
+        entry = catalog.lookup(analysis.package)
+        if not entry or _a32_predates_bridge(analysis, entry):  # "no AArch32", not a verdict on the bridge
+            recipe.status = "unknown"
+            recipe.notes = A32_NOTE
+    return before != (recipe.overport, list(recipe.alt_patches), set(recipe.patches), recipe.status)
+
+
 def _add(notes: str, text: str) -> str:
     return f"{notes} {text}".strip() if text not in (notes or "") else notes
 
@@ -287,6 +340,9 @@ def visible_patches(analysis: Analysis, recipe: Recipe | None = None) -> tuple[l
         on = recipe is not None and p.id in recipe.patches
         if p.needs_vr and analysis.vr_kind == "none" and not on:
             hidden.append(p)  # an Android app without VR: VR patches can't take effect
+            continue
+        if analysis.only_32bit and not on and not base.works_on_a32(p):
+            hidden.append(p)  # a 32-bit game through the bridge: no OVRPort run, the 64-bit library fixes can't apply
             continue
         (shown if on and not p.default_on or p.applies(analysis) else hidden).append(p)
     return shown, hidden

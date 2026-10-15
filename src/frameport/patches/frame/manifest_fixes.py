@@ -9,6 +9,7 @@ MANIFEST = "AndroidManifest.xml"
 
 class Launcher(Patch):
     id = "frame.launcher"
+    a32 = True  # also for 32-bit games on the bridge
     needs_vr = False
     title = "Launcher category (INFO → LAUNCHER)"
     description = ("Lepton only launches an activity with category LAUNCHER (Quest apps often use INFO). "

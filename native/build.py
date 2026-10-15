@@ -385,6 +385,15 @@ def build_luajit(tc: Path):
          "--out", ART / "arm64-v8a/libfp_luajit.so"])
 
 
+def build_a32(tc: Path):
+    """The 32-bit ARM bridge (a32translator/bridge, patch frame.a32_bridge): its own build script, then the three
+    files every bridged game ships (liba32rt.so is 32-bit ARM code: it runs inside the translator)."""
+    bridge = HERE / "a32translator" / "bridge"
+    run([sys.executable, bridge / "build.py", "--ndk", tc.parents[3]], cwd=bridge)
+    for name in ("liba32bridge.so", "liba32rt.so", "liba32stub.so"):
+        shutil.copyfile(HERE / "a32translator/out/bridge" / name, ART / "arm64-v8a" / name)
+
+
 def build_dex():
     javac = shutil.which("javac")
     if not javac:
@@ -429,7 +438,7 @@ def write_sums():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", default="adapter,bridge,compat,langpack,glshim,eglfmt,glmv,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,zinkfix,foveation,ovrpshim,tlskeys,luajit,vrsettings,venc")
+    ap.add_argument("--only", default="adapter,bridge,compat,langpack,glshim,eglfmt,glmv,ovrtrace,dex,xrlayer,oculushmd,xrshim,vkshim,zinkfix,foveation,ovrpshim,tlskeys,luajit,vrsettings,venc,a32")
     ap.add_argument("--ndk")
     args = ap.parse_args()
     parts = set(args.only.split(","))
@@ -445,9 +454,9 @@ def main():
              "ovrpshim": lambda: build_ovrpshim(tc), "tlskeys": lambda: build_tlskeys(tc),
              "luajit": lambda: build_luajit(tc),
              "vrsettings": lambda: build_vrsettings(tc), "venc": lambda: build_venc(tc),
-             "vroverlay_probe": lambda: build_vroverlay_probe(tc)}
+             "vroverlay_probe": lambda: build_vroverlay_probe(tc), "a32": lambda: build_a32(tc)}
     for name in ("adapter", "bridge", "compat", "langpack", "glshim", "eglfmt", "glmv", "ovrtrace", "xrshim", "vkshim", "zinkfix", "foveation", "ovrpshim", "tlskeys", "luajit", "dex", "xrlayer", "oculushmd", "vrsettings", "venc",
-                 "vroverlay_probe"):
+                 "vroverlay_probe", "a32"):
         if name in parts:
             log(f"build {name}")
             steps[name]()

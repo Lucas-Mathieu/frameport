@@ -175,7 +175,7 @@ def test_delivery_detection_and_multidex_apply_with_crc_already_off(tmp_path):
     with zipfile.ZipFile(path, "a") as z:
         z.writestr("classes2.dex", raw)
     analysis = analyze(path)
-    assert analysis.extra["analysis_version"] == 16
+    assert analysis.extra["analysis_version"] >= 16
     assert analysis.extra["unreal_obb_delivery"] is True
     assert patch.applies(analysis) and patch.detect(analysis) is None
     assert patch.experimental and not patch.default_on

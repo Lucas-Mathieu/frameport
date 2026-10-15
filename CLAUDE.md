@@ -312,6 +312,66 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
 - `native/` — sources of the prebuilt binaries in `artifacts/` (adapter, VrApi bridge patches, GL shim, stubs).
   `native/build.py` rebuilds them with NDK r27c (downloaded on demand into `native/.cache`, git-ignored; uses
   `-ffile-prefix-map` so no local paths get embedded; zip symlinks are restored as copies). Users never need the NDK.
+  `native/a32translator/` (not an artifact, not shipped) = `a32run`, an AArch32 → AArch64 user-mode translator
+  (interpreter + JIT, ARM/Thumb-2/VFP/NEON) for running 32-bit ARM Linux programs on the Frame; its README has the
+  design, the qemu-arm differential fuzzer and program tests. `native/a32translator/bridge/` = the in-APK Android
+  bridge (32-bit JNI/NativeActivity libraries in a 64-bit app: stub + liba32bridge.so + guest runtime liba32rt.so;
+  harness with a fake JVM; test APK org.frameport.a32test passes in Lepton; GLES/EGL, OpenSL ES via AAudio, VrApi 1.x
+  -> the 64-bit VrApi bridge, controller input as Gear VR touchpad/back events; `bridge/convert.py` converts an APK).
+  First game: AFFECTED The Manor (Gear VR, Unity 5.6 + Mono) runs in the headset with picture and sound
+  (2026-10-10); Spunky Dungeon (Unity 2019.2, OVRPlugin 1.46 on VrApi 1.31, Platform SDK) plays at 72 fps.
+  In FramePort: patch `frame.a32_bridge` (`patches/frame/a32_bridge.py`: `convert()` is shared with the dev script
+  `bridge/convert.py`; artifacts `liba32bridge.so`/`liba32rt.so`/`liba32stub.so` from `native/build.py --only a32`)
+  is suggested for every 32-bit-only APK; the recipe then has `overport: False` (OVRPort is 64-bit only; the patch
+  ships OVRPort's loader chain + its 32-bit platform dispatcher itself, `overport.ensure_runtime_lib`), only
+  frame.a32_bridge/adapter/launcher of the frame patches, and `device.text_input_window` for Unity (`engine.a32_recipe`,
+  also run by `pipeline.set_recipe` + builds, so a bridge turned on by hand drops OVRPort & the 64-bit fixes; which
+  patches work there = `base.works_on_a32` (`Patch.a32`; overport/frame off unless `a32 = True`, adapter settings in
+  `settings.XRSHIM_SETTINGS` off); `build.check_a32` refuses anything else, `engine.warnings(recipe, analysis)` says
+  so; a catalog entry for a 32-bit game that neither names nor removes the bridge predates it: bridge kept, status
+  unknown; parity gives bridge builds without a bridge known-good "new build (no baseline)"; library migration
+  `a32_bridge_on` turned the bridge on once in every 32-bit recipe, user ones too, unless the catalog's frame_remove
+  names it).
+  Analysis `extra.headset` (ANALYSIS_VERSION 15): gearvr / go / quest → "Gear VR" / "Oculus Go" platform + Steam tag.
+  Catalog: `headset:` field; com.fallen.affected, net.mobilemischief.spunkydungeon, com.ccpgames.gunjack (works, 2026-10-12). Learned: Unity 2019 contexts
+  have no EGLConfig (EGL_KHR_no_config_context: the VrApi bridge takes the window's or an RGBA8 ES3 config); Unity's
+  floor origin = vrapi_SetTrackingSpace(1) (the VrApi bridge now honours LOCAL_FLOOR/STAGE); mapped GL buffers are
+  per buffer object (a per-target guest copy leaked ~10 MB/s and garbled vertices); the guest runtime's own scudo
+  names its maps `[anon:scudo:*]` below 4 GiB (watch them for guest leaks). The Go controller = the right Frame
+  controller (stick = touchpad touch, sideways > 0.6 or press = click). Gunjack (CCP, UE 4.10 NativeActivity, Gear VR,
+  2026-10-10): needed the native_app_glue imports (ALooper/AInputQueue/AConfiguration/AAsset*, imports.txt), an arm64
+  libvrapi.so for Java's System.loadLibrary("vrapi") and MOUNTED under OVP_HEADLESS_TEST; it then loads its map and
+  quit on purpose: AndroidMain compares AndroidThunkCpp_GetSignature() with an obfuscated copy. **Works since
+  2026-10-11 (owner-verified in the headset):** GameActivity.AndroidThunkJava_GetSignature() = Base64.DEFAULT(SHA-1(
+  signing certificate DER)) (jadx); `a32_bridge.original_signature` computes it from the original APK's
+  META-INF/*.RSA|DSA|EC, `convert()` stores it as `assets/fp_a32_signature.txt` for libUE4.so games, the bridge loads
+  it at activity creation (native_activity.c) and jni.c answers Call*Method on the method ID of
+  `AndroidThunkJava_GetSignature()Ljava/lang/String;` with it. After loading, Unreal leaves VR mode and enters it again on
+  the same GL context; a second OpenXR session there aborted in vrclient (CSharedSemaphoreLinux::WaitFromGPU from the GL
+  binding's PreBeginFrame, also with OVP_HEADLESS_TEST) → the VrApi bridge keeps a running GLES session across
+  LeaveVrMode and reuses it for an EnterVrMode with the same context (upstream-patches/runtime.cpp.patch).
+  Debugging aids added: A32_BREAK=<guest addr>[,..] (stack of the first hits; guest libs load at fixed addresses, e.g.
+  libUE4 0xf25d5000), A32_STRACE in bridge mode = path/exit calls to logcat, activity lifecycle + LeaveVrMode caller
+  logs. Lepton's logcat mirror often dies for these games: read `podman exec <container> logcat` instead. Gunjack input
+  (2026-10-11): it imports no vrapi input functions and reads the Gear VR touchpad/back as AInputEvents from its
+  AInputQueue (native_app_glue), so dispatchKeyEvent never reached it (no control at all) → input.c queues synthetic
+  events there (ALooper_poll* return the queue's ident while one waits; AInputQueue_getEvent/finishEvent and the
+  AInputEvent/AKeyEvent/AMotionEvent getters are hand-written "!" imports that know them; touch positions scaled to the
+  window size). Same mapping as AFFECTED: trigger = hold touchpad, A = tap, right stick = swipe, B = back; for NativeActivity games the stick's up/down = swipe forward/back (touchpad X: Gunjack's OnFlick = reload at ~0°, special weapon at ~180°). Not yet
+  headset-verified. Quest builds on the bridge (2026-10-13, Sports Scramble = a 32-bit Santa Cruz build,
+  UE 4.21 + OVRPlugin on VrApi 1.21): manifest requires `android.hardware.vr.headtracking` version 1
+  (`detect.requires_6dof`, headset "quest", ANALYSIS_VERSION 16) → convert writes `assets/fp_a32_headset.txt`
+  = "quest" → vrapi.c `quest_touch` (read in vrapi_Initialize via the activity's AssetManager; A32_TOUCH=1/0
+  overrides) passes the 64-bit bridge's Touch controllers through (enumerate/caps/state/tracking/haptics, struct
+  tails per VrApi minor) and starts no synthetic input. It also needed AAsset_getBuffer (guest copy, freed in
+  AAsset_close), AKeyEvent_getFlags and the other AConfiguration getters. Headset (owner, 2026-10-13): plays,
+  both controllers work. Recenter (holding the Frame's menu button) turned VrApi games ~90-120 degrees aside: the bridge's app space is LOCAL + the start yaw and the runtime moves LOCAL to the head → the bridge now takes the origin from the head again on XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING (LOCAL) and on vrapi_RecenterPose (owner-verified with Gunjack, 2026-10-13). Next: the other 32-bit catalog games (Journey of the Gods, Shadow Point: still "unsupported" until
+  tested), translator speed. Profiled on the Frame
+  (2026-10-12, `A32_PERFMAP` + perf): FPCR switches are negligible (8 of 86k samples); the cost was the run loop
+  (a mutex + hash-chain walk on every dispatch, a contended counter, inline-lookup slots never refilled: Gunjack
+  ~45 % of its CPU) and `jit_invalidate` scanning every block on each Mono `cacheflush` (72 % of Spunky Dungeon's
+  main thread). Now lock-free lookups, ltab refill, per-thread flags, per-page block lists: Gunjack's dispatcher
+  23.6 % -> 1.6 %, CPU in the same phase about -55 %, still 72 fps.
 - `scripts/` — `package.py` (flet build/pack), `eval_heuristics.py` (score heuristics), `ui_smoke.py` (GUI screenshots).
 - `docs/` — PLAYBOOK, FRAME_RUNTIME, ARCHITECTURE, INSTALL (end users), parity reports (offline + device).
 
@@ -393,7 +453,7 @@ Repo is on an NTFS drive (`core.fileMode=false`); line endings are LF (`.gitattr
 
 ## Hard-won facts (don't re-learn these)
 **Frame runtime (SteamOS 0.3.0, build 20260922):**
-- No AArch32: 32-bit-only APKs fail with `INSTALL_FAILED_NO_MATCHING_ABIS`. Unfixable; point to Rift + Revive.
+- No AArch32: 32-bit-only APKs fail with `INSTALL_FAILED_NO_MATCHING_ABIS` → `frame.a32_bridge` (the a32 translator inside the app, see native/a32translator below).
 - GLES swapchains: only `GL_SRGB8_ALPHA8`/`GL_SRGB8` (35907/35905), no MSAA. Vulkan: format 43 (sRGB) but not 37 (UNORM).
 - Missing: XR_FB_passthrough (emulate via ALPHA_BLEND), XR_FB_scene/spatial entities (emulated room from STAGE bounds),
   XR_KHR_composition_layer_equirect2/cylinder, XR_FB_composition_layer_image_layout (flip emulated by Vulkan blit).
@@ -744,6 +804,21 @@ shows what the game draws. Vader: Lucasfilm logo (an OBB mp4: video works), then
 bar) that never advances; the async loader thread sleeps and OBB reads stop (~168 MB of a 2.7 GB pak).
 **SteamVR overlay apps (agent v75, 2026-10-10):** host OpenVR overlays (VRApplication_Overlay) are composited over Lepton (Quest) games on the Frame (probe checker seen over 4XVR in the headset view, `native/vroverlay_probe`); Windows ones register through Proton's vrclient too (Temporal Reality's Windows build created its overlays; fpsVR never reaches OpenVR under Proton). Detection `analysis/vroverlay.py` (bundled `.vrmanifest` with `is_dashboard_overlay`, else OpenVR + IVROverlay + self-registration markers, engine Other; Rift fingerprint `RIFT_ANALYSIS`), patch `pcvr.vr_overlay` (param autostart), Linux entry fields `vr_overlay`/`vr_overlay_autostart` (game page switch); agent `register_vr_overlay`/`unregister_vr_overlay`/`launch_vr_overlay` (IVRApplications via ctypes, live; manifest `<anchor>/frameport-overlay.vrmanifest`, the app's own key, binary = launch.sh). **SteamVR on the Frame reads only `binary_path_linux_arm`** (binary_path_linux alone is skipped). Overlay apps: no launch test, no Linux Steam-parent watchdog (`FRAMEPORT_OVERLAY`), not a "running game". A Steam overlay-app shortcut and a game shortcut run together. SteamVR's SetApplicationAutoLaunch didn't persist on the dev Frame (the watch never started by itself) → **agent v76: FramePort's own autostart**: the deployment's `overlay.autostart` is the source of truth; `ensure_host_fixes` (`ensure_overlay_service`) keeps the user service `frameport-vr-overlays.service` (`_vr_overlay_watch`, 5 s polls of the known vrserver's /proc stat) only while an overlay app has autostart on (register/unregister, uninstall, purge and the kill switch `~/.local/share/frameport/vr-overlays.disabled` / `FRAMEPORT_NO_OVERLAY_AUTOSTART` update it); a new vrserver (pid + start time, kept in `~/.cache/frameport-vr-overlays.json` across agent updates) → child `_vr_overlay_round`: wait for IVRApplications, 15 s grace, `launch_vr_overlay` for apps not running (folder process or GetApplicationProcessId); log `~/.local/share/frameport/vr-overlays.log`. Dev Frame: adopted the running vrserver, skipped the already running watch; a start after a real SteamVR start/boot is not yet seen. Details: docs/FRAME_RUNTIME.md "Overlay apps".
 **Vader's leak solved / AC Nexus flips (2026-10-14):** Vader Immortal leaves GL errors pending on its context; SteamVR's GL interop (`openxr_graphics_gl_openvr.cpp`, `xrclient_<pkg>.txt` in Steam's logs: `SXR_GL_CHECK: error:0x502 ... glGenTextures`) takes the stale error as its own failure once, and from then on `CVRCompositorSharedTextures::BeginCommandBuffer` allocates a command buffer every frame (perf page-fault stacks; ~430 renderD128 mappings + 22 MB/s). Adapter `gl_error_clear` (GLES, catalog on for Vader ep1-3) clears them before xrCreateSwapchain/xrBeginFrame/xrEndFrame: flat memory, no SXR_GL_CHECK (headless). The per-game `xrclient_<pkg>.txt` logs are worth reading for runtime errors. The Frame's runtime caps swapchains per session (XR_ERROR_LIMIT_REACHED from ~15; AC Nexus asks for more): flip emulation now turns quads upright in place (scratch VkImage, once per acquire; transfer usage added to single-layer colour swapchains) instead of a shadow swapchain per quad, which ran into the cap (#138). Headless sessions don't draw AC Nexus's panels (adapter `flip_dump` saves before/after images of flipped quads, for headset runs).
+**Unreal's self-restart (agent v90, 2026-10-13):** UE 4.21+ restarts the app once after its first-run shader
+precompile ("optimizing" screen; `r.ProgramBinaryCache.RestartAndroidAfterPrecompile`): it starts its own LAUNCHER
+activity and calls System.exit(0); Lepton ends the container with the first process (the restarted one with it).
+Skipping `AndroidThunkJava_RestartApplication` or the cvar = 0 (accepted via UE4CommandLine.txt `-ini:`) left Sports
+Scramble on that level for good. launch.sh (RESTART_BLOCK, `upgrade_launchers` adds it) starts Lepton once more when
+`_restart_requested` sees the app's own LAUNCHER start (system log, uid >= 10000) <= 5 s before its exit; first run
+kept as `launch-before-restart.log`; `FRAMEPORT_NO_RESTART=1` off. Owner-verified with Sports Scramble's first start (2026-10-13).
+**xrWaitFrame runs ahead (Journey of the Gods, 2026-10-14, owner-verified):** with real frames (headset on) the
+Frame's runtime sometimes returns from xrWaitFrame at once with a display time less than one refresh after the frame
+just submitted, and then rejects the second submission for that refresh (`VRCompositorError_AlreadySubmitted` in
+Steam's `logs/xrclient_<pkg>.txt`; FrameBridge pacing above the display rate). VrApi games that render faster than
+the display ran ahead (~120 submits/s at 90 Hz) and the scene slid and snapped back. The VrApi bridge re-waits when
+the new display time is under half a period after the last submitted one (`pacing 2s:` counters). Headless runs only
+submit empty frames and never show it. Lepton's logcat mirror also missed the whole verifying session (launch.log =
+Lepton's own lines only), so the keeper doesn't catch every failure.
 **Lepton's logcat mirror dies (agent v67, 2026-10-09):** occasionally launch.log ends with `logcat: Unexpected EOF!` right after the game starts (about 1 launch in 50, Lepton 2.8.14 and 3.0.5): no dashboard auto-hide, no launch-test result. launch.sh's `_logcat_keeper` then reads `podman exec lepton-steamlaunch-<appid> logcat` itself into launch.log (up to 5 restarts while the game runs).
 **Double launch (agent v57, 2026-10-06):** a second Play while Lepton still boots (~10 s with nothing to see) made
 the second Lepton stop the first one's container ("Waiting for steamlaunch-<appid> (PID …) to exit", exit 137

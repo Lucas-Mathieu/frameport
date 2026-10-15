@@ -56,6 +56,8 @@ struct Runtime {
     bool inVr = false, running = false, frameBegun = false;
     int64_t frameIndex = -1;
     XrFrameState frame{XR_TYPE_FRAME_STATE};
+    XrTime lastEndedDisplayTime = 0;  // display time of the last xrEndFrame
+    uint32_t repeatedWaits = 0;       // xrWaitFrame answers that repeated an already submitted display time
     std::array<XrViewConfigurationView, 2> viewConfig{};
     std::array<XrViewConfigurationViewFovEPIC, 2> viewConfigFov{};
     std::array<float, 2> recommendedFovDegrees{};
@@ -92,7 +94,13 @@ struct Runtime {
     ovrPosef trackingTransform{{0, 0, 0, 1}, {0, 0, 0}};
     ovrPosef centerEyeTransform{{0, 0, 0, 1}, {0, 0, 0}};
     bool initialRecenterPending = false;
+    // A recenter after the first: the runtime's own (the Frame's long press of the menu button moves LOCAL to the
+    // head) or vrapi_RecenterPose. Applied in the first frame displayed at or after recenterTime.
+    bool recenterPending = false;
+    XrTime recenterTime = 0;
     uint32_t recenterCount = 0;
+    int32_t trackingSpace = 0;                       // VrApi's: 0 LOCAL (eye level), 1 LOCAL_FLOOR, 3 STAGE
+    XrPosef eyeOrigin{{0, 0, 0, 1}, {0, 0, 0}};       // the app space's eye-level origin in LOCAL
 };
 Runtime& runtime();
 bool xrOk(XrResult result, const char* operation);

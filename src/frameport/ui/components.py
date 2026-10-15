@@ -134,7 +134,12 @@ def platform(g: dict) -> tuple[str, str, str]:
     if g.get("kind") == "linux":
         vr = (((g.get("analysis") or {}).get("extra") or {}).get("openxr"))
         return tr("Linux"), tr("Linux VR app · OpenXR") if vr else tr("Linux app"), "platform_linux"
-    kind = (((g.get("analysis") or {}).get("extra") or {}).get("vr_kind")) or "quest"
+    extra = ((g.get("analysis") or {}).get("extra") or {})
+    kind = extra.get("vr_kind") or "quest"
+    if kind == "quest" and extra.get("headset") == "gearvr":
+        return tr("Gear VR"), tr("Gear VR / Oculus Go (32-bit)"), "platform_gearvr"
+    if kind == "quest" and extra.get("headset") == "go":
+        return tr("Oculus Go"), tr("Oculus Go (32-bit)"), "platform_gearvr"
     if kind == "quest":
         return tr("Quest"), tr("Meta Quest"), "platform_quest"
     if kind == "none":

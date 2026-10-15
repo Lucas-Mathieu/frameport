@@ -50,6 +50,7 @@ class CatalogEntry:
     pcvr_alternative: str | None = None
     # Rift (PC VR) recipes: package is "rift.<slug>"; kind "rift"
     kind: str = "quest"
+    headset: str = ""  # the headset the game was made for when it isn't the Quest: gearvr / go (32-bit bridge games)
     quest_package: str | None = None  # the Quest version of the same game (links the two in the UI)
     pcvr: list[str] = field(default_factory=list)  # pcvr.* patches to enable
     pcvr_remove: list[str] = field(default_factory=list)

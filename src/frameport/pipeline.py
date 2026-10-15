@@ -781,6 +781,13 @@ def check_source(entry: dict) -> SourceGame:
 
 
 def set_recipe(package: str, recipe: Recipe) -> None:
+    """Save a game's recipe. A 32-bit game with the bridge turned on (also by hand) loses what the bridge replaces
+    (OVRPort, the 64-bit library fixes): `recipe` is changed in place, callers redraw from it."""
+    entry = library.game(package) or {}
+    if entry.get("analysis") and not is_rift(entry) and not is_linux(entry):
+        saved = (entry.get("recipe") or {}).get("patches") or {}
+        engine.a32_recipe(library.analysis_from_dict(entry["analysis"]), recipe,
+                          newly="frame.a32_bridge" not in saved)
     library.upsert_game(package, recipe=library.recipe_to_dict(recipe))
 
 
@@ -988,6 +995,8 @@ def build_game(package: str, reporter: Reporter, outdir: Path | None = None) -> 
     src = source_of(entry)
     a = library.analysis_from_dict(entry["analysis"])
     recipe = library.recipe_from_dict(entry["recipe"])
+    if engine.a32_recipe(a, recipe, newly=False):  # saved before the bridge switched OVRPort & co. off itself
+        set_recipe(package, recipe)
     out = outdir or (output_dir() / quest_dump.display_name(entry.get("name") or package))
     with _build_lock(package):  # one build per game at a time: builds share the game's work folder
         res = builder.build(src, a, recipe, out, reporter)

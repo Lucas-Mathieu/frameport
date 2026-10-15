@@ -446,6 +446,12 @@ UI: dict[str, dict] = {
 }
 
 
+# settings that need the xrshim (frame/adapter.py: OVRPlugin's own arm64 OpenXR lookups routed to the adapter), so
+# they don't work for 32-bit games on the bridge. surface_native: Batman's native video renderer hooks Vulkan
+# functions OVRPort's dispatcher doesn't know
+XRSHIM_SETTINGS = ("controller_models", "haptic_fix", "surface_native")
+
+
 class AdapterSetting(Patch):
     category = "adapter"
     stage = "install"
@@ -458,6 +464,7 @@ class AdapterSetting(Patch):
         self.params = [Param("value", kind, default, description)]
         self.default = default
         self.revision = REVISIONS.get(key, 1)
+        self.a32 = key not in XRSHIM_SETTINGS
 
     @property
     def summary(self) -> str:
@@ -510,6 +517,8 @@ class AdapterSetting(Patch):
     def applies(self, a):
         from . import applicability as ap
 
+        if a.only_32bit and not self.a32:
+            return False  # a 32-bit game on the bridge: no xrshim (also hides it in the Game settings dialog)
         rules = {
             "scene_emul": lambda a: ap.uses_scene(a) or a.extra.get("mr_only"),
             "scene_height": lambda a: ap.uses_scene(a) or a.extra.get("mr_only"),
@@ -537,7 +546,7 @@ class AdapterSetting(Patch):
             "zink_shader_fix": ap.is_gles,
             "zink_shader_dump": ap.is_gles,
             "haptic_fix": lambda a: "libOVRPlugin.so" in a.libs,
-            "surface_native": lambda a: "arm64-v8a" in a.abis,  # the xrshim it needs is arm64 only
+            "surface_native": lambda a: "arm64-v8a" in a.abis,  # the xrshim it needs is arm64 only (also above)
             "pose_time_fix": lambda a: "libOVRPlugin.so" in a.libs,
             "proximity_emul": lambda a: "libOVRPlugin.so" in a.libs,
             "vk_spec_fixes": lambda a: a.engine == "Unreal" and ap.is_vulkan(a),

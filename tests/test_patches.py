@@ -260,11 +260,11 @@ def test_catalog_phantom_uses_alt():
     assert r.use_alt and r.alt_patches == ["patch_remove_unreal_force_quit"]
 
 
-def test_32bit_unsupported():
+def test_32bit_through_the_bridge():
     from frameport.recommend import engine
 
     r = engine.suggest(_analysis(package="x.y.old", abis=["armeabi-v7a"]))
-    assert r.status == "unsupported"
+    assert r.status != "unsupported" and "frame.a32_bridge" in r.patches and not r.overport
 
 
 def test_recipe_roundtrip():

@@ -1,0 +1,21 @@
+package: net.mobilemischief.spunkydungeon
+title: Spunky Dungeon
+status: issues
+notes: 'Gear VR / Oculus Go game (32-bit only), runs through FramePort''s 32-bit bridge (experimental).
+  Controls: left stick = walk and strafe (the touchpad), right stick sideways = turn, stick press or A = touchpad
+  click, right trigger = trigger, B = back.'
+details: 'Unity 2019.2 + Mono, OVRPlugin 1.46 on VrApi 1.31, GLES, Meta Platform SDK (OVRPort''s 32-bit dispatcher).
+  Played in the headset by the owner (2026-10-10): picture at 72 fps, floor-level tracking and walking work; turning
+  without a stick press was added afterwards and is not yet confirmed.'
+tested_version: '1.4'
+engine: Unity
+xr: VrApi
+headset: gearvr
+frame:
+- frame.a32_bridge
+device:
+- device.text_input_window
+verified:
+  date: '2026-10-10'
+min_app: 0.12.1
+source_hint: Spunky Dungeon

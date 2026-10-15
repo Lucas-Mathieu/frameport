@@ -9,7 +9,7 @@ parity-report.md
 *.keystore
 *.apk
 .pytest_cache/
-native/.cache/
+native/.cache
 native/**/build/
 # per-machine Claude Code settings (contain home paths)
 .claude/settings.local.json

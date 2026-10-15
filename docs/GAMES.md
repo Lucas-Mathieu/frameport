@@ -53,6 +53,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Ghostbusters: Rise of the Ghost Lord | Quest | ✅ Works |  |
 | GORN2 | Quest | ✅ Works |  |
 | Gravity Lab | Quest | ✅ Works |  |
+| Gunjack | Quest | ✅ Works |  |
 | H.U.N.T | Quest | ✅ Works |  |
 | I Am Cat | Quest | ✅ Works |  |
 | I Am Monkey | Quest | ✅ Works |  |
@@ -102,6 +103,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Sniper Elite VR | Quest | ✅ Works |  |
 | Sniper Elite VR: Winter Warrior | Quest | ✅ Works |  |
 | Space Pirate Trainer Quest | Quest | ✅ Works |  |
+| Sports Scramble (Santa Cruz) | Quest | ✅ Works |  |
 | Star Wars Pinball VR | Quest | ✅ Works |  |
 | Star Wars: Tales from the Galaxy's Edge | Quest | ✅ Works |  |
 | Stremio | Quest | ✅ Works |  |
@@ -133,6 +135,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Waltz of the Wizard: Extended Edition | Quest | ✅ Works |  |
 | Wander | Quest | ✅ Works |  |
 | ZombielandVR | Quest | ✅ Works |  |
+| AFFECTED: The Manor | Quest | ⚠️ Works with issues | Gear VR game (32-bit only), runs through FramePort's 32-bit bridge (experimental). |
 | Ancient_Dungeon | Quest | ⚠️ Works with issues | Multiplayer isn't available (offline). |
 | Arcsmith | Quest | ⚠️ Works with issues | Right eye distorts during movement (unresolved; swap, tracking, Valve layers, depth and pacing ruled out). |
 | Does it Stack? | Quest | ⚠️ Works with issues | Mixed reality mode does not work (works on Demeo), everything else seems to be OK |
@@ -148,6 +151,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Pinball FX VR | Quest | ⚠️ Works with issues | Plays; mixed reality mode not working yet. |
 | Plezy | Quest | ⚠️ Works with issues | Some videos play with strong artifacts and wrong colours; the cause is unknown, possibly hardware video decoding. |
 | Silhouette | Quest | ⚠️ Works with issues | Hand-tracking game; the Frame synthesizes hands from controllers, so it is janky. |
+| Spunky Dungeon | Quest | ⚠️ Works with issues | Gear VR / Oculus Go game (32-bit only), runs through FramePort's 32-bit bridge (experimental). |
 | Swarm 2 | Quest | ⚠️ Works with issues | MSAA creates visible seams around edge geometry and also the skybox edge |
 | The Light Brigade | Quest | ⚠️ Works with issues | Judder in weapons |
 | The Thrill Of The Fight | Quest | ⚠️ Works with issues | Right eye doesn't draw the opponent or the referee. |
@@ -160,4 +164,3 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Journey of the Gods | Quest | ❌ Doesn't run | 32-bit only; the Frame has no AArch32. |
 | Roblox | Quest | ❌ Doesn't run | Crashes on its first VR frame on the Frame. |
 | Shadow Point | Quest | ❌ Doesn't run | 32-bit only; the Frame has no AArch32. |
-| Sports Scramble (Santa Cruz) | Quest | ❌ Doesn't run | 32-bit only; the Frame has no AArch32. |
