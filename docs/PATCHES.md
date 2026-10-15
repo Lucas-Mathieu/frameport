@@ -511,6 +511,7 @@ FramePort's layer between the game and the Steam Frame: fills in what the Frame 
 - **Suggested (on):** Required for every OpenXR/overport build on the Frame.
 - **Suggested by launch-test signatures:**
   - `cube-swapchain-refused` (fatal): The game asked for a cube-map swapchain (for example an OVROverlay skybox or loading cube), which the Frame's runtime doesn't have.
+  - `cylinder-menu-layers-rejected` (error): The game draws a curved (cylinder) screen to each eye separately (for example the Doom3Quest / PreyVR menu).
   - `graphics-requirements-missing` (fatal): The game can't start VR on the Frame; rebuild it with the current FramePort.
   - `swapchain-rect-invalid` (fatal): The runtime rejects the game's frames, so it stops drawing (for example stuck at a "Waiting" box).
   - `time-conversion` (warning): The Frame's runtime lacks timespec time conversion; the current adapter build emulates it.

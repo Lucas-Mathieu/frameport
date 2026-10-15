@@ -746,7 +746,7 @@ static int cylinder_strips(const XrCompositionLayerCylinderKHR *c, XrComposition
         XrSwapchainSubImage sub = c->subImage;
         sub.imageRect = (XrRect2Di){{x0, rect.offset.y}, {x1 - x0, rect.extent.height}};
         out[i] = (XrCompositionLayerQuad){XR_TYPE_COMPOSITION_LAYER_QUAD, c->next, c->layerFlags, c->space,
-                                          c->eyeVisibility, sub, pose, {2 * r * sinf(a / 2), height}};
+                                          XR_EYE_VISIBILITY_BOTH, sub, pose, {2 * r * sinf(a / 2), height}};
     }
     static int logged;
     if (logged++ < 3) LOG("cylinder layer -> %d quad strips (r=%.2f angle=%.2f)", n, r, c->centralAngle);
@@ -1705,6 +1705,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
         if (emul_first >= 0 && emul_layer_out && emul_is_equirect(layer)) {
             if ((int)i == emul_first) kept[count++] = emul_layer_out;  // all 360 layers are drawn into it
             ++swapped;
+            continue;
+        }
+        // A per-eye cylinder pair (eyeVisibility LEFT + RIGHT, e.g. Doom3Quest/PreyVR's curved menu) would expand to
+        // twice the strips; the Frame's runtime composites a quad to both eyes and rejects a frame with that many
+        // per-eye quad layers (XR_ERROR_LAYER_INVALID). Drop the right eye and show the left one's strips to both.
+        if (layer_fix && cylinder_strips_on && no_cylinder && layer->type == XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR &&
+            ((const XrCompositionLayerCylinderKHR *)layer)->eyeVisibility == XR_EYE_VISIBILITY_RIGHT) {
+            ++dropped;
             continue;
         }
         if (layer_fix && cylinder_strips_on && no_cylinder && layer->type == XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR &&

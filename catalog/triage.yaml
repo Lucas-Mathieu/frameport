@@ -99,6 +99,11 @@ signatures:
     severity: fatal
     diagnosis: The runtime rejects the game's frames, so it stops drawing (for example stuck at a "Waiting" box). An image rect reaches a few pixels past its swapchain on some Frames; FrameBridge from FramePort 0.11.0 clamps the rects, so rebuild and reinstall the game.
     suggest: [frame.adapter]
+  - id: cylinder-menu-layers-rejected
+    pattern: 'xrEndFrame failed -16\b'
+    severity: error
+    diagnosis: The game draws a curved (cylinder) screen to each eye separately (for example the Doom3Quest / PreyVR menu). The Frame's runtime has no cylinder layers, so FrameBridge shows each as flat quad strips; a per-eye pair makes too many quad layers for one frame and the runtime rejects the whole frame (XR_ERROR_LAYER_INVALID), leaving the menu black while the game runs. FrameBridge from this build shows the left eye's strips to both eyes to halve the count; rebuild and reinstall the game to try it.
+    suggest: [frame.adapter]
   - id: missing-ovr-symbol
     pattern: '(UnsatisfiedLinkError|cannot locate symbol) .*"?(ovr_[A-Za-z0-9_]+|ovr[A-Z][A-Za-z0-9]*_ToString)'
     severity: fatal
