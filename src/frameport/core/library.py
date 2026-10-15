@@ -349,6 +349,16 @@ def _migrate(data: dict) -> bool:
                 changed = True
         done.append("a32_bridge_on")
         changed = True
+    if "drop_stub_entries" not in done:
+        # GitHub #294: Play on the Steam Frame tab for a game no longer in the library wrote `last_played` with
+        # upsert_game, which created an entry with only that field: shown under its package name, "Update ready",
+        # and Update / Game settings failed with KeyError 'recipe'. A stub has nothing a game is made from.
+        games = data.get("games") or {}
+        made_of = ("apk", "analysis", "recipe", "game_dir", "exe", "data_dir", "kind", "title", "build")
+        for pkg in [p for p, g in games.items() if isinstance(g, dict) and not any(g.get(k) for k in made_of)]:
+            games.pop(pkg)
+        done.append("drop_stub_entries")
+        changed = True
     return changed
 
 
@@ -411,6 +421,13 @@ def upsert_game(package: str, **fields) -> dict:
         entry = data["games"].setdefault(package, {"package": package, "added": time.time()})
         entry.update(fields)
     return entry
+
+
+def set_fields(package: str, **fields) -> dict | None:
+    """Set fields of a game already in the library; None (and nothing written) if it isn't there: for side notes
+    (last played, test results, tags) about games that may only be on the Frame (upsert_game would add a stub entry
+    without a recipe, GitHub #294)."""
+    return update_game(package, lambda entry: entry.update(fields))
 
 
 def update_game(package: str, fn: Callable[[dict], None]) -> dict | None:

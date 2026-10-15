@@ -1034,7 +1034,7 @@ class FramePortApp:
                     raise
                 self._add_then_play(pkg, title)  # e.g. the shortcut step failed during the install
                 return
-            library.upsert_game(pkg, last_played=time.time())
+            library.set_fields(pkg, last_played=time.time())
             steam = res.get("steam") or {}
             if to == "frame" and steam:  # what the Frame's Steam logged about this launch (GitHub #21/#30)
                 if res.get("first_try"):
@@ -1080,7 +1080,7 @@ class FramePortApp:
                     title=title, why="; ".join(status.get("errors") or []) or tr("no answer from the Frame")))
             time.sleep(15)  # Steam restarted: give it time to load the library before asking it to launch
             target.launch(pkg)
-            library.upsert_game(pkg, last_played=time.time())
+            library.set_fields(pkg, last_played=time.time())
             return tr("Starting {title} on the Frame — put the headset on").format(title=title)
         self.toast(tr("Adding {title} to the Frame's Steam library — Steam restarts once").format(
             title=title))
@@ -2025,7 +2025,7 @@ class FramePortApp:
             def work():
                 links = pipeline.share_working_config_links(pkg, status.value or "works", notes.value or "", info)
                 self.open_issue(links, tr("Saved as known-good. Check the GitHub issue that opened and submit it."))
-                library.upsert_game(pkg, shared_config=time.time())  # opened: the game page stops asking
+                library.set_fields(pkg, shared_config=time.time())  # opened: the game page stops asking
             self.run_bg(work)
         send.on_click = go
         self.page.show_dialog(C.dialog(

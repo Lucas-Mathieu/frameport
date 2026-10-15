@@ -355,7 +355,7 @@ class GameView:
         installed = C.install_state(g, self.app.frame_info) in ("installed", "outdated")
         if should_ask_to_share(g, installed):
             def dismiss(e):
-                library.upsert_game(pkg, share_dismissed=True)
+                library.set_fields(pkg, share_dismissed=True)
                 self.app.render()
             out.append(C.callout(ft.Column([
                 C.body(tr("Tried it in the headset? Share how it runs, and your recipe can become the built-in one "
@@ -519,7 +519,7 @@ class GameView:
         row = ft.Row(spacing=T.S2, run_spacing=T.S2, wrap=True)
 
         def save(tags):
-            library.upsert_game(pkg, tags=tags)
+            library.set_fields(pkg, tags=tags)
             self.g = library.game(pkg)
             fill()
             row.update()
@@ -601,7 +601,7 @@ class GameView:
         app, pkg, on = self.app, self.package, bool(e.control.value)
 
         def work():
-            library.upsert_game(pkg, desktop_entry=on)
+            library.set_fields(pkg, desktop_entry=on)
             if app.frame_state == "connected" and app.target and \
                     C.install_state(self.g, app.frame_info) in ("installed", "outdated"):
                 app.target.set_desktop_entry(pkg, on)
@@ -613,7 +613,7 @@ class GameView:
         app, pkg, on = self.app, self.package, bool(e.control.value)
 
         def work():
-            library.upsert_game(pkg, desktop_icon=on)
+            library.set_fields(pkg, desktop_icon=on)
             if app.frame_state == "connected" and app.target and \
                     C.install_state(self.g, app.frame_info) in ("installed", "outdated"):
                 app.target.set_desktop_entry(pkg, self.g.get("desktop_entry", True) is not False, icon=on)
@@ -626,7 +626,7 @@ class GameView:
         app, pkg, on = self.app, self.package, bool(e.control.value)
 
         def work():
-            library.upsert_game(pkg, vr_overlay_autostart=on)
+            library.set_fields(pkg, vr_overlay_autostart=on)
             if app.frame_state == "connected" and app.target and \
                     C.install_state(self.g, app.frame_info) in ("installed", "outdated"):
                 app.target.set_vr_overlay(pkg, on)

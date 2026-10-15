@@ -1305,7 +1305,7 @@ def test_game(package: str, target: Target, reporter: Reporter, seconds: int = 4
                "findings": [f.__dict__ for f in result.findings],
                "suggestions": suggestions,
                "time": time.time(), "target": target.label, "log_path": str(log_path)}
-    library.upsert_game(package, last_test=summary)
+    library.set_fields(package, last_test=summary)
     return summary
 
 
@@ -1440,13 +1440,13 @@ def triage_session(package: str, target: Target) -> dict:
         old.unlink(missing_ok=True)
     summary.update(start=s.get("start"), ended=s.get("end"), cut=bool(res.get("cut")), time=time.time(),
                    log_path=str(log_path))
-    library.upsert_game(package, last_session=summary, last_session_checked=s.get("end") or s.get("start"))
+    library.set_fields(package, last_session=summary, last_session_checked=s.get("end") or s.get("start"))
     return summary
 
 
 def mark_session_checked(package: str, end: float) -> None:
     """A session that isn't triaged (a launch test's, or too old): don't look at it again."""
-    library.upsert_game(package, last_session_checked=end)
+    library.set_fields(package, last_session_checked=end)
 
 
 def sessions_due(installed: list[dict], now: float | None = None) -> list[tuple[str, dict, bool]]:
