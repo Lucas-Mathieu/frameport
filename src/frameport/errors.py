@@ -54,7 +54,8 @@ def explain(exc: BaseException) -> str:
     msg = " ".join(str(exc).split()).removeprefix("[Errno None] ")
     low = msg.lower()
     if isinstance(exc, MissingGameSource):
-        kind = {"APK": tr("APK"), "data folder": tr("data folder"), "data file": tr("data file")}.get(exc.kind, exc.kind)
+        kinds = {"APK": tr("APK"), "data folder": tr("data folder"), "data file": tr("data file")}
+        kind = kinds.get(exc.kind, exc.kind)
         return tr("The game's {kind} isn't at {path} any more. Add the game again from the folder that has it.") \
             .format(kind=kind, path=exc.path)
     if isinstance(exc, ssl.SSLCertVerificationError) or any(

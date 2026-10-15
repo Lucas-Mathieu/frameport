@@ -168,9 +168,9 @@ class AssetFilesStub(AssetFiles):
     id = "frame.asset_files_stub"
     title = "Asset-file service bypass"
     description = ("Experimental bypass for a DLC manager blocked on Meta asset-file service errors "
-                   "at startup (e.g. PixelRipped 1995: Asset status error (code 100)). Returns an empty successful asset list and "
-                   "reports requested asset IDs as installed, with an empty file path. Does not supply DLC or "
-                   "change download requests. Enable only to test this startup failure; disable with "
+                   "at startup (e.g. PixelRipped 1995: Asset status error (code 100)). Returns an empty successful "
+                   "asset list and reports requested asset IDs as installed, with an empty file path. Does not "
+                   "supply DLC or change download requests. Enable only to test this startup failure; disable with "
                    "FRAMEPORT_ASSET_FILES_STUB=0. Shares the language-pack library and needs no language packs.")
     order = 34
     experimental = True

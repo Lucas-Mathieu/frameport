@@ -172,7 +172,8 @@ class LiveView:
                 # squeezed the status into a column of single words while streaming)
                 C.card(ft.Column([
                     ft.Row([self.dot, ft.Column([self.state, self.detail], spacing=T.px(2), expand=True),
-                            self.start_btn, self.shot_btn, self.sound_btn, self.window_btn, self.open_btn, self.stop_btn],
+                            self.start_btn, self.shot_btn, self.sound_btn, self.window_btn, self.open_btn,
+                            self.stop_btn],
                            spacing=T.S3, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     ft.Row([self.player_dd, self.quality_dd, ft.Container(self.url, expand=True)],
                            spacing=T.S3, vertical_alignment=ft.CrossAxisAlignment.CENTER),
