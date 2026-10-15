@@ -311,6 +311,13 @@ def test_dated_score_sets_aside_patches_newer_than_the_entry():
     assert "frame.hw_video_decode" not in dated["per_patch"]
 
 
+def test_inherited_picks_are_adapter_and_untoggled_device_patches():
+    inherited = ev.inherited_decisions()
+    assert "adapter.haptic_fix" in inherited
+    assert "device.text_input_window" not in inherited  # catalog.TOGGLED_DEVICE: dropped unless the entry names it
+    assert not any(pid.startswith("frame.") for pid in inherited)
+
+
 def test_gap_decisions_use_the_verified_date_not_updated():
     e = _entry(verified={"date": "2026-09-28"}, updated="2026-10-14")
     gaps = ev.gap_decisions(e, {"frame.unity_text_input": "2026-10-03", "frame.adapter": "2026-09-28",

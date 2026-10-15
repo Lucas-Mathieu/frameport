@@ -277,6 +277,14 @@ def gap_decisions(entry, intro_dates: dict | None) -> set[str]:
             for pid, date in intro_dates.items() if date and date > verified}
 
 
+def inherited_decisions() -> set[str]:
+    """Heuristic picks a catalog recipe keeps even when the entry doesn't name them (engine.suggest: adapter
+    settings and device patches other than catalog.TOGGLED_DEVICE): the verified build had them, so an "extra" one
+    isn't a detection error. A catalog value that differs still counts (the key is in both sides then)."""
+    return {p.id for p in base.all_patches()
+            if p.category == "adapter" or (p.category == "device" and p.id not in catalog.TOGGLED_DEVICE)}
+
+
 def evaluate(snapshot: dict, entries: dict, split: str = "dev", intro_dates: dict | None = None) -> dict:
     analyses = {pkg: analysis_from_dict(v["analysis"]) for pkg, v in snapshot.items() if pkg in entries}
     assignments = split_packages({pkg: a.engine for pkg, a in analyses.items()})
@@ -291,7 +299,7 @@ def evaluate(snapshot: dict, entries: dict, split: str = "dev", intro_dates: dic
                         "analysis_version": snapshot[pkg].get("analysis_version"), "split": assignments[pkg],
                         "want": catalog_signature(entry, defaults, a),
                         "got": signature(engine.suggest(a, use_catalog=False), defaults),
-                        "gaps": sorted(gap_decisions(entry, intro_dates))})
+                        "gaps": sorted(gap_decisions(entry, intro_dates) | inherited_decisions())})
     return {"schema_version": 1, "split": split, "runtime_only": RUNTIME_ONLY, "snapshot_packages": len(snapshot),
             "default_policy": "per-analysis default detection, then explicit catalog removals",
             "catalog_packages": len(entries), "matched_packages": len(analyses),
@@ -423,7 +431,8 @@ def print_metrics(report: dict, verbose: bool = False) -> None:
         p = h["patches"]
         print(f"{name:10} {h['games']:5} {h['exact']:4}/{h['games']:<4} {f:>11} "
               f"{p['precision']:7.1%} {p['recall']:7.1%} {p['f1']:7.1%} {r['exact']:4}/{r['games']:<4}")
-    print("\nDated (extras on entries verified before the patch existed = catalog gaps, not errors):")
+    print("\nDated (extras the entry couldn't have listed - patch newer than its verified date - or that catalog "
+          "recipes inherit anyway - adapter/device picks - are not errors):")
     for name, metrics in [("All", report), *report["by_engine"].items()]:
         d = metrics["headline_dated"]
         p = d["patches"]
