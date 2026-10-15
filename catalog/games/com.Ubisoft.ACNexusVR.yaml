@@ -5,7 +5,7 @@ source_hint: Assassins Creed Nexus VR
 engine: Unity
 xr: OpenXR
 status: works
-notes: FrameBridge turns its upside-down UI panels upright (flip emulation, in place since FramePort 1.1.2). Ubisoft
+notes: FrameBridge turns its upside-down UI panels upright (flip emulation, in place since FramePort 1.2.0). Ubisoft
   login may not work.
 details: Ubisoft online login may not work. Data folder holds raw assets (start0..2, .climb, bundles), not .obb
   files; install to obb as-is.
@@ -19,4 +19,4 @@ verified:
   no_appsw_90: '2026-10-02, OVRPort 1.2.5 (owner: 90 Hz felt better than 72 Hz; same known issues)'
   flip_in_place: '2026-10-14, owner in the headset: launch warnings and tutorial pop-ups upright (GitHub #138)'
 updated: '2026-10-14'
-min_app: 1.1.2
+min_app: 1.2.0

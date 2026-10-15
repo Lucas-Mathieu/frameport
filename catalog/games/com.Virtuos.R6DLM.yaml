@@ -15,5 +15,5 @@ frame:
 - frame.hw_video_decode
 - frame.unreal_skip_obb_delivery
 updated: '2026-10-15'
-min_app: 1.1.2
+min_app: 1.2.0
 source_hint: Medal of Honor
