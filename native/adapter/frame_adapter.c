@@ -15,7 +15,7 @@
 //  * drops requested instance extensions the runtime lacks (e.g. XR_FB_passthrough);
 //  * retries rejected swapchains with 1 sample / a supported format (swapchain_fix, overport #71);
 //  * drops composition layers that reference swapchains that failed to create (layer_fix);
-//  * serves cube swapchains the runtime refuses as GL cube maps and drops their layers (cube_standin, cube_standin.c);
+//  * serves cube swapchains the runtime refuses as GL/Vulkan cube maps and drops their layers (cube_standin, cube_standin.c);
 //  * optionally requests mutable-format swapchain images (mutable_fix, off by default);
 //  * optionally swaps left/right images of stereo projection layers (swap_eyes, off by default);
 //  * emulates XR_FB_passthrough with XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND when the runtime lacks it
