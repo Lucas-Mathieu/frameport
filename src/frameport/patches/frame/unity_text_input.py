@@ -85,6 +85,19 @@ def patch_field_loads(lib: bytes, method: tuple[int, int], field_offset: int, va
 ALL_TARGETS: dict[str, list[str]] = {}  # every IL2CPP patch's methods: one Cpp2IL run (and cache entry) serves all
 
 
+def can_rewrite_il2cpp(a) -> bool:
+    """Automatic return patches need AArch64 code and metadata Cpp2IL can read.
+
+    Unity 2017's metadata is unreadable by our Cpp2IL workflow (AGENTS.md, Accounting+). Unknown versions keep the
+    existing fallback: apply() reads the version from the APK. This does not restrict manually selected patches.
+    """
+    try:
+        major = int(str((a.extra or {}).get("unity_version") or "0").split(".")[0])
+    except ValueError:
+        major = 0
+    return "arm64-v8a" in a.abis and not 0 < major < 2018
+
+
 class Il2cppReturnPatch(Patch):
     """Make IL2CPP methods return a constant (targets), found per game with Cpp2IL (analysis/il2cpp.py)."""
     targets: dict[str, dict[str, bytes]] = {}
@@ -164,7 +177,7 @@ class UnityTextInput(Il2cppReturnPatch):
         return a.engine == "Unity" and "libil2cpp.so" in a.libs and bool((a.extra or {}).get("text_fields"))
 
     def detect(self, a):
-        if self.applies(a):
+        if self.applies(a) and can_rewrite_il2cpp(a):
             kinds = " and ".join((a.extra or {}).get("text_fields"))
             return Suggestion(True, f"Unity app with text fields ({kinds}): they close at once on the Frame because "
                                     "it has no system keyboard.")

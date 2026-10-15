@@ -40,6 +40,13 @@ class UnityTlsKeyPool(Patch):
     def detect(self, a):
         heavy = heavy_native_libs(a)
         if self.applies(a) and _unity_major(a) >= 6000 and heavy:
+            # Firebase's Firestore and Gecko both consume keys alongside Unity 6 and the Frame's graphics/XR
+            # runtime. This is the documented exhaustion case (AGENTS.md, #198), rather than just any Firebase
+            # library: keep a lone SDK as an optional diagnostic fix below.
+            if "libFirebaseCppFirestore.so" in heavy and "libxul.so" in heavy:
+                return Suggestion(True, "Unity 6 with Firebase Firestore and Gecko: these native runtimes can "
+                                        "exhaust Android's 128 thread keys alongside the Frame's graphics and XR "
+                                        "libraries. Pool Unity's keys to leave room for them.")
             return Suggestion(False, f"Unity 6 with {', '.join(heavy)}: turn on if the game aborts at start with "
                                      "\"cannot create thread specific key\" (for example Wander).")
         return None

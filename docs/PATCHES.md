@@ -1000,6 +1000,7 @@ Lets Unity 6 games with many native libraries start when they run out of thread 
 
 - `frame.unity_tls_key_pool` · also for 2D apps
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested (on):** Unity 6 with Firebase Firestore and Gecko: these native runtimes can exhaust Android's 128 thread keys alongside the Frame's graphics and XR libraries. Pool Unity's keys to leave room for them.
 - **Offered (off):** Unity 6 with …: turn on if the game aborts at start with "cannot create thread specific key" (for example Wander).
 - **Catalog games (1):** Wander.
 - **Suggested by launch-test signatures:**

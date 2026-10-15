@@ -12,7 +12,7 @@ frame.unity_text_input).
 from __future__ import annotations
 
 from ..base import Suggestion, register
-from .unity_text_input import RET_FALSE, Il2cppReturnPatch
+from .unity_text_input import RET_FALSE, Il2cppReturnPatch, can_rewrite_il2cpp
 
 RET_ZERO = RET_FALSE  # mov w0, #0 ; ret
 
@@ -40,7 +40,8 @@ class UnityRuntimeMsaa(Il2cppReturnPatch):
         return a.engine == "Unity" and "libil2cpp.so" in a.libs and not a.only_32bit
 
     def detect(self, a):
-        if self.applies(a) and (a.extra or {}).get("ovr_runtime_msaa") and "GLES" in a.graphics:
+        if (self.applies(a) and can_rewrite_il2cpp(a)
+                and (a.extra or {}).get("ovr_runtime_msaa") and "GLES" in a.graphics):
             return Suggestion(True, "GLES Unity game whose OVRManager turns 4x MSAA on at runtime: multisampled "
                                     "render-to-texture can hang the Frame's GPU.")
         return None
