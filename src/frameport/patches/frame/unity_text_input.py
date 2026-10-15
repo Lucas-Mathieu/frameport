@@ -152,7 +152,15 @@ class Il2cppReturnPatch(Patch):
         except Exception as exc:  # noqa: BLE001 - optional fix: the game still builds, unchanged
             ctx.reporter.check(self.check_name, False, f"not fixed: {exc}")
             return False
-        ctx.notes.extend(notes or [f"{self.check_name}: code not found in this game"])
+        if not notes:  # turned on, but none of its methods is in this game: say so instead of a silent no-op
+            wanted = [f"{c.rsplit('/', 1)[-1][:-3]}.{m}" for c, ms in {**self.targets, **self.field_loads}.items()
+                      for m in ms]
+            detail = (f"not applied ({self.id}): code not found in this game (Cpp2IL found none of "
+                      f"{', '.join(wanted)}); built without this fix")
+            ctx.reporter.log(f"{self.check_name}: {detail}")
+            ctx.checks.append((self.check_name, None, detail))
+            return False
+        ctx.notes.extend(notes)
         if patched is not None:
             ws.put(lib_name, patched)
         return patched is not None

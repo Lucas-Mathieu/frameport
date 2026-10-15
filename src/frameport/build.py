@@ -54,7 +54,7 @@ def apply_frame_fixes(apk_in: Path, apk_out_unsigned: Path, analysis: Analysis, 
             if patch.apply(ctx):
                 applied.append(patch.id)
                 reporter.log(f"applied {patch.id}" + (f" ({'; '.join(ctx.notes)})" if ctx.notes else ""))
-            for name, ok, detail in patch.validate(ctx):
+            for name, ok, detail in [*ctx.checks, *patch.validate(ctx)]:
                 checks.append({"name": name, "ok": ok, "detail": detail})
         ws.write(apk_out_unsigned)
     return applied, checks, selection.superseded

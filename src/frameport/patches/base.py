@@ -48,6 +48,9 @@ class ApkContext:
     reporter: Reporter
     recipe_patches: dict  # full selection, for patches that depend on others
     notes: list[str] = field(default_factory=list)
+    # (name, ok, detail) a patch reports while applying, e.g. a WARN that it found nothing to change: they join the
+    # build's checks (job/CLI output, the build record) like validate()'s
+    checks: list[tuple[str, bool | None, str]] = field(default_factory=list)
 
 
 @dataclass

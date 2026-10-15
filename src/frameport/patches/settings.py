@@ -174,7 +174,8 @@ SETTINGS = [
     ("rect_clamp", "int", 1, "Clamp image rects",
      "Keeps every submitted image rect inside its swapchain. Unity can size the eye area a few pixels past the image "
      "on some Frames; SteamVR then rejects every frame (xrEndFrame -25, XR_ERROR_SWAPCHAIN_RECT_INVALID) and the game "
-     "stops drawing (for example PowerWash Simulator stuck at \"Waiting\")."),
+     "stops drawing (for example PowerWash Simulator stuck at \"Waiting\"). An empty rect (0x0, e.g. BattleTalent's "
+     "first frames, GitHub #293) is rejected the same way and becomes the whole swapchain image."),
     ("swap_eyes", "int", 0, "Swap eyes", "Swap left/right views (diagnostic)."),
     ("strip_depth", "int", 0, "Strip depth layers", "Remove XR_KHR_composition_layer_depth chains (diagnostic)."),
     ("mutable_fix", "int", 0, "Mutable swapchain fix", "Experimental Vulkan mutable-format workaround."),
@@ -394,7 +395,7 @@ UI: dict[str, dict] = {
     "vk_validation": dict(group="troubleshooting", level="advanced", label="Vulkan error checks (log)",
                 help="Logs Vulkan mistakes the game makes. Needs a special test build.", control=("switch",)),
     "rect_clamp": dict(group="troubleshooting", level="advanced", label="Keep pictures in bounds",
-                help="Stops games from hanging when their eye picture is a little too big (for example "
+                help="Stops games from hanging when their eye picture is a little too big or empty (for example "
                      "PowerWash Simulator). Leave it on.", control=("switch",)),
     "gl_hide_msrtt": dict(group="troubleshooting", level="advanced", label="Hide fast anti-aliasing (OpenGL ES)",
                 help="For Unity games that crash when they turn on anti-aliasing (for example The Room "

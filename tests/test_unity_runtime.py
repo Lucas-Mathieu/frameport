@@ -408,3 +408,58 @@ def test_vermillion_canvas_stays_in_the_scene():
     game = _analysis(package=V.PACKAGE, libs=["libil2cpp.so", "libunity.so"])
     assert p.applies(game) and p.detect(game) is None
     assert not p.applies(_analysis(package="com.other.game", libs=["libil2cpp.so"]))
+
+
+class _FakeWs:
+    abi = "arm64-v8a"
+
+    def __init__(self, lib):
+        self.files = {"lib/arm64-v8a/libil2cpp.so": lib, U.METADATA: b"meta"}
+
+    def lib(self, name):
+        return f"lib/arm64-v8a/{name}"
+
+    def has(self, name):
+        return name in self.files
+
+    def read(self, name):
+        return self.files[name]
+
+    def put(self, name, data):
+        self.files[name] = data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def write(self, path):
+        pass
+
+
+def test_il2cpp_patch_with_no_code_found_warns_instead_of_a_silent_skip(monkeypatch):
+    """GitHub #293: BattleTalent's build had unity_runtime_msaa_off/multipass on, Cpp2IL found none of their methods
+    and the build said nothing. Now a WARN check (not a failure) names the patch."""
+    from frameport import build
+    from frameport.core.events import Reporter
+
+    base.load_all()
+    monkeypatch.setattr(il2cpp, "find_methods", lambda *a, **kw: {})
+    events = []
+    game = _analysis(extra={"unity_version": "2021.3.45f2"})
+    ctx = base.ApkContext(_FakeWs(_lib()), game, {}, Reporter([events.append]), {})
+    patch = base.get("frame.unity_runtime_msaa_off")
+    assert patch.apply(ctx) is False and not ctx.notes
+    (name, ok, detail), = ctx.checks
+    assert name == patch.check_name and ok is None
+    assert "frame.unity_runtime_msaa_off" in detail and "code not found" in detail
+    assert "get_recommendedMSAALevel" in detail
+    assert any("code not found" in e.message for e in events if e.kind == "log")
+
+    # the build turns it into a build check: a WARN, so BuildResult.ok stays true
+    monkeypatch.setattr(build, "ApkWorkspace", lambda path: _FakeWs(_lib()))
+    monkeypatch.setattr(build.upstream, "resolve", lambda ws, patches, reporter: build.upstream.Resolution(patches))
+    recipe = type("Recipe", (), {"patches": {"frame.unity_runtime_msaa_off": {}}})()
+    applied, checks, _ = build.apply_frame_fixes(Path("in.apk"), Path("out.apk"), game, recipe, Reporter())
+    assert applied == [] and checks == [{"name": patch.check_name, "ok": None, "detail": detail}]

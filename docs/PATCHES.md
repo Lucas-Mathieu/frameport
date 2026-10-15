@@ -1919,7 +1919,7 @@ For games whose hands' thumbs never move when you touch the buttons or thumbstic
 
 ### <a id="adapter-rect_clamp"></a>Keep pictures in bounds
 
-Stops games from hanging when their eye picture is a little too big (for example PowerWash Simulator). Leave it on.
+Stops games from hanging when their eye picture is a little too big or empty (for example PowerWash Simulator). Leave it on.
 
 - `adapter.rect_clamp`
 - **Changes:** Game setting: stored in the build and on the Frame (settings.conf); can be changed without a rebuild.
@@ -1929,7 +1929,7 @@ Stops games from hanging when their eye picture is a little too big (for example
   - Game settings → Troubleshooting → "Keep pictures in bounds" (advanced).
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
-> Keeps every submitted image rect inside its swapchain. Unity can size the eye area a few pixels past the image on some Frames; SteamVR then rejects every frame (xrEndFrame -25, XR_ERROR_SWAPCHAIN_RECT_INVALID) and the game stops drawing (for example PowerWash Simulator stuck at "Waiting").
+> Keeps every submitted image rect inside its swapchain. Unity can size the eye area a few pixels past the image on some Frames; SteamVR then rejects every frame (xrEndFrame -25, XR_ERROR_SWAPCHAIN_RECT_INVALID) and the game stops drawing (for example PowerWash Simulator stuck at "Waiting"). An empty rect (0x0, e.g. BattleTalent's first frames, GitHub #293) is rejected the same way and becomes the whole swapchain image.
 
 ### <a id="adapter-refresh_rate"></a>Refresh rate
 

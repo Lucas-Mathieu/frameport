@@ -142,7 +142,7 @@ signatures:
   - id: swapchain-rect-invalid
     pattern: 'xrEndFrame failed -25\b'
     severity: fatal
-    diagnosis: The runtime rejects the game's frames, so it stops drawing (for example stuck at a "Waiting" box). An image rect reaches a few pixels past its swapchain on some Frames; FrameBridge from FramePort 0.11.0 clamps the rects, so rebuild and reinstall the game.
+    diagnosis: The runtime rejects the game's frames, so it stops drawing (for example stuck at a "Waiting" box). An image rect reaches a few pixels past its swapchain on some Frames (FrameBridge from FramePort 0.11.0 clamps the rects), or is empty (0x0, for example BattleTalent's first frames right after Unity switches its MSAA level; a newer FrameBridge shows the whole swapchain image instead), so rebuild and reinstall the game.
     suggest: [frame.adapter]
   - id: cylinder-menu-layers-rejected
     pattern: 'xrEndFrame failed -16\b'

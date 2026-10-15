@@ -537,9 +537,18 @@ static int swapchain_size(XrSwapchain handle, uint32_t *w, uint32_t *h) {
     return found;
 }
 
-// Clamp `r` to a w x h image; returns whether it changed.
+// Clamp `r` to a w x h image; returns whether it changed (2 = it was empty and now covers the whole image).
 static int clamp_rect(XrRect2Di *r, uint32_t w, uint32_t h) {
     XrRect2Di c = *r;
+    // An empty rect (BattleTalent's first frames after Unity switched its MSAA level: 0,0 0x0, GitHub #293) is
+    // rejected the same way, and the game stops submitting after two rejections: show the whole image instead.
+    if (c.extent.width <= 0 || c.extent.height <= 0) {
+        if (!w || !h || w > INT32_MAX || h > INT32_MAX) return 0;
+        r->offset.x = r->offset.y = 0;
+        r->extent.width = (int32_t)w;
+        r->extent.height = (int32_t)h;
+        return 2;
+    }
     if (c.offset.x < 0) { c.extent.width += c.offset.x; c.offset.x = 0; }
     if (c.offset.y < 0) { c.extent.height += c.offset.y; c.offset.y = 0; }
     if ((uint32_t)c.offset.x >= w || (uint32_t)c.offset.y >= h) return 0;  // nothing sensible to keep: leave it
@@ -1878,9 +1887,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
                     if (layer != (const XrCompositionLayerBaseHeader *)&projections[count]) projections[count] = *cur;
                     if (projections[count].views != views[count])
                         for (uint32_t v = 0; v < cur->viewCount; ++v) views[count][v] = cur->views[v];
-                    for (uint32_t v = 0; v < cur->viewCount; ++v)
-                        if (swapchain_size(views[count][v].subImage.swapchain, &w, &h) &&
-                            clamp_rect(&views[count][v].subImage.imageRect, w, h)) {
+                    for (uint32_t v = 0; v < cur->viewCount; ++v) {
+                        int how = swapchain_size(views[count][v].subImage.swapchain, &w, &h)
+                                      ? clamp_rect(&views[count][v].subImage.imageRect, w, h) : 0;
+                        if (how == 2) {
+                            static int logged_empty;
+                            if (logged_empty++ < 3)
+                                LOG("rect_clamp: view %u empty image rect -> full swapchain %ux%u", v, w, h);
+                        } else if (how) {
                             static int logged;
                             if (logged++ < 3)
                                 LOG("rect_clamp: view %u image rect clamped to %dx%d at %d,%d (swapchain %ux%u)", v,
@@ -1889,6 +1903,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
                                     views[count][v].subImage.imageRect.offset.x,
                                     views[count][v].subImage.imageRect.offset.y, w, h);
                         }
+                    }
                     projections[count].views = views[count];
                     layer = (const XrCompositionLayerBaseHeader *)&projections[count];
                     ++swapped;
@@ -1896,13 +1911,17 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
             } else if (layer->type == XR_TYPE_COMPOSITION_LAYER_QUAD) {
                 const XrCompositionLayerQuad *q = (const XrCompositionLayerQuad *)layer;
                 XrRect2Di r = q->subImage.imageRect;
-                if (swapchain_size(q->subImage.swapchain, &w, &h) && clamp_rect(&r, w, h)) {
+                int how = swapchain_size(q->subImage.swapchain, &w, &h) ? clamp_rect(&r, w, h) : 0;
+                if (how) {
                     if (layer != (const XrCompositionLayerBaseHeader *)&quads[count]) quads[count] = *q;
                     quads[count].subImage.imageRect = r;
                     layer = (const XrCompositionLayerBaseHeader *)&quads[count];
                     ++swapped;
-                    static int logged;
-                    if (!logged++) LOG("rect_clamp: quad image rect clamped (swapchain %ux%u)", w, h);
+                    static int logged, logged_empty;
+                    if (how == 2 && logged_empty++ < 3)
+                        LOG("rect_clamp: quad empty image rect -> full swapchain %ux%u", w, h);
+                    else if (how == 1 && !logged++)
+                        LOG("rect_clamp: quad image rect clamped (swapchain %ux%u)", w, h);
                 }
             }
         }
