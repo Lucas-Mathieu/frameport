@@ -10,7 +10,9 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Accounting+ | Quest | ✅ Works |  |
 | AgeOfJoy | Quest | ✅ Works |  |
 | AllInOneSports | Quest | ✅ Works |  |
+| Arkio | Quest | ✅ Works |  |
 | Asgard's Wrath 2 | Quest | ✅ Works |  |
+| Assassin's Creed Nexus | Quest | ✅ Works |  |
 | Audica | Quest | ✅ Works |  |
 | BAM | Quest | ✅ Works |  |
 | BARTENDER VR SIMULATOR | Quest | ✅ Works |  |
@@ -28,6 +30,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Carve Snowboarding | Quest | ✅ Works |  |
 | Caves | Quest | ✅ Works |  |
 | Clockwork | Quest | ✅ Works |  |
+| COMPOUND | Quest | ✅ Works |  |
 | Cook-Out | Quest | ✅ Works |  |
 | Cosmodread | Quest | ✅ Works |  |
 | Creed | Quest | ✅ Works |  |
@@ -40,12 +43,14 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Down the Rabbit Hole | Quest | ✅ Works |  |
 | Drunkn Bar Fight | Quest | ✅ Works |  |
 | Drunkn Bar Fight 2 - Early Access | Quest | ✅ Works |  |
+| Eleven Table Tennis | Quest | ✅ Works |  |
 | Eleven: Table Tennis VR | PC VR | ✅ Works |  |
 | Espire 2 | Quest | ✅ Works |  |
 | FrenzyVR | Quest | ✅ Works |  |
 | Fruit Ninja | Quest | ✅ Works |  |
 | Fruit Salon | Quest | ✅ Works |  |
 | Genotype | Quest | ✅ Works |  |
+| Ghostbusters: Rise of the Ghost Lord | Quest | ✅ Works |  |
 | GORN2 | Quest | ✅ Works |  |
 | Gravity Lab | Quest | ✅ Works |  |
 | Gunjack | Quest | ✅ Works |  |
@@ -69,6 +74,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Medieval Dynasty New Settlement | Quest | ✅ Works |  |
 | Metro Awakening | Quest | ✅ Works |  |
 | Mobile Suit Gundam: Silver Phantom | Quest | ✅ Works |  |
+| Moss: Book II | Quest | ✅ Works |  |
 | Munkr Funkr (The Legacy Days) | Quest | ✅ Works |  |
 | Nano | Quest | ✅ Works |  |
 | NEX Player | Quest | ✅ Works |  |
@@ -82,6 +88,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | PowerWash Simulator VR | Quest | ✅ Works |  |
 | QuestCraft | Quest | ✅ Works |  |
 | Racket: Nx | Quest | ✅ Works |  |
+| RacketPinball | Quest | ✅ Works |  |
 | RC Pilot Trainer | Quest | ✅ Works |  |
 | Retronika | Quest | ✅ Works |  |
 | Retropolis | Quest | ✅ Works |  |
@@ -90,6 +97,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Riven | Quest | ✅ Works |  |
 | Robo Recall | Quest | ✅ Works |  |
 | RUINSMAGUS | Quest | ✅ Works |  |
+| Shoot The Zombirds VR | Quest | ✅ Works |  |
 | Shores of Loci | Quest | ✅ Works |  |
 | SilentSlayer | Quest | ✅ Works |  |
 | Sniper Elite VR | Quest | ✅ Works |  |
@@ -130,7 +138,6 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | AFFECTED: The Manor | Quest | ⚠️ Works with issues | Gear VR game (32-bit only), runs through FramePort's 32-bit bridge (experimental). |
 | Ancient_Dungeon | Quest | ⚠️ Works with issues | Multiplayer isn't available (offline). |
 | Arcsmith | Quest | ⚠️ Works with issues | Right eye distorts during movement (unresolved; swap, tracking, Valve layers, depth and pacing ruled out). |
-| Assassin's Creed Nexus | Quest | ⚠️ Works with issues | Some launch warning text is still upside down; the rest of the UI is fixed by flip emulation. |
 | Does it Stack? | Quest | ⚠️ Works with issues | Mixed reality mode does not work (works on Demeo), everything else seems to be OK |
 | Dungeons of Eternity | Quest | ⚠️ Works with issues | It can not connect to servers |
 | End Space | Quest | ⚠️ Works with issues | Controls stop responding after the first mission loads. |
@@ -138,9 +145,11 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Fisherman | Quest | ⚠️ Works with issues | Loading screens have corruption, but everything works otherwise. |
 | Freedom | Quest | ⚠️ Works with issues | Volume can't be changed in the game. |
 | MacacoVR | Quest | ⚠️ Works with issues | 2d loading screens are glitchy, otherwise main gameplay is fine |
+| Majora's Mask VR | Quest | ⚠️ Works with issues | Audio on the file select screen sounds crunchy. |
 | Myst | Quest | ⚠️ Works with issues | Minor graphical glitches on some objects. |
 | Phantom: Covert Ops | Quest | ⚠️ Works with issues | DLC/store button crashes (no Meta store). |
 | Pinball FX VR | Quest | ⚠️ Works with issues | Plays; mixed reality mode not working yet. |
+| Plezy | Quest | ⚠️ Works with issues | Some videos play with strong artifacts and wrong colours; the cause is unknown, possibly hardware video decoding. |
 | Silhouette | Quest | ⚠️ Works with issues | Hand-tracking game; the Frame synthesizes hands from controllers, so it is janky. |
 | Spunky Dungeon | Quest | ⚠️ Works with issues | Gear VR / Oculus Go game (32-bit only), runs through FramePort's 32-bit bridge (experimental). |
 | Swarm 2 | Quest | ⚠️ Works with issues | MSAA creates visible seams around edge geometry and also the skybox edge |
@@ -149,7 +158,6 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Time Stall | Quest | ⚠️ Works with issues | Both eyes distort during movement (unresolved). |
 | Vermillion | Quest | ⚠️ Works with issues | Runs. |
 | WiiCompiled VR | Quest | ⚠️ Works with issues | To add a game: in FramePort's Files tab, upload your .wcgame file to this game's storage, folder Android/data/org.wiicompiled.quest/files/WiiCompiledOpenXRVR… |
-| Eleven Table Tennis | Quest | ❌ Doesn't run | Stops at the splash screen. |
 | Espire 1: VR Operative (Quest Edition) | Quest | ❌ Doesn't run | Mesa GL driver crash during texture upload. |
 | GOLF+ | Quest | ❌ Doesn't run | Black screen. |
 | HITMAN 3 VR: Reloaded | Quest | ❌ Doesn't run | Vulkan driver crash (freedreno), even without Valve layers. |

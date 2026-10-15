@@ -470,3 +470,63 @@ def test_migration_turns_the_bridge_on_once(tmp_path, monkeypatch):
     r.patches.pop("frame.a32_bridge")  # the user switches it off: not turned on again
     pipeline.set_recipe("com.x.old", r)
     assert "frame.a32_bridge" not in library.game("com.x.old")["recipe"]["patches"]
+
+
+def test_original_signature_takes_the_signer_not_its_ca(tmp_path):
+    """A signature block can carry the CA chain in any order: the hash is of the signer's own certificate."""
+    import base64
+    import datetime
+    import hashlib
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import pkcs7
+    from cryptography.x509.oid import NameOID
+
+    now = datetime.datetime(2016, 1, 1, tzinfo=datetime.UTC)
+    later = now + datetime.timedelta(days=9000)
+    ca_key, key = ec.generate_private_key(ec.SECP256R1()), ec.generate_private_key(ec.SECP256R1())
+    ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Studio CA")])
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Game Studio")])
+    ca = (x509.CertificateBuilder().subject_name(ca_name).issuer_name(ca_name).public_key(ca_key.public_key())
+          .serial_number(1).not_valid_before(now).not_valid_after(later).sign(ca_key, hashes.SHA256()))
+    leaf = (x509.CertificateBuilder().subject_name(name).issuer_name(ca_name).public_key(key.public_key())
+            .serial_number(2).not_valid_before(now).not_valid_after(later).sign(ca_key, hashes.SHA256()))
+    block = pkcs7.serialize_certificates([ca, leaf], serialization.Encoding.DER)  # the CA first
+    p = tmp_path / "ue4.apk"
+    with zipfile.ZipFile(p, "w") as z:
+        z.writestr("AndroidManifest.xml", _manifest())
+        z.writestr("META-INF/CERT.RSA", block)
+    with ApkWorkspace(p) as ws:
+        expected = base64.b64encode(hashlib.sha1(leaf.public_bytes(serialization.Encoding.DER)).digest()) + b"\n"
+        assert a32_bridge.original_signature(ws) == expected
+
+
+def test_flat_32bit_app_keeps_the_bridge():
+    """A 32-bit Android app without VR still needs its native code translated (the flat-app rules keep only patches
+    that aren't about VR)."""
+    r = engine.suggest(_analysis(extra={"size": 1, "vr_kind": "none"}), use_catalog=False)
+    assert "frame.a32_bridge" in r.patches and not r.overport and not r.as_is
+
+
+def test_frida_gadget_load_is_removed():
+    """A repack's Frida gadget (System.loadLibrary("frda")) is removed as OVRPort's patch_clean_up_frida does for
+    64-bit games; the game's own loadLibrary calls stay."""
+    import struct
+
+    from test_vivox_audio_route import build_dex
+
+    from frameport.apk.dex import Dex
+
+    code = [0x001A, 0, 0x1071, 1, 0,  # const-string v0, "frda"; invoke-static {v0}, System.loadLibrary
+            0x001A, 1, 0x1071, 1, 0,  # const-string v0, "main"; invoke-static {v0}, System.loadLibrary
+            0x000E]
+    data = build_dex([("Lcom/game/App;", "onCreate", "V", code), ("Ljava/lang/System;", "loadLibrary", "V", None)],
+                     strings_first=("frda", "main"))
+    out = a32_bridge.strip_frida_load(data)
+    dex = Dex(out)
+    (_idx, off), = dex.class_methods("Lcom/game/App;")
+    units = list(struct.unpack_from("<11H", dex.data, off + 16))
+    assert units == [0x001A, 0, 0, 0, 0, 0x001A, 1, 0x1071, 1, 0, 0x000E]
+    assert a32_bridge.strip_frida_load(out) is None and a32_bridge.strip_frida_load(b"dex\n" + bytes(108)) is None

@@ -99,6 +99,8 @@ class LiveView:
         self.stop_btn = C.ghost(tr("Stop"), ft.Icons.STOP_ROUNDED, self._stop_click)
         self.sound_btn = C.ghost(tr("Sound off"), ft.Icons.VOLUME_OFF_ROUNDED, self._toggle_sound)
         self.window_btn = C.ghost(tr("Show the mpv window"), ft.Icons.OPEN_IN_NEW_ROUNDED, self._reopen_mpv)
+        # a Steam screenshot of what you're watching, without going to the Screenshots tab
+        self.shot_btn = C.secondary(tr("Take screenshot"), G.SHOT, self._take_shot)
         self.url = C.meta("", selectable=True)
         self._push = None  # components.LoopUpdater (updates from background threads; a direct update dropped patches)
         # where the stream plays (ui/live_players): the user's pick, what's available here, what plays it now
@@ -170,7 +172,7 @@ class LiveView:
                 # squeezed the status into a column of single words while streaming)
                 C.card(ft.Column([
                     ft.Row([self.dot, ft.Column([self.state, self.detail], spacing=T.px(2), expand=True),
-                            self.start_btn, self.sound_btn, self.window_btn, self.open_btn, self.stop_btn],
+                            self.start_btn, self.shot_btn, self.sound_btn, self.window_btn, self.open_btn, self.stop_btn],
                            spacing=T.S3, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     ft.Row([self.player_dd, self.quality_dd, ft.Container(self.url, expand=True)],
                            spacing=T.S3, vertical_alignment=ft.CrossAxisAlignment.CENTER),
@@ -214,6 +216,7 @@ class LiveView:
         self.start_btn.visible = not running
         self.start_btn.disabled = self.idle_start.disabled = self._busy
         self.open_btn.visible = self.stop_btn.visible = running
+        self.shot_btn.visible = running
         self.sound_btn.visible = running and self.mode == "app"
         self.sound_btn.content = tr("Sound on") if self.muted else tr("Sound off")
         self.sound_btn.icon = ft.Icons.VOLUME_UP_ROUNDED if self.muted else ft.Icons.VOLUME_OFF_ROUNDED
@@ -236,7 +239,8 @@ class LiveView:
         if update:  # called from the ticker / start / stream-end threads: send through Flet's event loop
             if self._push is None:
                 self._push = C.LoopUpdater(self.app.page)
-            self._push(self.dot, self.state, self.detail, self.where, self.start_btn, self.open_btn, self.stop_btn,
+            self._push(self.dot, self.state, self.detail, self.where, self.start_btn, self.shot_btn, self.open_btn,
+                       self.stop_btn,
                        self.sound_btn, self.window_btn, self.quality_dd, self.url, self.idle, self.idle_text,
                        self.idle_start, self.idle_open, self.idle_title, self.screen)
 
@@ -410,6 +414,26 @@ class LiveView:
 
     def _on_stream_end(self) -> None:
         self._dismiss_player()
+
+    def _take_shot(self, e=None) -> None:
+        """Take screenshot (while streaming): the same Steam screenshot as the Screenshots tab's button; that tab
+        shows it the next time it's opened."""
+        if self.shot_btn.disabled:
+            return
+        self.shot_btn.disabled = True
+        C.update(self.shot_btn)
+
+        def work():
+            from .screenshots import take_screenshot
+
+            try:
+                if take_screenshot(self.app) and self.app.screenshots_view is not None:
+                    self.app.screenshots_view._loaded = False  # reload on the next visit
+            finally:
+                self.shot_btn.disabled = False
+                C.update(self.shot_btn)
+
+        self.app.run_bg(work)
 
     def _open(self, e=None) -> None:
         if self.live and self.live.running:

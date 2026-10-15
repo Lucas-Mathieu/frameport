@@ -44,7 +44,7 @@ try:
 except ImportError:  # Windows: pc_revive loads this file for its VDF code only (GitHub #131)
     fcntl = None
 
-AGENT_VERSION = 86
+AGENT_VERSION = 90
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -902,6 +902,32 @@ def shortcut_appid(exe, title):
     return zlib.crc32((exe + title).encode("utf-8")) | 0x80000000
 
 
+class VdfMap(dict):
+    """Steam's KeyValues names are case-insensitive; keep their spelling when writing back (#263)."""
+
+    def _key(self, key):
+        return next((k for k in self if k.casefold() == key.casefold()), key)
+
+    def __contains__(self, key):
+        return super().__contains__(self._key(key))
+
+    def __getitem__(self, key):
+        return super().__getitem__(self._key(key))
+
+    def __setitem__(self, key, value):
+        super().__setitem__(self._key(key), value)
+
+    def get(self, key, default=None):
+        return super().get(self._key(key), default)
+
+    def setdefault(self, key, default=None):
+        return super().setdefault(self._key(key), default)
+
+    def update(self, *args, **kwargs):
+        for key, value in dict(*args, **kwargs).items():
+            self[key] = value
+
+
 def vdf_decode(data):
     pos = 0
 
@@ -914,7 +940,7 @@ def vdf_decode(data):
 
     def node():
         nonlocal pos
-        out = {}
+        out = VdfMap()
         while True:
             kind = data[pos]
             pos += 1
@@ -1230,7 +1256,7 @@ def _shortcuts_worker(payload):
         if service or args.get("restart", True):
             start_steam(service)
             lost = shortcuts_lost(users, args["packages"])
-            if lost:  # Steam wrote its old copy back over ours (it was still saving): once more, then report
+            if lost:  # Steam wrote its old copy back over ours (it was still saving): once more, then the devkit entry
                 result["retried"] = lost
                 service = stop_steam()
                 for user in users:
@@ -1238,7 +1264,7 @@ def _shortcuts_worker(payload):
                 start_steam(service)
                 for pkg in shortcuts_lost(users, lost):
                     result["added"] = [a for a in result["added"] if a["package"] != pkg]
-                    result["errors"].append(f"{pkg}: Steam removed the new library entry again after restarting")
+                    add_devkit_entry(pkg, result)
     except Exception as exc:  # noqa: BLE001
         result["state"] = "failed"
         result["errors"].append(str(exc))
@@ -1246,6 +1272,19 @@ def _shortcuts_worker(payload):
     result["finished"] = time.time()
     with open(STATUS_FILE, "w") as f:
         json.dump(result, f)
+
+
+def add_devkit_entry(pkg, result):
+    """Steam dropped the game's shortcuts.vdf entry twice: this Frame's Steam ignores FramePort's entries (GitHub #41),
+    so add it the way Valve's devkit tool does (Steam is running again). That entry is the one Steam keeps."""
+    try:
+        appid = devkit_register(pkg)
+    except Exception as exc:  # noqa: BLE001
+        result["errors"].append(f"{pkg}: Steam removed the new library entry again after restarting, and the devkit "
+                                f"entry failed too: {exc}")
+        return
+    result["added"].append({"package": pkg, "appid": appid, "expected": (deployment(pkg) or {}).get("appid"),
+                            "via": "devkit"})
 
 
 def remove_from_library(user, remove, result):
@@ -1500,10 +1539,17 @@ def is_overlay(dep):
     return bool(isinstance(dep, dict) and dep.get("overlay"))
 
 
+def deployment_summary(dep):
+    """Keep routine connection/monitor samples small; detailed data manifests are fetched only for an update."""
+    return {key: value for key, value in dep.items()
+            if key not in ("data_manifest", "configuration", "managed_config_files")}
+
+
 def cmd_list_installed(args):
     games = []
     table = mounts()
-    for dep_path in sorted(glob.glob(os.path.join(ANCHORS, "*/deployment.json"))):
+    selected = check_pkg(args["package"]) if args.get("package") else "*"
+    for dep_path in sorted(glob.glob(os.path.join(ANCHORS, selected, "deployment.json"))):
         try:
             dep = json.load(open(dep_path))
         except (OSError, ValueError):
@@ -1540,7 +1586,7 @@ def cmd_list_installed(args):
             dep["apk_present"] = os.path.exists(apk)
             dep["apk_size"] = os.path.getsize(apk) if dep["apk_present"] else 0
         dep["last_play"] = last_play(dep["anchor"])  # agent v70: the PC triages a finished play session's log
-        games.append(dep)
+        games.append(dep if args.get("details") else deployment_summary(dep))
     return {"games": games}
 
 
@@ -3876,7 +3922,7 @@ def cmd_finalize(args):
     pkg = check_pkg(args["package"])
     title = args["title"]
     prep = cmd_prepare({"package": pkg, "title": title, "dest": args.get("dest")})
-    base, anchor, appid, incoming = prep["base"], prep["anchor"], prep["appid"], prep["incoming"]
+    base, anchor, incoming = prep["base"], prep["anchor"], prep["incoming"]
     lepton = prep["lepton"]
     if not lepton:
         raise AgentError("Lepton is not installed (Developer Mode → install/launch 'Lepton Development' once)")
@@ -3897,6 +3943,10 @@ def cmd_finalize(args):
         bad = [k for k, v in expected.items() if have.get(k) != v]
         if bad:
             raise AgentError(f"{len(bad)} data file(s) missing or incomplete, e.g. {bad[0]}")
+    if args.get("existing_only") and os.path.exists(new_apk):
+        raise AgentError("an interrupted APK upload is pending; finish that install before updating data")
+    if args.get("existing_only"):
+        verify_installed_apk(deployment(pkg), args.get("apk_sha256"))
     if os.path.exists(new_apk):
         if args.get("apk_sha256") and sha256_file(new_apk) != args["apk_sha256"]:
             raise AgentError("uploaded APK checksum mismatch (transfer corrupted?)")
@@ -3907,16 +3957,67 @@ def cmd_finalize(args):
     elif not os.path.exists(os.path.join(app, "game.apk")):
         raise AgentError("no APK uploaded and none installed")
     moved = 0
-    for root, _, files in os.walk(inc_obb):
-        for name in files:
-            if name.endswith(".part"):
-                continue
-            src = os.path.join(root, name)
-            dst = os.path.join(app, "obb", os.path.relpath(src, inc_obb))
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            os.replace(src, dst)
-            moved += 1
-    shutil.rmtree(incoming, ignore_errors=True)
+    if not args.get("preserve_data"):
+        for root, _, files in os.walk(inc_obb):
+            for name in files:
+                if name.endswith(".part"):
+                    continue
+                src = os.path.join(root, name)
+                rel = os.path.relpath(src, inc_obb)
+                if expected is not None and rel not in expected:
+                    continue  # an older interrupted upload is not part of this install
+                dst = os.path.join(app, "obb", rel)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                os.replace(src, dst)
+                moved += 1
+        shutil.rmtree(incoming, ignore_errors=True)
+    return configure_install({**args, "consume_artwork": args.get("consume_artwork", True)}, prep, moved)
+
+
+def verify_installed_apk(dep, expected):
+    apk = os.path.join(dep["base"], "lepton-app", "game.apk")
+    if not expected or dep.get("sha256") != expected or not os.path.isfile(apk):
+        raise AgentError("installed APK is missing or changed; refresh and reinstall it")
+    st = os.stat(apk)
+    identity = {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
+    if identity != dep.get("apk_stat") and sha256_file(apk) != expected:
+        raise AgentError("installed APK content changed; reinstall it")
+
+
+def cmd_configure(args):
+    """Apply runtime configuration to an existing, matching APK without staging/replacing game files."""
+    pkg = check_pkg(args["package"])
+    dep = deployment(pkg)
+    if not dep or dep.get("kind", "quest") != "quest":
+        raise AgentError(f"{pkg} is not an installed Quest/Android app")
+    base, _ = new_base(args, pkg, dep)  # validates a removable drive; never silently falls back
+    verify_installed_apk(dep, args.get("apk_sha256"))
+    if container_running(dep["appid"]):
+        raise AgentError("Close the game before updating its configuration")
+    lepton, _ = lepton_path()
+    if not lepton:
+        raise AgentError("Lepton is not installed")
+    return configure_install({**args, "title": dep["title"]},
+                             {"base": base, "anchor": os.path.join(ANCHORS, pkg),
+                              "appid": dep["appid"], "lepton": lepton}, 0)
+
+
+def configure_install(args, prep, moved):
+    pkg, title = check_pkg(args["package"]), args["title"]
+    base, anchor, appid, lepton = prep["base"], prep["anchor"], prep["appid"], prep["lepton"]
+    app = os.path.join(base, "lepton-app")
+    previous = deployment(pkg) or {}
+    files_dir = data_files_dir(base, pkg)
+    for rel in set(args.get("files") or {}) | set(previous.get("managed_config_files") or {}):
+        target = os.path.realpath(os.path.join(files_dir, rel))
+        if not _inside(target, os.path.realpath(files_dir)) or target == os.path.realpath(files_dir):
+            raise AgentError(f"refusing to write outside the game's files dir: {rel}")
+        backup = os.path.join(files_dir, rel) + ".frameport-config-backup"
+        if os.path.islink(backup):
+            raise AgentError(f"refusing a linked configuration backup: {rel}")
+    for key, value in (args.get("settings") or {}).items():
+        if not re.fullmatch(r"[a-z_]+", key) or any(c in str(value) for c in "\r\n\x00"):
+            raise AgentError(f"bad setting {key}")
     if "flatscreen" in args:  # older clients don't send it: leave the marker as it is
         set_flatscreen(app, args["flatscreen"])
     # settings: settings.conf (read by the adapter via LEPTON_ENV_FRAMEBRIDGE_CONFIG) + framebridge.conf copy
@@ -3933,13 +4034,37 @@ def cmd_finalize(args):
             f.write(text)
         with open(os.path.join(files_dir, "framebridge.conf"), "w") as f:
             f.write(text)
+    managed = previous.get("managed_config_files") or {}
+    wanted = args.get("files") or {}
+    for rel, record in managed.items():
+        if rel in wanted:
+            continue
+        target = os.path.realpath(os.path.join(files_dir, rel))
+        if not _inside(target, os.path.realpath(files_dir)):
+            raise AgentError(f"invalid previously managed path: {rel}")
+        if os.path.isfile(target) and sha256_file(target) == record["sha256"]:
+            backup = target + ".frameport-config-backup"
+            if record.get("backup") and os.path.isfile(backup):
+                os.replace(backup, target)
+            else:
+                os.unlink(target)
+    new_managed = {}
     for rel, content in (args.get("files") or {}).items():
         target = os.path.normpath(os.path.join(files_dir, rel))
         if not target.startswith(files_dir + os.sep):
             raise AgentError(f"refusing to write outside the game's files dir: {rel}")
         os.makedirs(os.path.dirname(target), exist_ok=True)
+        record = managed.get(rel)
+        backup = target + ".frameport-config-backup"
+        # no record: an existing file is the user's, unless it already has exactly this content (written by
+        # FramePort before agent v86 kept records; backing it up would bring it back when the recipe drops it)
+        had_original = bool(record.get("backup")) if record else os.path.isfile(target) and \
+            open(target, "rb").read() != content.encode()
+        if not record and had_original:
+            shutil.copy2(target, backup)
         with open(target, "w") as f:
             f.write(content)
+        new_managed[rel] = {"sha256": sha256_file(target), "backup": had_original}
     models = install_controller_models(files_dir, str(settings.get("controller_models", 0)) not in ("0", "0.0"))
     recipe = args.get("recipe") if isinstance(args.get("recipe"), dict) else {}
     hw_video = HW_VIDEO_PATCH in (recipe.get("patches") or [])  # the shared codec (install_video_codec)
@@ -3949,22 +4074,40 @@ def cmd_finalize(args):
     config_sync = args.get("config_sync") if isinstance(args.get("config_sync"), dict) else {}
     write_launcher(anchor, base, pkg, title, appid, lepton, args.get("env"), hw_video, gamepad, bool(config_sync))
     art_in = os.path.join(base, "incoming-artwork")
-    if os.path.isdir(art_in):
+    art_moved = False
+    if args.get("consume_artwork") and os.path.isdir(art_in):
         shutil.rmtree(os.path.join(anchor, "artwork"), ignore_errors=True)
         shutil.move(art_in, os.path.join(anchor, "artwork"))
-    previous = deployment(pkg) or {}
-    dep = {"package": pkg, "appid": int(appid), "base": base, "title": title, "tags": args.get("tags") or [],
-           "apk": args.get("apk_name", "game.apk"),
-           "sha256": args.get("apk_sha256"), "recipe": args.get("recipe"), "installed_by": "frameport",
+        art_moved = True
+    dep = {**previous, "package": pkg, "appid": int(appid), "base": base, "title": title,
+           "tags": args.get("tags", previous.get("tags")) or [],
+           "apk": args.get("apk_name", previous.get("apk", "game.apk")),
+           "sha256": args.get("apk_sha256") or previous.get("sha256"),
+           "recipe": args.get("recipe"), "installed_by": "frameport",
            "hw_video_decode": hw_video, "steam_gamepad": gamepad, "config_sync": config_sync,
            "agent_version": AGENT_VERSION, "time": time.time()}
     if previous.get("eye_base"):  # the runtime's eye size learned from an earlier start (device.config_sync)
         dep["eye_base"] = previous["eye_base"]
-    with open(os.path.join(anchor, "deployment.json"), "w") as f:
-        json.dump(dep, f, indent=2)
+    dep["managed_config_files"] = new_managed
+    # An app before agent v86 records none of these: what it installed is unknown, so a newer PC mustn't skip work
+    # on the strength of an older record. Art the agent didn't replace keeps its record.
+    art_replaced = bool(args.get("consume_artwork")) and art_moved
+    for key in ("configuration", "configuration_fp", "apk_recipe_fp", "source_version", "artwork_manifest"):
+        if key in args:
+            dep[key] = args[key]
+        elif key != "artwork_manifest" or art_replaced:
+            dep.pop(key, None)
+    if args.get("obb_manifest") is not None:
+        dep["data_manifest"] = args["obb_manifest"]
+    if "data_manifest" in dep:
+        dep["data_fp"] = hashlib.sha256(json.dumps(dep["data_manifest"], sort_keys=True).encode()).hexdigest()[:32]
+    st = os.stat(os.path.join(app, "game.apk"))
+    dep["apk_size"] = st.st_size
+    dep["apk_stat"] = {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
     synced = sync_game_config(pkg, dep)
+    write_deployment(pkg, dep)
     return {"ok": True, "base": base, "appid": appid, "moved_data_files": moved, "controller_models": models,
-            "config_sync": synced}
+            "config_sync": synced, "deployment": deployment_summary(dep)}
 
 
 # --------------------------------------------------------------- Steam Frame controller models (XR_FB_render_model)
@@ -5223,8 +5366,8 @@ def cmd_set_settings(args):
             if k:
                 current[k] = v
     for k, v in (args.get("settings") or {}).items():
-        if not re.fullmatch(r"[a-z_]+", k) or not re.fullmatch(r"-?[0-9.]+", str(v)):
-            raise AgentError(f"bad setting {k}={v}")
+        if not re.fullmatch(r"[a-z_]+", k) or not re.fullmatch(r"-?(?:[0-9]+\.?[0-9]*|\.[0-9]+)", str(v)):
+            raise AgentError(f"bad setting {k}={v}")  # checked before anything is written
         current[k] = str(v)
     text = "".join(f"{k}={v}\n" for k, v in current.items())
     with open(conf, "w") as f:
@@ -5234,7 +5377,19 @@ def cmd_set_settings(args):
     with open(os.path.join(files_dir, "framebridge.conf"), "w") as f:
         f.write(text)
     models = install_controller_models(files_dir, current.get("controller_models", "0") not in ("0", "0.0"))
-    return {"settings": current, "controller_models": models, "config_sync": sync_game_config(pkg, dep)}
+    synced = sync_game_config(pkg, dep)
+    if isinstance(dep.get("configuration"), dict):
+        applied = dep["configuration"]
+        settings = applied.get("settings") or {}
+        for key, value in (args.get("settings") or {}).items():
+            if key in settings:
+                number = float(value)
+                # keep the recorded type (the PC's fingerprint uses it); an int setting given 1.5 stays 1.5
+                settings[key] = number if isinstance(settings[key], float) or not number.is_integer() \
+                    else int(number)
+        dep["configuration_fp"] = hashlib.sha256(json.dumps(applied, sort_keys=True).encode()).hexdigest()[:32]
+        write_deployment(pkg, dep)
+    return {"settings": current, "controller_models": models, "config_sync": synced}
 
 
 TITLE_MAX = 128
@@ -5246,6 +5401,26 @@ def clean_title(title):
     if not text:
         raise AgentError("the new name is empty")
     return text[:TITLE_MAX]
+
+
+def cmd_record_artwork(args):
+    """Record artwork only after verifying the files actually uploaded to the game's anchor."""
+    pkg = check_pkg(args["package"])
+    dep = deployment(pkg)
+    if not dep:
+        raise AgentError(f"{pkg} is not installed")
+    manifest = args.get("manifest") or {}
+    root = os.path.join(ANCHORS, pkg, "artwork")
+    for name, digest in manifest.items():
+        if (not re.fullmatch(r"(?:portrait|landscape|hero|logo|icon)\.[a-zA-Z0-9]+|\.icon-source", name)
+                or not re.fullmatch(r"[a-f0-9]{64}", str(digest))):
+            raise AgentError("invalid artwork manifest")
+        path = os.path.join(root, name)
+        if not os.path.isfile(path) or sha256_file(path) != digest:
+            raise AgentError(f"artwork missing or checksum mismatch: {name}")
+    dep["artwork_manifest"] = manifest
+    write_deployment(pkg, dep)
+    return {"verified": True}
 
 
 def cmd_rename(args):

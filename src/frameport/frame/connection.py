@@ -541,6 +541,17 @@ class Frame:
         self._agent_digest = ""
         self._video_codec_digest = ""
 
+    def upload_session(self) -> Frame:
+        """An independent bulk-upload transport to the same authenticated headset."""
+        from dataclasses import replace
+
+        other = Frame(replace(self.target), self.password).connect()
+        if (other.client.get_transport().get_remote_server_key() !=
+                self.client.get_transport().get_remote_server_key()):
+            other.close()
+            raise paramiko.SSHException("Upload worker reached a different headset; refusing transfer")
+        return other
+
     def alive(self) -> bool:
         """The SSH connection itself still works (a failed agent command doesn't mean the Frame is gone)."""
         transport = self.client.get_transport() if self.client else None
@@ -688,18 +699,24 @@ class Frame:
             self.run("xargs -0 mkdir -p", stdin="\0".join(dirs))
 
     def put(self, local: Path, remote: str, progress=None, resume: bool = True, mkdir: bool = True,
-            attempts: int = 3) -> None:
+            attempts: int = 3, check_cancel=None) -> None:
         """Upload with resume: data goes to <remote>.part, appended from the existing size, then renamed. progress may
         raise (e.g. Cancelled): the .part stays and the next put continues from there. A failed transfer is resumed
         up to `attempts` times (Windows: an occasional OSError [Errno 22] mid-upload that the next try got past)."""
         for attempt in range(attempts):
+            if check_cancel:
+                check_cancel()
             try:
                 return self._put(Path(local), remote, progress, resume, mkdir)
             except OSError as exc:
+                if check_cancel:
+                    check_cancel()
                 if attempt == attempts - 1 or is_unreachable(exc):
                     raise
                 log.warning("upload of %s failed (%s), resuming", Path(local).name, exc)
                 time.sleep(2)
+                if check_cancel:
+                    check_cancel()
                 if not self.alive():
                     self.close()
                     self.connect()
@@ -721,6 +738,8 @@ class Frame:
             dst.set_pipelined(True)
             src.seek(offset)
             done = offset
+            if progress:
+                progress(done, size)  # gives parallel progress an exact resume baseline
             while True:
                 chunk = src.read(1 << 20)
                 if not chunk:

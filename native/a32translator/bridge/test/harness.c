@@ -263,15 +263,15 @@ static void test_native_activity(const char *dir)
     free(state);
 }
 
-static void test_cxx(const char *dir)
+static void test_cxx(const char *dir, const char *name)
 {
     char stub[512];
-    snprintf(stub, sizeof stub, "%s/libbtest3.so", dir);
+    snprintf(stub, sizeof stub, "%s/%s.so", dir, name);
     uint32_t h = a32b_load(stub);
     uint32_t fn = h ? a32b_sym(h, "cxx_test") : 0;
     uint32_t w = 6;
     int r = fn ? (int)a32b_call(fn, &w, 1) : -1;
-    CHECK(r == 303, "C++ exceptions and static constructors in a guest library (%d)", r);
+    CHECK(r == 303, "%s: C++ exceptions and static constructors in a guest library (%d)", name, r);
 }
 
 int main(int argc, char **argv)
@@ -283,9 +283,13 @@ int main(int argc, char **argv)
     /* the host process owns memory in the low 4 GiB, as ART's heap and boot image do: the guest must avoid it */
     void *taken = mmap((void *)0x400000, 4 << 20, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
     if (taken == MAP_FAILED) perror("mmap 0x400000");
+    extern int a32_vrapi_selftest(void);
+    CHECK(a32_vrapi_selftest() == 0, "VrApi ABI, render poses, tracking consistency and floor transforms");
     test_jni(argv[1]);
     test_native_activity(argv[1]);
-    test_cxx(argv[1]);
+    test_cxx(argv[1], "libbtest3");
+    test_cxx(argv[1], "libbtest3_android");
+    test_cxx(argv[1], "libbtest3_standard");
     CHECK(mprotect(taken, 4 << 20, PROT_NONE) == 0, "the host's low mapping is still there");
     if (failures) {
         printf("%d FAILED\n", failures);

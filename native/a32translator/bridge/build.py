@@ -50,7 +50,12 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     subprocess.run([sys.executable, str(HERE / "gen_stubs.py"), "--ndk", a.ndk], check=True)
     opt = ["-O0", "-g"] if a.debug else ["-O2", "-g"]
-    prefix = [f"-ffile-prefix-map={ROOT}=a32translator", f"-ffile-prefix-map={Path(a.ndk).resolve()}=ndk"]
+    # The cache can be symlinked into a worktree. Clang records both the spelling
+    # used on the command line and the resolved NDK path, plus the compilation cwd.
+    prefix = [f"-ffile-prefix-map={ROOT.parent.parent}=frameport",
+              f"-ffile-prefix-map={ROOT}=a32translator",
+              f"-ffile-prefix-map={Path(a.ndk).absolute()}=ndk",
+              f"-ffile-prefix-map={Path(a.ndk).resolve()}=ndk"]
 
     # guest runtime: everything a guest library may link against comes from the static archives (exports.S
     # references each symbol, so the linker keeps them)
@@ -76,7 +81,7 @@ def main():
         to.mkdir(exist_ok=True)
         # the harness is static (runs under qemu-aarch64 or on any arm64 Linux): high image base keeps the
         # low 4 GiB free, like a32run's
-        run([cc64, *common, "-DA32B_STDERR_LOG", "-static", "-Wl,--image-base=0x7000000000", "-I", h,
+        run([cc64, *common, "-DA32B_STDERR_LOG", "-DA32B_TEST", "-static", "-Wl,--image-base=0x7000000000", "-I", h,
              t / "harness.c", t / "fakejni.c", *[src / s for s in TRANSLATOR], *[h / s for s in HOST], "-lm", "-ldl",
              "-o", to / "harness"])
         run([cc32, *opt, *prefix, *WARN, "-mthumb", "-mfpu=neon-vfpv4", "-shared", "-fPIC", t / "libbtest.c",
@@ -85,6 +90,14 @@ def main():
              to / "libbtest.a32.so", "-landroid", "-llog", "-o", to / "libbtest2.a32.so"])
         run([bin_ / "armv7a-linux-androideabi30-clang++", *opt, *prefix, *WARN, "-mthumb", "-shared", "-fPIC",
              "-static-libstdc++", t / "libbtest3.cpp", "-o", to / "libbtest3.a32.so"])
+        # Exercise both RELR tag families through the real guest loader. C++ constructors,
+        # pointer tables and exceptions need relative relocations; Android's older tags
+        # occur in Quest libraries (e.g. Journey of the Gods' OVRPlugin).
+        for tags in ("android", "standard"):
+            run([bin_ / "armv7a-linux-androideabi30-clang++", *opt, *prefix, *WARN, "-mthumb", "-shared", "-fPIC",
+                 "-static-libstdc++", t / "libbtest3.cpp", "-Wl,--pack-dyn-relocs=android+relr",
+                 "-Wl,--use-android-relr-tags" if tags == "android" else "-Wl,--no-use-android-relr-tags",
+                 "-o", to / f"libbtest3_{tags}.a32.so"])
         shutil.copy(OUT / "liba32rt.so", to / "liba32rt.so")
 
 

@@ -165,7 +165,8 @@ Tests:
   with a fake JVM (`fakejni.c`) for three guest libraries: RegisterNatives and `Java_*` exports, 12-argument
   natives (stack arguments on both sides), floats/doubles/bytes, strings, arrays below and above 4 GiB, every
   Call*Method style, NewObject, nested calls, guest threads that attach, several host threads, exceptions, a
-  NativeActivity with a DT_NEEDED library, and C++ exceptions in a guest library. Runs under qemu-aarch64 or
+  NativeActivity with a DT_NEEDED library, and C++ exceptions in guest libraries using ordinary REL,
+  standard RELR and Android's older RELR tags (with APS2). Runs under qemu-aarch64 or
   natively (passes on the Frame with JIT and interpreter).
 - `uv run python bridge/test/make_apk.py`: `org.frameport.a32test`, a NativeActivity APK without Java code whose
   library is 32-bit (`bridge/test/libapktest.c`). Installed with FramePort (`frameport scan`, then `frameport

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import math
 import posixpath
 import threading
 from collections import deque
@@ -183,6 +184,57 @@ def main_game(sample: dict | None) -> dict | None:
     """The game in front: the agent lists games newest first with SteamVR overlay apps (they run next to games, e.g.
     a desktop overlay) last; an overlay alone isn't a game being played. Older agents: the first non-overlay."""
     return next((g for g in (sample or {}).get("games") or [] if not g.get("overlay")), None)
+
+
+SMOOTH_TAU = 1.5  # seconds: the shown numbers follow a change within ~3 s instead of jumping with every tick
+
+
+class Smoother:
+    """Exponential moving average per value, by time (the same feel at 0.1 s or 2 s intervals): the big numbers
+    stopped flickering between neighbours (71/72 fps, 18/21 %) at fast intervals. A gap of several `tau` (paused,
+    reconnected) or a missing value starts that value afresh."""
+
+    def __init__(self, tau: float = SMOOTH_TAU):
+        self.tau = tau
+        self.state: dict[str, tuple[float, float]] = {}  # key -> (value, time)
+
+    def value(self, key: str, v: float | None, t: float | None) -> float | None:
+        if v is None:
+            self.state.pop(key, None)
+            return None
+        prev = self.state.get(key)
+        if prev is None or t is None or not 0 < t - prev[1] < 4 * self.tau:
+            out = float(v)
+        else:
+            alpha = 1 - math.exp(-(t - prev[1]) / self.tau)
+            out = prev[0] + alpha * (v - prev[0])
+        self.state[key] = (out, t if t is not None else 0.0)
+        return out
+
+    def sample(self, s: dict) -> dict:
+        """A copy of the sample with the shown numbers smoothed (tiles + each game's fps/CPU/GPU, by package)."""
+        t = s.get("t")
+        out = dict(s)
+
+        def part(name, keys=None):
+            d = s.get(name)
+            if isinstance(d, dict):
+                out[name] = {**d, **{k: self.value(f"{name}.{k}", d.get(k), t) for k in (keys or d)
+                                     if isinstance(d.get(k), (int, float)) and not isinstance(d.get(k), bool)}}
+
+        part("cpu", ("total",))
+        part("gpu", ("busy",))
+        part("mem", ("avail",))
+        part("temps")
+        part("power")
+        if s.get("games"):
+            out["games"] = [{**g, **{k: self.value(f"game:{g.get('package')}.{k}", g.get(k), t)
+                                     for k in ("fps", "cpu", "gpu") if g.get(k) is not None}}
+                            for g in s["games"]]
+        return out
+
+    def clear(self) -> None:
+        self.state.clear()
 
 
 def series_of(sample: dict) -> dict[str, float | None]:

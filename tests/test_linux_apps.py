@@ -235,3 +235,37 @@ def test_install_takes_the_icon_the_frame_found(tmp_path):
     installer.apply_app_icon(frame, pkg, "/anchor", result, Reporter())  # unchanged: nothing sent
     installer.apply_app_icon(frame, pkg, "/anchor", {"app_icon": {"file": "app-icon.svg"}}, Reporter())
     assert frame.puts == []
+
+
+@pytest.mark.parametrize("script", ["install.sh", "setup.sh"])
+@pytest.mark.parametrize("archive", [False, True])
+def test_installer_only_linux_app_refused(tmp_path, script, archive):
+    from frameport.errors import explain
+
+    root = tmp_path / "service"
+    root.mkdir()
+    (root / script).write_text("#!/bin/sh\necho install\n")
+    path = root
+    if archive:
+        path = tmp_path / "service.tar.gz"
+        with tarfile.open(path, "w:gz") as t:
+            t.add(root, arcname="service")
+    with pytest.raises(ValueError) as caught:
+        pipeline.add_linux_app(path)
+    message = explain(caught.value)
+    assert "FramePort runs programs, not installers" in message
+    assert "project's own install instructions" in message
+
+
+def test_installer_beside_program_does_not_prevent_detection(tmp_path):
+    (tmp_path / "install.sh").write_text("#!/bin/sh\n")
+    (tmp_path / "program").write_bytes(elf(linux.EM_AARCH64))
+    assert linux.inspect(tmp_path)["exe"] == "program"
+
+
+def test_deep_installer_is_not_used_for_refusal(tmp_path):
+    nested = tmp_path / "release" / "scripts"
+    nested.mkdir(parents=True)
+    (nested / "install.sh").write_text("#!/bin/sh\n")
+    with pytest.raises(ValueError, match="no Linux program found"):
+        linux.inspect(tmp_path)

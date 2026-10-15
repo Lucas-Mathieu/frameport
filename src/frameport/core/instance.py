@@ -9,12 +9,13 @@ play sessions (the Library flickered under a stream of pop-ups). The GUI holds a
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
 from pathlib import Path
 
-from .paths import user_data_dir
+from .paths import user_data_dir, write_atomic
 
 _held = None  # the open lock file (kept for the process lifetime)
 
@@ -25,6 +26,10 @@ def lock_file() -> Path:
 
 def focus_file() -> Path:
     return user_data_dir() / "gui.focus"
+
+
+def _owner_file(path: Path) -> Path:
+    return path.with_suffix(".pid")
 
 
 def _try_lock(f) -> bool:
@@ -57,6 +62,13 @@ def acquire(path: Path | None = None) -> bool:
     f.write(str(os.getpid()))
     f.flush()
     _held = f
+    try:
+        import psutil
+
+        # Windows denies reading the locked byte, so another launch cannot read the PID from gui.lock itself.
+        write_atomic(_owner_file(path), json.dumps({"pid": os.getpid(), "created": psutil.Process().create_time()}))
+    except Exception:  # noqa: BLE001  the lock is ours; a missing owner file only costs a later launch's recovery
+        pass
     return True
 
 
@@ -67,6 +79,11 @@ def release() -> None:
     f, _held = _held, None
     if f is None:
         return
+    path = Path(f.name)
+    try:
+        _owner_file(path).unlink(missing_ok=True)
+    except OSError:
+        pass
     try:
         if sys.platform == "win32":
             import msvcrt
@@ -75,7 +92,6 @@ def release() -> None:
             msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
     except OSError:
         pass
-    path = Path(f.name)
     f.close()
     try:
         path.unlink(missing_ok=True)
@@ -84,8 +100,18 @@ def release() -> None:
 
 
 def holder(path: Path | None = None) -> int | None:
+    path = path or lock_file()
     try:
-        return int((path or lock_file()).read_text().strip() or 0) or None
+        import psutil
+
+        owner = json.loads(_owner_file(path).read_text())
+        pid = int(owner["pid"])
+        if abs(psutil.Process(pid).create_time() - float(owner["created"])) < 0.01:
+            return pid  # creation time guards against stale metadata and recycled PIDs
+    except (OSError, ValueError, KeyError, TypeError, psutil.Error):
+        pass
+    try:
+        return int(path.read_text().strip() or 0) or None
     except (OSError, ValueError):
         return None
 
@@ -94,10 +120,30 @@ def _is_frameport_gui(pid: int) -> bool:
     try:
         import psutil
 
-        cmd = " ".join(psutil.Process(pid).cmdline()).lower()
+        cmd = psutil.Process(pid).cmdline()
     except Exception:  # noqa: BLE001 (gone, or not ours to inspect)
         return False
-    return "frameport" in cmd
+    if any(a == "-m" and b == "frameport.ui.app" for a, b in zip(cmd, cmd[1:], strict=False)):
+        return True
+    return any(Path(arg).name.lower() in ("frameport", "frameport.exe", "frameport-gui", "frameport-gui.exe")
+               for arg in cmd[:2])
+
+
+def _legacy_holders(path: Path) -> list[int]:
+    """Older Windows GUIs have no readable PID record. Only recover processes holding this exact lock."""
+    import psutil
+
+    found = []
+    wanted = os.path.normcase(str(path.resolve()))
+    for process in psutil.process_iter(["pid"]):
+        if process.pid == os.getpid() or not _is_frameport_gui(process.pid):
+            continue
+        try:
+            if any(os.path.normcase(f.path) == wanted for f in process.open_files()):
+                found.append(process.pid)
+        except (OSError, psutil.Error):
+            pass
+    return found
 
 
 STARTUP_GRACE = 30.0  # a GUI this young may still be opening its window (no heartbeat yet): never end it
@@ -153,6 +199,9 @@ def claim(window_open, retries: int = 20) -> bool:
     pid = holder()
     if pid:
         end_leftover(pid)
+    elif sys.platform == "win32":
+        for pid in _legacy_holders(lock_file()):
+            end_leftover(pid)
     for _ in range(retries):  # the OS releases the lock when the process is gone
         if acquire():
             return True

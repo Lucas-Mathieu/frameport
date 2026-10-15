@@ -23,6 +23,7 @@ typedef struct {
     uint32_t Padding;
     double TimeInSeconds, PredictionInSeconds;
 } pose64; /* ovrRigidBodyPosef: the same in both ABIs */
+typedef struct { float Orientation[4], Position[3]; } posef64;
 typedef struct {
     uint32_t Status, Padding;
     pose64 HeadPose;
@@ -97,6 +98,8 @@ static struct {
     double (*GetPredictedDisplayTime)(void *, int64_t);
     tracking2 (*GetPredictedTracking2)(void *, double);
     void (*RecenterPose)(void *);
+    posef64 (*GetTrackingTransform)(void *, int);
+    void (*SetTrackingTransform)(void *, posef64);
     void *(*CreateTextureSwapChain2)(int32_t, int32_t, int, int, int, int);
     void (*DestroyTextureSwapChain)(void *);
     int (*GetTextureSwapChainLength)(void *);
@@ -134,7 +137,7 @@ static void bridge_init(void)
     L(GetTextureSwapChainLength); L(GetTextureSwapChainHandle); L(SubmitFrame2); L(SetPropertyInt);
     L(EnumerateInputDevices); L(GetInputDeviceCapabilities); L(GetCurrentInputState); L(GetInputTrackingState);
     L(CreateTextureSwapChain3); L(SetDisplayRefreshRate); L(PollEvent); L(GetSystemPropertyFloatArray);
-    L(SetTrackingSpace); L(SetHapticVibrationSimple);
+    L(SetTrackingSpace); L(SetHapticVibrationSimple); L(GetTrackingTransform); L(SetTrackingTransform);
 #undef L
     bridge_ok = B.Initialize && B.EnterVrMode && B.SubmitFrame2 && B.GetPredictedTracking2 && B.GetPredictedDisplayTime &&
                 B.LeaveVrMode && B.CreateTextureSwapChain2 && B.DestroyTextureSwapChain && B.GetTextureSwapChainLength &&
@@ -327,6 +330,226 @@ static void stat(int k)
     memset(stats, 0, sizeof stats);
 }
 
+/* Only the a32 path: one fully tracked answer per (mobile, requested time), shared by both tracking APIs.
+ * Render/update/submit must agree on the head for a display time. xrLocateSpace bypasses FrameBridge's
+ * xrLocateViews consistency cache. Invalidate on session/origin changes, never cache untracked startup poses. */
+/* OVRPlugin keeps 64 frame slots, with update/render queries at different times. */
+#define TRACK_CACHE 128
+static struct { void *mobile; double time, sample_time; tracking2 value; } track_cache[TRACK_CACHE];
+static pthread_mutex_t track_lock = PTHREAD_MUTEX_INITIALIZER;
+static unsigned track_next, track_hits;
+static struct { void *mobile; int64_t index; double time; } display_queries[32];
+static unsigned display_next;
+static void display_record(void *m, int64_t index, double time)
+{
+    pthread_mutex_lock(&track_lock);
+    unsigned i = display_next++ % 32;
+    display_queries[i].mobile = m; display_queries[i].index = index; display_queries[i].time = time;
+    pthread_mutex_unlock(&track_lock);
+}
+static void tracking_reset(void)
+{
+    pthread_mutex_lock(&track_lock);
+    memset(track_cache, 0, sizeof track_cache);
+    memset(display_queries, 0, sizeof display_queries);
+    pthread_mutex_unlock(&track_lock);
+}
+/* The runtime can successfully locate an untracked identity in LOCAL. In floor space that
+ * becomes (0, 1.6, 0), not a usable render pose. A tracked identity is legitimate. */
+static int default_pose(const pose64 *p)
+{
+    return p && fabsf(p->Orientation[0]) < 1e-5f && fabsf(p->Orientation[1]) < 1e-5f &&
+        fabsf(p->Orientation[2]) < 1e-5f && fabsf(fabsf(p->Orientation[3])-1) < 1e-5f &&
+        fabsf(p->Position[0]) < 1e-5f && fabsf(p->Position[2]) < 1e-5f &&
+        (fabsf(p->Position[1]) < 1e-5f || fabsf(p->Position[1]-1.6f) < 1e-5f);
+}
+/* track_lock held. Bounded hold, never reuse a pose across an origin/session reset. */
+static int recent_tracking(void *m, double t, tracking2 *out, double *sample_time)
+{
+    double best = 0.1;
+    int found = 0;
+    for (int i = 0; i < TRACK_CACHE; ++i) {
+        double age = fabs(track_cache[i].sample_time-t);
+        if (track_cache[i].mobile == m && age < best) {
+            *out = track_cache[i].value; *sample_time = track_cache[i].sample_time; best = age; found = 1;
+        }
+    }
+    return found;
+}
+static tracking2 tracking_of(void *m, double t)
+{
+    tracking2 tr = {0};
+    tr.HeadPose.Orientation[3] = 1;
+    if (!bridge() || !m) return tr;
+    pthread_mutex_lock(&track_lock);
+    for (int i = 0; i < TRACK_CACHE; ++i) {
+        if (track_cache[i].mobile == m && track_cache[i].time == t) {
+            tr = track_cache[i].value;
+            if (!track_hits++) bridge_log(ANDROID_LOG_INFO, "a32 pose_consistency: repeated time uses first tracked head and eyes");
+            pthread_mutex_unlock(&track_lock);
+            return tr;
+        }
+    }
+    tr = B.GetPredictedTracking2(m, t);
+    static double source_next;
+    static unsigned source_bad, source_default, source_held, source_details;
+    struct timespec source_ts;
+    clock_gettime(CLOCK_MONOTONIC, &source_ts);
+    double source_now = source_ts.tv_sec + source_ts.tv_nsec * 1e-9;
+    int untracked = (tr.Status & 15) != 15;
+    int identity = default_pose(&tr.HeadPose);
+    source_bad += untracked; source_default += identity;
+    if ((untracked || identity) && source_details++ < 3)
+        bridge_log(ANDROID_LOG_WARN, "a32 tracking anomaly: requested=%.6f returned=%.6f status=0x%x default=%d pos=%.6f,%.6f,%.6f quat=%.6f,%.6f,%.6f,%.6f",
+                   t, tr.HeadPose.TimeInSeconds, tr.Status, identity,
+                   tr.HeadPose.Position[0], tr.HeadPose.Position[1], tr.HeadPose.Position[2],
+                   tr.HeadPose.Orientation[0], tr.HeadPose.Orientation[1], tr.HeadPose.Orientation[2], tr.HeadPose.Orientation[3]);
+    tracking2 held;
+    double sample_time = t;
+    if (untracked && isfinite(t) && t > 0 && recent_tracking(m, t, &held, &sample_time)) {
+        tr = held;
+        /* Hold head+eyes together, retaining the original sample time so caching
+         * this consistent answer cannot renew the hold during a tracking outage. */
+        tr.HeadPose.TimeInSeconds = t;
+        tr.HeadPose.PredictionInSeconds = 0;
+        ++source_held;
+    }
+    if (source_now >= source_next) {
+        bridge_log(ANDROID_LOG_INFO, "a32 tracking window: untracked=%u default=%u held=%u", source_bad, source_default, source_held);
+        source_bad = source_default = source_held = source_details = 0;
+        source_next = source_now + 2;
+    }
+
+    /* HeadPose comes from xrLocateSpace; Eye.View comes from a separate xrLocateViews. Log the positional
+     * disagreement without another locate (which would itself change the runtime's pose sample). */
+    static double diag_next;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    double now = ts.tv_sec + ts.tv_nsec * 1e-9;
+    if (now >= diag_next && (tr.Status & 15) == 15) {
+        diag_next = now + 2;
+        float center[3] = {0}, sum = 0;
+        for (int e = 0; e < 2; ++e) {
+            const float *v = tr.Eye[e].View;
+            for (int j = 0; j < 3; ++j)
+                center[j] -= 0.5f*(v[j]*v[3] + v[4+j]*v[7] + v[8+j]*v[11]);
+        }
+        for (int j = 0; j < 3; ++j) { float d = center[j]-tr.HeadPose.Position[j]; sum += d*d; }
+        bridge_log(ANDROID_LOG_INFO, "a32 tracking: requested=%.6f returned=%.6f status=0x%x head_y=%.3f head_eye_mm=%.3f",
+                   t, tr.HeadPose.TimeInSeconds, tr.Status, tr.HeadPose.Position[1], sqrtf(sum)*1000);
+    }
+    if (isfinite(t) && t > 0 && (tr.Status & 15) == 15) {
+        unsigned i = track_next++ % TRACK_CACHE;
+        track_cache[i].mobile = m;
+        track_cache[i].time = t;
+        track_cache[i].sample_time = sample_time;
+        track_cache[i].value = tr;
+    }
+    pthread_mutex_unlock(&track_lock);
+    return tr;
+}
+
+/* Rate-limited evidence: submitted render pose versus the exact-time tracking answer, not a fresh locate.
+ * Count all frames before rate limiting; a missing match alone never changes a render pose. */
+static void submit_diag(void *m, const submit2 *d, const pose64 *pose, int incoming_match, int had_default, int repaired, int dropped)
+{
+    static pthread_mutex_t diag_lock = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_lock(&diag_lock);
+    static double next, previous_time;
+    static uint64_t previous_index;
+    static unsigned repeats, backwards, total, missing, defaults, repairs, drops, details;
+    if (d->DisplayTime == previous_time) ++repeats;
+    if (d->FrameIndex < previous_index) ++backwards;
+    previous_time = d->DisplayTime;
+    previous_index = d->FrameIndex;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    double now = ts.tv_sec + ts.tv_nsec * 1e-9;
+
+    float dp = -1, dq = -1;
+    double queried_time = 0;
+    pthread_mutex_lock(&track_lock);
+    for (unsigned j = 0; j < 32; ++j) {
+        unsigned i = (display_next - 1 - j) % 32;
+        if (display_queries[i].mobile == m && display_queries[i].index == (int64_t)d->FrameIndex) {
+            queried_time = display_queries[i].time;
+            break;
+        }
+    }
+    if (pose) for (int i = 0; i < TRACK_CACHE; ++i) {
+        if (track_cache[i].mobile != m || fabs(track_cache[i].time - pose->TimeInSeconds) > 1e-6) continue;
+        const pose64 *q = &track_cache[i].value.HeadPose;
+        float sum = 0, dot = 0;
+        for (int j = 0; j < 3; ++j) { float v = pose->Position[j] - q->Position[j]; sum += v*v; }
+        for (int j = 0; j < 4; ++j) dot += pose->Orientation[j]*q->Orientation[j];
+        dp = sqrtf(sum)*1000;
+        dq = 2*acosf(fminf(1, fabsf(dot)))*57.29578f;
+        break;
+    }
+    ++total; missing += pose && !incoming_match; defaults += had_default;
+    repairs += repaired; drops += dropped;
+    if (pose && (!incoming_match || default_pose(pose)) && details++ < 3)
+        bridge_log(ANDROID_LOG_WARN, "a32 submit anomaly: index=%llu display=%.6f render=%.6f cached=%d default=%d repaired=%d dropped=%d pos=%.6f,%.6f,%.6f quat=%.6f,%.6f,%.6f,%.6f",
+                   (unsigned long long)d->FrameIndex, d->DisplayTime, pose->TimeInSeconds, incoming_match, default_pose(pose), repaired, dropped,
+                   pose->Position[0], pose->Position[1], pose->Position[2], pose->Orientation[0], pose->Orientation[1], pose->Orientation[2], pose->Orientation[3]);
+    if (now < next) { pthread_mutex_unlock(&track_lock); pthread_mutex_unlock(&diag_lock); return; }
+    next = now + 2;
+    bridge_log(ANDROID_LOG_INFO, "a32 submit window: submits=%u no_cached_match=%u default=%u repaired=%u dropped=%u", total, missing, defaults, repairs, drops);
+    total = missing = defaults = repairs = drops = details = 0;
+    bridge_log(ANDROID_LOG_INFO, "a32 submit: index=%llu predicted_index=%lld display=%.6f queried=%.6f render=%.6f age_ms=%.2f head_y=%.3f delta_mm=%.3f delta_deg=%.3f cache_hits=%u repeated_display=%u backwards_index=%u",
+               (unsigned long long)d->FrameIndex, (long long)last_frame_index, d->DisplayTime, queried_time,
+               pose ? pose->TimeInSeconds : 0, pose ? (d->DisplayTime-pose->TimeInSeconds)*1000 : 0,
+               pose ? pose->Position[1] : 0, dp, dq, track_hits, repeats, backwards);
+    pthread_mutex_unlock(&track_lock);
+    repeats = backwards = 0;
+    pthread_mutex_unlock(&diag_lock);
+}
+
+/* Repair only a default without matching tracked provenance on a world projection, never an arbitrary render pose,
+ * head-locked layer or cylinder placement. If no tracked answer exists, end an empty frame
+ * rather than reproject an image around the origin. No additional WaitFrame/time advance. */
+static void submit_prepare(void *m, submit2 *d)
+{
+    pose64 original = {0};
+    int have_pose = 0, incoming_match = 1, had_default = 0, repaired = 0, dropped = 0;
+    /* Inspect all incoming world projections before any locate adds a cache entry. */
+    for (uint32_t k = 0; k < d->LayerCount; ++k) {
+        if (d->Layers[k]->Type != 1 || (d->Layers[k]->Flags & (1u << 2))) continue;
+        const projection2 *p = (const projection2 *)d->Layers[k];
+        int matched = 0;
+        pthread_mutex_lock(&track_lock);
+        for (int i = 0; i < TRACK_CACHE; ++i)
+            if (track_cache[i].mobile == m && fabs(track_cache[i].time-p->HeadPose.TimeInSeconds) <= 1e-6) matched = 1;
+        pthread_mutex_unlock(&track_lock);
+        if (!have_pose || (!had_default && default_pose(&p->HeadPose))) original = p->HeadPose;
+        have_pose = 1;
+        incoming_match &= matched;
+        had_default |= default_pose(&p->HeadPose);
+    }
+    for (uint32_t k = 0; k < d->LayerCount; ++k) {
+        if (d->Layers[k]->Type != 1 || (d->Layers[k]->Flags & (1u << 2))) continue;
+        projection2 *p = (projection2 *)d->Layers[k];
+        int matched = 0;
+        tracking2 tr = {0};
+        pthread_mutex_lock(&track_lock);
+        for (int i = 0; i < TRACK_CACHE; ++i)
+            if (track_cache[i].mobile == m && fabs(track_cache[i].time-p->HeadPose.TimeInSeconds) <= 1e-6) { matched = 1; tr = track_cache[i].value; }
+        pthread_mutex_unlock(&track_lock);
+        if (!default_pose(&p->HeadPose) || (matched && default_pose(&tr.HeadPose))) continue; /* a real tracked identity */
+        if (!matched) tr = tracking_of(m, d->DisplayTime);
+        /* A late render thread may submit a time outside the runtime's locatable
+         * window. Zero requests the already-begun frame's prediction, without
+         * another WaitFrame or changing the application's display time. */
+        if ((tr.Status & 15) != 15) tr = tracking_of(m, 0);
+        if ((tr.Status & 15) == 15) {
+            p->HeadPose = tr.HeadPose; repaired = 1;
+        } else { dropped = 1; break; }
+    }
+    /* Record the incoming pose, not the repaired pose. */
+    submit_diag(m, d, have_pose ? &original : NULL, incoming_match, had_default, repaired, dropped);
+    if (dropped) d->LayerCount = 0;
+}
+
 /* ---------------------------------------------------------------- the functions */
 
 /* One VrApi instance per process, as on a Gear VR/Go (the system driver kept it): OVRPlugin 1.46 initializes in
@@ -479,6 +702,7 @@ void imp_vrapi_EnterVrMode(a32_cpu *c, argreader *R)
         bridge_log(ANDROID_LOG_INFO, "EnterVrMode: eglQueryContext(CONFIG_ID) ok %u id %d error 0x%x; current %p on %p", ok,
                    id, error ? error() : 0, current ? current() : NULL, current_dpy ? current_dpy() : NULL);
     }
+    tracking_reset();
     void *mobile = B.EnterVrMode(&m);
     bridge_log(ANDROID_LOG_INFO, "vrapi_EnterVrMode(flags 0x%x) -> %p", m.Flags, mobile);
     if (mobile && quest_touch) bridge_log(ANDROID_LOG_INFO, "controllers: no touchpad/back events (the game reads Touch)");
@@ -490,6 +714,7 @@ void imp_vrapi_LeaveVrMode(a32_cpu *c, argreader *R)
 {
     void *m = h2ptr(rd32(R));
     guest_backtrace(c, "vrapi_LeaveVrMode"); /* games that leave VR by themselves: where from */
+    tracking_reset();
     input_stop();
     if (bridge() && m) B.LeaveVrMode(m);
 }
@@ -501,6 +726,7 @@ void imp_vrapi_GetPredictedDisplayTime(a32_cpu *c, argreader *R)
     stat(S_DISPLAY_TIME);
     last_frame_index = index;
     last_display_time = bridge() && m ? B.GetPredictedDisplayTime(m, index) : 0.0;
+    display_record(m, index, last_display_time);
     retd(c, last_display_time);
 }
 
@@ -511,10 +737,7 @@ void imp_vrapi_GetPredictedTracking(a32_cpu *c, argreader *R)
     void *m = h2ptr(rd32(R));
     double t = rdd(R);
     stat(S_TRACK);
-    tracking2 tr;
-    memset(&tr, 0, sizeof tr);
-    tr.HeadPose.Orientation[3] = 1;
-    if (bridge() && m) tr = B.GetPredictedTracking2(m, t);
+    tracking2 tr = tracking_of(m, t);
     if (out) memcpy(g2p(out), &tr, 104);
     ret32(c, out);
 }
@@ -522,6 +745,7 @@ void imp_vrapi_GetPredictedTracking(a32_cpu *c, argreader *R)
 void imp_vrapi_RecenterPose(a32_cpu *c, argreader *R)
 {
     void *m = h2ptr(rd32(R));
+    tracking_reset();
     if (bridge() && m && B.RecenterPose) B.RecenterPose(m);
 }
 
@@ -604,7 +828,7 @@ void imp_vrapi_SubmitFrame(a32_cpu *c, argreader *R)
         if (bad++ < 5) bridge_log(ANDROID_LOG_WARN, "vrapi_SubmitFrame(ovr 0x%x -> %p, parms 0x%x) skipped", mh, m, fp);
         return;
     }
-    static projection2 layers[FP_MAX_LAYERS];
+    projection2 layers[FP_MAX_LAYERS];
     const header2 *list[FP_MAX_LAYERS];
     const fp_layout *F = ld32(fp) == 3 ? &FP_15 : &FP_104;
     static int announced;
@@ -669,6 +893,7 @@ void imp_vrapi_SubmitFrame(a32_cpu *c, argreader *R)
     d.DisplayTime = B.GetPredictedDisplayTime(m, (int64_t)d.FrameIndex);
     d.LayerCount = n;
     d.Layers = list;
+    submit_prepare(m, &d);
     int r = B.SubmitFrame2(m, &d);
     static int fails;
     if (r && fails++ < 10) bridge_log(ANDROID_LOG_WARN, "vrapi_SubmitFrame: frame %llu, %u layers -> %d",
@@ -991,7 +1216,7 @@ void imp_vrapi_SubmitFrame2(a32_cpu *c, argreader *R)
         ret32(c, (uint32_t)-1005);
         return;
     }
-    static union { header2 h; projection2 p; cylinder2 cy; } layers[MAX_LAYERS2];
+    union { header2 h; projection2 p; cylinder2 cy; } layers[MAX_LAYERS2];
     const header2 *list[MAX_LAYERS2];
     uint32_t count = ld32(d32 + 32), arr = ld32(d32 + 36), n = 0;
     for (uint32_t k = 0; k < count && n < MAX_LAYERS2 && arr; k++) {
@@ -1047,6 +1272,7 @@ void imp_vrapi_SubmitFrame2(a32_cpu *c, argreader *R)
     d.LayerCount = n;
     d.Layers = list;
     if (!n) stat(S_SUBMIT_EMPTY);
+    submit_prepare(m, &d);
     int r = B.SubmitFrame2(m, &d);
     static int fails;
     if (r && fails++ < 10) bridge_log(ANDROID_LOG_WARN, "vrapi_SubmitFrame2: frame %llu, %u layers -> %d",
@@ -1078,10 +1304,7 @@ void imp_vrapi_GetPredictedTracking2(a32_cpu *c, argreader *R)
     void *m = h2ptr(rd32(R));
     double t = rdd(R);
     stat(S_TRACK);
-    tracking2 tr;
-    memset(&tr, 0, sizeof tr);
-    tr.HeadPose.Orientation[3] = 1;
-    if (bridge() && m) tr = B.GetPredictedTracking2(m, t);
+    tracking2 tr = tracking_of(m, t);
     if (out) memcpy(g2p(out), &tr, sizeof tr);
     ret32(c, out);
 }
@@ -1094,6 +1317,7 @@ void imp_vrapi_WaitFrame(a32_cpu *c, argreader *R)
     stat(S_WAIT);
     last_frame_index = index;
     if (bridge() && m) last_display_time = B.GetPredictedDisplayTime(m, index);
+    display_record(m, index, last_display_time);
     ret32(c, 0);
 }
 
@@ -1128,25 +1352,77 @@ void imp_vrapi_GetSystemPropertyFloatArray(a32_cpu *c, argreader *R)
                  ? (uint32_t)B.GetSystemPropertyFloatArray(&j, prop, g2p(values), count) : 0);
 }
 
-static int tracking_space = 1; /* VRAPI_TRACKING_SPACE_LOCAL */
+/* VrApi's spaces: 0 LOCAL (eye level), 1 LOCAL_FLOOR, 2 LOCAL_TILTED, 3 STAGE. The 64-bit bridge starts in LOCAL:
+ * reporting 1 here told Quest builds they already had a floor-level origin, so they never asked for one and put the
+ * player's eyes on the floor (Shadow Point). */
+static int tracking_space = 0; /* VRAPI_TRACKING_SPACE_LOCAL */
+static int floor_space(int space) { return space == 1 || space == 3; }
 
 void imp_vrapi_SetTrackingSpace(a32_cpu *c, argreader *R)
 {
     void *m = h2ptr(rd32(R));
     int space = (int)rd32(R);
     int r = bridge() && m && B.SetTrackingSpace ? B.SetTrackingSpace(m, space) : 0;
-    if (!r) tracking_space = space;
+    if (!r && tracking_space != space) { tracking_space = space; tracking_reset(); }
+    bridge_log(ANDROID_LOG_INFO, "a32 SetTrackingSpace(%d) -> %d", space, r);
     ret32(c, (uint32_t)r);
 }
 
-void imp_vrapi_GetTrackingSpace(a32_cpu *c, argreader *R) { ret32(c, (uint32_t)tracking_space); }
+/* Older OVRPlugin (Shadow Point 1.16) selects its origin with these APIs, not SetTrackingSpace.
+ * Get returns ovrPosef via hidden r0. Set passes its 28-byte aggregate in r1-r3 then four stack words;
+ * it has 4-byte alignment (reading doublewords would incorrectly skip r1). */
+void imp_vrapi_GetTrackingTransform(a32_cpu *c, argreader *R)
+{
+    uint32_t out = rd32(R);
+    void *m = h2ptr(rd32(R));
+    int which = (int)rd32(R);
+    posef64 pose = {{0, 0, 0, 1}, {0, 0, 0}};
+    if (bridge() && m && B.GetTrackingTransform) pose = B.GetTrackingTransform(m, which);
+    static unsigned logged[4];
+    if (which >= 0 && which < 4 && logged[which]++ < 4)
+        bridge_log(ANDROID_LOG_INFO, "a32 GetTrackingTransform(%d) -> q=%.3f,%.3f,%.3f,%.3f p=%.3f,%.3f,%.3f",
+                   which, pose.Orientation[0], pose.Orientation[1], pose.Orientation[2], pose.Orientation[3],
+                   pose.Position[0], pose.Position[1], pose.Position[2]);
+    if (out) memcpy(g2p(out), &pose, sizeof pose);
+    ret32(c, out);
+}
+void imp_vrapi_SetTrackingTransform(a32_cpu *c, argreader *R)
+{
+    void *m = h2ptr(rd32(R));
+    posef64 pose;
+    for (int i = 0; i < 4; ++i) pose.Orientation[i] = rdf(R);
+    for (int i = 0; i < 3; ++i) pose.Position[i] = rdf(R);
+    tracking_reset();
+    if (bridge() && m && B.SetTrackingTransform) B.SetTrackingTransform(m, pose);
+    bridge_log(ANDROID_LOG_INFO, "a32 SetTrackingTransform: q=%.3f,%.3f,%.3f,%.3f p=%.3f,%.3f,%.3f",
+               pose.Orientation[0], pose.Orientation[1], pose.Orientation[2], pose.Orientation[3],
+               pose.Position[0], pose.Position[1], pose.Position[2]);
+}
 
-/* ovrPosef (28 bytes) through a hidden result pointer: the identity (spaces share their origin here) */
+void imp_vrapi_GetTrackingSpace(a32_cpu *c, argreader *R)
+{
+    static unsigned logged;
+    if (logged++ < 4) bridge_log(ANDROID_LOG_INFO, "a32 GetTrackingSpace -> %d", tracking_space);
+    ret32(c, (uint32_t)tracking_space);
+}
+
+/* ovrPosef (28 bytes) through a hidden result pointer: the transform between the current space and `target`. The
+ * eye-level (LOCAL) and floor (LOCAL_FLOOR / STAGE) origins differ by the standing eye height the 64-bit bridge also
+ * uses when the runtime reports no stage floor (1.6 m); otherwise the spaces share their origin. Sign from the
+ * headset (Shadow Point's floor-level camera rig): the identity put the eyes on the floor, -1.6 m put them 1.6 m
+ * below it, so games apply this as the offset that lifts the floor-relative rig to eye level. */
 void imp_vrapi_LocateTrackingSpace(a32_cpu *c, argreader *R)
 {
     uint32_t out = rd32(R);
-    static const float identity[7] = {0, 0, 0, 1, 0, 0, 0};
-    if (out) memcpy(g2p(out), identity, sizeof identity);
+    rd32(R); /* ovrMobile* */
+    int target = (int)rd32(R);
+    float pose[7] = {0, 0, 0, 1, 0, 0, 0}; /* orientation x,y,z,w; position x,y,z */
+    if (floor_space(target) && !floor_space(tracking_space)) pose[5] = 1.6f;
+    else if (!floor_space(target) && floor_space(tracking_space)) pose[5] = -1.6f;
+    static unsigned logged;
+    if (logged++ < 4) bridge_log(ANDROID_LOG_INFO, "a32 LocateTrackingSpace(current=%d target=%d) -> y=%.3f",
+                               tracking_space, target, pose[5]);
+    if (out) memcpy(g2p(out), pose, sizeof pose);
     ret32(c, out);
 }
 
@@ -1190,3 +1466,7 @@ void imp_vrapi_GetInstanceExtensionsVulkan(a32_cpu *c, argreader *R) { ret32(c, 
 void imp_vrapi_GetDeviceExtensionsVulkan(a32_cpu *c, argreader *R) { ret32(c, (uint32_t)-1050); }
 void imp_vrapi_GetTextureSwapChainBufferVulkan(a32_cpu *c, argreader *R) { ret32(c, 0); }
 void imp_vrapi_GetTextureSwapChainBufferFoveationVulkan(a32_cpu *c, argreader *R) { ret32(c, (uint32_t)-1050); }
+
+#ifdef A32B_TEST
+#include "../test/vrapi_test.c"
+#endif

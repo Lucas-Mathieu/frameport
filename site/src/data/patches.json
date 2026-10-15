@@ -74,6 +74,11 @@
   "title": "Draw fades over the picture",
   "group": "Game settings"
  },
+ "adapter.flip_dump": {
+  "anchor": "adapter-flip_dump",
+  "title": "Upside-down panel images (diagnostics)",
+  "group": "Game settings"
+ },
  "adapter.flip_emul": {
   "anchor": "adapter-flip_emul",
   "title": "Fix upside-down menus",
@@ -97,6 +102,11 @@
  "adapter.foveation_fix": {
   "anchor": "adapter-foveation_fix",
   "title": "Hide Quest foveation",
+  "group": "Game settings"
+ },
+ "adapter.gl_error_clear": {
+  "anchor": "adapter-gl_error_clear",
+  "title": "Clear the game's GL errors (GLES)",
   "group": "Game settings"
  },
  "adapter.gl_hide_msrtt": {
@@ -384,6 +394,11 @@
   "title": "Content files from the game's data",
   "group": "Steam Frame patches"
  },
+ "frame.asset_files_stub": {
+  "anchor": "frame-asset_files_stub",
+  "title": "Asset-file service bypass",
+  "group": "Steam Frame patches"
+ },
  "frame.avatar_stub": {
   "anchor": "frame-avatar_stub",
   "title": "Skip Meta avatars",
@@ -437,6 +452,11 @@
  "frame.ltw_depth": {
   "anchor": "frame-ltw_depth",
   "title": "GL wrapper: OpenGL ES depth formats (Minecraft)",
+  "group": "Steam Frame patches"
+ },
+ "frame.luajit_pointers": {
+  "anchor": "frame-luajit_pointers",
+  "title": "Fix Lua startup crashes on Frame",
   "group": "Steam Frame patches"
  },
  "frame.meta_permissions": {
@@ -587,6 +607,11 @@
  "frame.unreal_skip_obb_check": {
   "anchor": "frame-unreal_skip_obb_check",
   "title": "Unreal: start without the OBB check",
+  "group": "Steam Frame patches"
+ },
+ "frame.unreal_skip_obb_delivery": {
+  "anchor": "frame-unreal_skip_obb_delivery",
+  "title": "Unreal: skip the OBB delivery check",
   "group": "Steam Frame patches"
  },
  "frame.unreal_splash_bypass": {

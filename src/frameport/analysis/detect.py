@@ -10,6 +10,7 @@ from pathlib import Path
 from ..apk import axml
 from ..core.models import Analysis
 from . import elf
+from .luajit import xlua_47bit, xlua_sha256
 from .unity_split import split_build as unity_split_build
 
 logging.getLogger("pyaxmlparser").setLevel(logging.ERROR)
@@ -37,10 +38,12 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 #     libAndroidLauncher.so + a .cryproject (Climb 1 has no libCrySystem.so, GitHub #238) (2026-10)
 # 13: validate monolithic CryEngine projects/config, OBB filename formats and foveation cvar (The Climb, GitHub #238)
 # 14: bhaptics_permission (bHaptics asks for Android 12's BLUETOOTH_CONNECT: frame.bhaptics_permission, GitHub #235)
-# 15: headset (the Meta headset a VR app was made for: Gear VR / Go games run through frame.a32_bridge) (2026-10)
-# 16: headset "quest" also for 32-bit apps that require 6DoF head tracking (Santa Cruz builds, e.g. Sports
+# 15: verified xLua/LuaJIT 47-bit lightuserdata engine (frame.luajit_pointers, GitHub #257)
+# 16: unreal_obb_delivery (Java expansionFilesDelivered gate, GitHub #283) (2026-10)
+# 17: headset (the Meta headset a VR app was made for: Gear VR / Go games run through frame.a32_bridge) (2026-10)
+# 18: headset "quest" also for 32-bit apps that require 6DoF head tracking (Santa Cruz builds, e.g. Sports
 #     Scramble: Touch controllers on the a32 bridge) (2026-10)
-ANALYSIS_VERSION = 16
+ANALYSIS_VERSION = 18
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -225,6 +228,7 @@ LAYER_EXTENSIONS = ("XR_KHR_composition_layer_cylinder", "XR_KHR_composition_lay
 
 def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Analysis:
     path = Path(path)
+    package, version, label, activity, apk_info = _read_manifest_info(path)
     with zipfile.ZipFile(path) as z:
         names = z.namelist()
         abis = sorted({n.split("/")[1] for n in names if n.startswith("lib/") and n.count("/") >= 2})
@@ -245,6 +249,9 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
                                   for d in dexes)
         # video through Android's decoders (frame.hw_video_decode): Java MediaCodec, ExoPlayer/Media3, or libVLC
         media_codec = any(m in d for d in dexes for m in MEDIA_CODEC_MARKERS) or "libvlc.so" in libs
+        from ..patches.frame.unreal_obb_check import has_delivery_check
+
+        unreal_obb_delivery = any(has_delivery_check(d, package) for d in dexes)
         del dexes
         manifest = z.read("AndroidManifest.xml")
         lib_bytes = {}
@@ -267,7 +274,6 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         system_cfg = (z.read("assets/system.cfg").decode("utf-8", "replace")
                       if "assets/system.cfg" in names else "")
 
-    package, version, label, activity, apk_info = _read_manifest_info(path)
     libset = set(libs)
     engine = ("Unreal" if libset & {"libUE4.so", "libUnreal.so"} else "Unity" if "libunity.so" in libset
               else "CryEngine" if "libCrySystem.so" in libset or cry_project else "Other")
@@ -337,6 +343,8 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         debuggable=bool(axml.Axml(manifest).get_bool("application", "debuggable")),
         extra={
             "analysis_version": ANALYSIS_VERSION,
+            "xlua_47bit": xlua_47bit(lib_bytes.get("libxlua.so", b"")),
+            "xlua_sha256": xlua_sha256(lib_bytes.get("libxlua.so", b"")),
             "frame_patched": "libframe_settings.so" in libset,  # already has FramePort's FrameBridge adapter
             # Team Beef's TBXR ports pick their OpenXR path by headset maker (frame.tbxr_vendor): their libraries
             # the game asks Meta's platform for asset files (content shipped as separate files, frame.asset_files)
@@ -400,6 +408,7 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             "unity_split": unity_split,
             # Unreal CRC-checks the OBB before the game starts (frame.unreal_skip_obb_check, GitHub #159)
             "unreal_verify_obb": unreal_verify_obb(meta),
+            "unreal_obb_delivery": unreal_obb_delivery,
             # Unreal's Oculus module needs every OVRPlugin function it looks up (frame.unreal_ovrp_entrypoints)
             "unreal_ovrp_lookups": (ovrp_lookups(lib_bytes.get(engine_lib.rsplit("/", 1)[1], b""))
                                     if engine_lib and "libOVRPlugin.so" in libset else []),

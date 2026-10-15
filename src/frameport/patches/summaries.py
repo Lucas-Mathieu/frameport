@@ -72,6 +72,8 @@ SUMMARIES = {
                                     "the Frame.",
     "frame.sdl_clipboard": "Lets SDL and LÖVE games start on the Frame (they'd crash looking for a clipboard).",
     "frame.godot_clipboard": "Lets Godot games start on the Frame (they'd crash looking for a clipboard).",
+    "frame.unreal_skip_obb_delivery": "Skips a separate data-file check when an Unreal game still hangs at startup "
+                                      "with the content check off. Experimental; the game still needs its data.",
     "frame.unreal_skip_obb_check": "Starts Unreal games without re-checking their data file (they'd seem to hang "
                                    "on an invisible check screen).",
     "frame.bhaptics_permission": "Stops bHaptics from asking for a Bluetooth permission the Frame doesn't have (the "
@@ -97,6 +99,7 @@ SUMMARIES = {
                          "seasons).",
     "frame.ovr_microphone": "Stops a crash a few seconds after the logo in games with voice chat.",
     "frame.ovr_stable_user": "Keeps your progress in games that file their saves under your Meta user.",
+    "frame.luajit_pointers": "Lets games with a verified older Lua engine get past a startup crash on the Frame.",
     "frame.avatar_stub": "Lets games start that would stop at Meta's avatars (for example BlazeRush). No Meta "
                          "avatars.",
     "frame.vrapi_bridge": "Lets games built on Meta's oldest VR interface run on the Frame.",

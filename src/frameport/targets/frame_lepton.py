@@ -39,6 +39,10 @@ class FrameLeptonTarget(Target):
     def installed(self) -> list[dict]:
         return self.connect().frame.agent("list_installed")["games"]
 
+    def deployment(self, package: str) -> dict | None:
+        games = self.connect().frame.agent("list_installed", package=package, details=True)["games"]
+        return games[0] if games else None
+
     def install(self, package, title, apk: Path, data_dir, recipe: Recipe, reporter: Reporter, apk_only=False,
                 data_files=None):
         plan = installer.InstallPlan(package, title, apk, data_dir, recipe, apk_only, dest=self.install_dest(),
@@ -47,6 +51,9 @@ class FrameLeptonTarget(Target):
 
     def add_to_library(self, packages, reporter):
         return installer.add_to_steam(self.connect().frame, packages, reporter)
+
+    def update_existing(self, entry, deployment, plan, recipe, reporter, manifest=None):
+        return installer.update_existing(self.connect().frame, entry, deployment, plan, recipe, reporter, manifest)
 
     def update_steam_art(self, package, reporter, title=None):
         return installer.update_steam_art(self.connect().frame, package, reporter, title=title)
@@ -67,6 +74,10 @@ class FrameLeptonTarget(Target):
         return self.connect().frame.agent("launch", package=package, timeout=60)
 
     def set_settings(self, package, settings):
+        from ..core import library
+
+        superseded = ((library.game(package) or {}).get("build") or {}).get("superseded") or {}
+        settings = {key: value for key, value in settings.items() if f"adapter.{key}" not in superseded}
         return self.connect().frame.agent("set_settings", package=package, settings=settings)
 
     def uninstall(self, package, keep_data=True):

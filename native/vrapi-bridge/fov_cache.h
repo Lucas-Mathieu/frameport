@@ -39,8 +39,10 @@ inline int format(char* buffer, size_t size, const float fov[2]) {
     return std::snprintf(buffer, size, "fov_h=%.3f\nfov_v=%.3f\n", fov[0], fov[1]);
 }
 // worth rewriting the saved value: none saved yet, or a change of more than 0.01 degrees on an axis
+// (the located FOV wobbles by a few hundredths of a degree from frame to frame: at 0.01 degrees the file was
+// rewritten about 50 times a second in Shadow Point, on the game's thread)
 inline bool changed(bool haveSaved, const float saved[2], const float now[2]) {
-    return !haveSaved || std::fabs(saved[0] - now[0]) > 0.01f || std::fabs(saved[1] - now[1]) > 0.01f;
+    return !haveSaved || std::fabs(saved[0] - now[0]) > 0.25f || std::fabs(saved[1] - now[1]) > 0.25f;
 }
 // the external files folder's file for the package in /proc/self/cmdline ("pkg" or "pkg:process"); false if unknown
 inline bool path(const char* cmdline, char* buffer, size_t size) {

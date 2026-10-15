@@ -21,6 +21,10 @@
 #endif
 #define DT_ANDROID_REL 0x6000000f
 #define DT_ANDROID_RELSZ 0x60000010
+/* Android used these OS-specific tags before RELR received standard ELF tags.
+ * The table encoding is identical (including ARM32's 31-bit bitmaps). */
+#define DT_ANDROID_RELR 0x6fffe000
+#define DT_ANDROID_RELRSZ 0x6fffe001
 #define DT_RELR_ 36
 #define DT_RELRSZ_ 35
 #define R_ARM_NONE 0
@@ -528,7 +532,9 @@ static lib *load_lib(const char *name)
         case DT_PLTRELSZ: jmprelsz = v; break;
         case DT_ANDROID_REL: arel = v; break;
         case DT_ANDROID_RELSZ: arelsz = v; break;
+        case DT_ANDROID_RELR:
         case DT_RELR_: relr = v; break;
+        case DT_ANDROID_RELRSZ:
         case DT_RELRSZ_: relrsz = v; break;
         case DT_NEEDED: nneeded++; break;
         case DT_RELA: set_error("%s: RELA relocations on ARM32?", l->name); return NULL;

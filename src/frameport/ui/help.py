@@ -22,8 +22,7 @@ HELP: dict[str, str] = _Translated({
     # ---- game status / library
     "status": "How well the game runs on the Steam Frame. \"Works\" and \"Works with issues\" were tested on a Frame; "
               "\"Untested\" is a suggestion nobody has confirmed yet. \"Can't run\" means a known blocker.",
-    "update_ready": "The recipe or your game files changed since the install. Update to install the new build; saves "
-                    "are kept.",
+    "update_ready": "The game's files or settings changed. Update applies only what's needed; saves are kept.",
     "check_exe": "FramePort isn't sure which program starts this game. Open the game and use … → Change program… to "
                  "pick it.",
     "platform_quest": "A Meta Quest game. FramePort patches it for the Frame, where it runs in Lepton, Valve's Android "

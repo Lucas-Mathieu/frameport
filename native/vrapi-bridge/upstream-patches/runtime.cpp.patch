@@ -404,7 +404,28 @@
  }
  VRAPI double vrapi_GetPredictedDisplayTime(ovrMobile* mobile, int64_t index) {
      LOCK_STATE;
-@@ -607,7 +829,12 @@
+@@ -573,10 +795,18 @@
+     if (!validMobile(mobile)) return result;
+     if (which == 1) return s.trackingTransform;
+     if (which == 2) return s.centerEyeTransform;
+-    if (which == 3 && s.stageSpace) {
++    if (which == 3) {
+         if (!s.frameBegun && !beginFrame(s.frameIndex + 1)) return result;
++        // Same floor origin as appSpaceFor: a runtime STAGE floor, else 1.6 m below the eye origin.
++        // Older OVRPlugin changes its origin via GetTrackingTransform(3)/SetTrackingTransform,
++        // so an identity fallback here silently puts a floor-level camera at eye level.
++        result = fromXrPose(s.eyeOrigin);
++        result.Position.y -= 1.6f;
+         XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
+-        if (xrOk(s.xr.xrLocateSpace(s.stageSpace, s.localSpace, s.frame.predictedDisplayTime, &location), "floor transform") && (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT)) return fromXrPose(location.pose);
++        if (s.stageSpace && xrOk(s.xr.xrLocateSpace(s.stageSpace, s.localSpace, s.frame.predictedDisplayTime, &location), "floor transform") &&
++            (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT)) {
++            return fromXrPose(location.pose);
++        }
+     }
+     return result;
+ }
+@@ -607,7 +837,12 @@
          case 128: return 1; // Stereo array texture path.
          case 129: return 1; // sRGB VkFormats retain their color encoding.
          case 130: return 0; // No foveation image implementation is advertised.
@@ -418,7 +439,7 @@
      }
  }
  VRAPI float vrapi_GetSystemPropertyFloat(const ovrJava*, int property) {
-@@ -615,10 +842,20 @@
+@@ -615,10 +850,20 @@
      if (property == 4) return queryDisplayRefreshRate();
      if (property == 7 || property == 8) {
          const size_t axis = static_cast<size_t>(property - 7);
@@ -443,7 +464,7 @@
      }
      OVP_LOG("Unsupported float system property %d", property);
      return 0;
-@@ -626,7 +863,9 @@
+@@ -626,7 +871,9 @@
  VRAPI int vrapi_GetSystemStatusInt(const ovrJava*, int status) {
      LOCK_STATE;
      if (status == 0) return s.instance != XR_NULL_HANDLE;
@@ -454,7 +475,7 @@
      if (status == 13) return static_cast<int>(s.recenterCount);
      if (status == 14) return s.running && s.sessionState != XR_SESSION_STATE_FOCUSED;
      if (status == 130) return 1;
-@@ -665,3 +904,52 @@
+@@ -665,3 +912,52 @@
      if (!s.setColorSpace) return color->ColorSpace == 0 ? Success : Unsupported;
      return xrOk(s.setColorSpace(s.session, static_cast<XrColorSpaceFB>(color->ColorSpace)), "xrSetColorSpaceFB") ? Success : InvalidParameter;
  }

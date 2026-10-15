@@ -56,6 +56,8 @@ struct Runtime {
     bool inVr = false, running = false, frameBegun = false;
     int64_t frameIndex = -1;
     XrFrameState frame{XR_TYPE_FRAME_STATE};
+    XrTime lastEndedDisplayTime = 0;  // display time of the last xrEndFrame
+    uint32_t repeatedWaits = 0;       // xrWaitFrame answers that repeated an already submitted display time
     std::array<XrViewConfigurationView, 2> viewConfig{};
     std::array<XrViewConfigurationViewFovEPIC, 2> viewConfigFov{};
     std::array<float, 2> recommendedFovDegrees{};

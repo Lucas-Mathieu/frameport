@@ -131,6 +131,19 @@ def test_bundle_offline_and_app_only(tmp_path):
     assert m["target"] is None and m["games"] == []
 
 
+def test_display_diagnostics_use_bundle_redaction(tmp_path, monkeypatch):
+    from frameport.diag import display
+
+    monkeypatch.setattr(display, "collect", lambda: {"windows": {"status": "error",
+                        "error": r"C:\Users\Alice\display.txt at 192.168.50.2"},
+                        "driver": "32.0.15.61742"})
+    out = bundle.collect(None, dest=tmp_path / "display.zip")
+    with zipfile.ZipFile(out) as z:
+        text = z.read("app/display.json").decode()
+    assert "Alice" not in text and "192.168.50.2" not in text
+    assert json.loads(text)["driver"] == "32.0.15.61742"
+
+
 def test_bundle_size_cap():
     w = bundle._Writer(redact.Redactor())
     import os

@@ -94,11 +94,15 @@ class SettingsView:
 
     def installing(self) -> ft.Control:
         from ...core import library
+        from ...install.installer import upload_threads
 
         def changed(e):
             library.set_setting("install.launch_test", bool(e.control.value))
         def keep_changed(e):
             library.set_setting("build.keep_copies", bool(e.control.value))
+
+        def threads_changed(e):
+            library.set_setting("install.upload_threads", upload_threads(e.control.value))
 
         def video_changed(e):
             library.set_setting("video.hw_decode", bool(e.control.value))
@@ -120,7 +124,12 @@ class SettingsView:
                                              value=bool(library.setting("video.hw_decode", True)),
                                              on_change=video_changed), expand=True),
                         C.help_icon("hw_video_decode")], spacing=T.S1)
-        return ft.Column([launch, keep, video,
+        parallel = C.dropdown(label=tr("Parallel uploads"), value=str(upload_threads()), width=T.px(240),
+                              options=[ft.DropdownOption(str(n), str(n)) for n in range(1, 9)],
+                              on_select=threads_changed)
+        return ft.Column([launch, keep, video, parallel,
+                          C.meta(tr("Large files upload together using OpenSSH when available. "
+                                    "Default: 3. Lower this on a busy network.")),
                           C.ghost(tr("Remove converted copies now"), ft.Icons.CLEANING_SERVICES_OUTLINED, clean,
                                   tooltip=tr("Your own game files aren't touched."))],
                          spacing=T.S2, horizontal_alignment=ft.CrossAxisAlignment.START)
@@ -423,7 +432,11 @@ class SettingsView:
         self._mark(key)
         C.update(*self.index.values())
         if self.page_col is not None:
-            await self.page_col.scroll_to(scroll_key=scroll_key(key), duration=0 if self.app.reduce_motion else 300)
+            try:
+                await self.page_col.scroll_to(scroll_key=scroll_key(key),
+                                              duration=0 if self.app.reduce_motion else 300)
+            except RuntimeError:  # the page left the screen (or the window closed) before the scroll ran
+                pass
 
     def build(self) -> ft.Control:
         app = self.app

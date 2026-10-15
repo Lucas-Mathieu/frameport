@@ -105,10 +105,26 @@ static bool referenceSpace(XrReferenceSpaceType type, const XrPosef& pose, XrSpa
     info.poseInReferenceSpace = pose;
     return xrOk(s.xr.xrCreateReferenceSpace(s.session, &info, &space), "xrCreateReferenceSpace");
 }
-// The app space for the eye-level origin `eye` (LOCAL coordinates): VrApi's LOCAL_FLOOR and STAGE spaces put their
-// origin on the floor below it (the runtime's STAGE floor, else a standing eye height of 1.6 m)
+// The app space for the eye-level origin `eye` (LOCAL coordinates). VrApi's STAGE is the play area itself (its centre
+// and orientation, unchanged by recentering): the runtime's STAGE space when it can be located. LOCAL_FLOOR (and STAGE
+// without a located play area) puts the origin on the floor below `eye` (the runtime's STAGE floor, else a standing
+// eye height of 1.6 m).
 static bool appSpaceFor(const XrPosef& eye) {
     auto& s = runtime();
+    if (s.trackingSpace == 3 && s.stageSpace && s.frame.predictedDisplayTime) {
+        constexpr XrSpaceLocationFlags valid = XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT;
+        XrSpaceLocation stage{XR_TYPE_SPACE_LOCATION};
+        XrSpace next = XR_NULL_HANDLE;
+        if (XR_SUCCEEDED(s.xr.xrLocateSpace(s.stageSpace, s.localSpace, s.frame.predictedDisplayTime, &stage)) &&
+            (stage.locationFlags & valid) == valid &&
+            referenceSpace(XR_REFERENCE_SPACE_TYPE_STAGE, XrPosef{{0, 0, 0, 1}, {0, 0, 0}}, next)) {
+            if (s.appSpace) s.xr.xrDestroySpace(s.appSpace);
+            s.appSpace = next;
+            s.eyeOrigin = eye;
+            s.centerEyeTransform = s.trackingTransform = fromXrPose(stage.pose);
+            return true;
+        }
+    }
     XrPosef origin = eye;
     if (s.trackingSpace == 1 || s.trackingSpace == 3) {
         origin.position.y -= 1.6f;
@@ -146,6 +162,7 @@ static void destroySession() {
     s.running = s.inVr = s.frameBegun = false;
     s.frameIndex = -1;
     s.frame = {XR_TYPE_FRAME_STATE};
+    s.lastEndedDisplayTime = 0;
     s.timeMapped = false;
     s.locatedFovValid = false;
     s.initialRecenterPending = false;
@@ -336,16 +353,69 @@ bool ensureSession(VkQueue preferredQueue) {
     s.initialRecenterPending = true;
     return true;
 }
+// Pacing diagnostics, logged every 2 s while frames run: what xrWaitFrame returned (time blocked, spacing of the
+// predicted display times, period), re-waits, discarded begins, and ends with/without layers or for the same refresh.
+static struct {
+    double next = 0, waitSum = 0, waitMax = 0;
+    unsigned waits = 0, rewaits = 0, discarded = 0, ends = 0, empty = 0, sameRefresh = 0, failed = 0;
+    XrTime lastPredicted = 0, deltaMin = 0, deltaMax = 0, period = 0;
+    unsigned shortDeltas = 0;
+} gPacing;
+static void pacingWaited(double blocked, const XrFrameState& frame) {
+    auto& g = gPacing;
+    ++g.waits;
+    g.waitSum += blocked;
+    g.waitMax = std::max(g.waitMax, blocked);
+    g.period = frame.predictedDisplayPeriod;
+    if (g.lastPredicted) {
+        const XrTime delta = frame.predictedDisplayTime - g.lastPredicted;
+        if (!g.deltaMin || delta < g.deltaMin) g.deltaMin = delta;
+        if (delta > g.deltaMax) g.deltaMax = delta;
+        if (frame.predictedDisplayPeriod > 0 && delta < frame.predictedDisplayPeriod / 2) ++g.shortDeltas;
+    }
+    g.lastPredicted = frame.predictedDisplayTime;
+    const double now = secondsNow();
+    if (!g.next) g.next = now + 2;
+    if (now < g.next) return;
+    OVP_LOG("pacing 2s: waits=%u (blocked avg %.2f max %.2f ms) display time step min %.2f max %.2f ms, %u under half "
+            "a period (%.2f ms); re-waits=%u discarded=%u; ends=%u (empty %u, same refresh %u, failed %u)",
+            g.waits, g.waits ? g.waitSum / g.waits * 1e3 : 0, g.waitMax * 1e3, g.deltaMin / 1e6, g.deltaMax / 1e6,
+            g.shortDeltas, g.period / 1e6, g.rewaits, g.discarded, g.ends, g.empty, g.sameRefresh, g.failed);
+    const XrTime keep = g.lastPredicted;
+    g = {};
+    g.lastPredicted = keep;
+    g.next = now + 2;
+}
 bool beginFrame(int64_t index) {
     auto& s = runtime();
     if (!s.session || !pollEvents()) return false;
     if (!s.running) return false;
     if (s.frameBegun) return true;
     XrFrameWaitInfo wait{XR_TYPE_FRAME_WAIT_INFO};
-    s.frame = {XR_TYPE_FRAME_STATE};
-    if (!xrOk(s.xr.xrWaitFrame(s.session, &wait, &s.frame), "xrWaitFrame")) return false;
     XrFrameBeginInfo begin{XR_TYPE_FRAME_BEGIN_INFO};
-    if (!xrOk(s.xr.xrBeginFrame(s.session, &begin), "xrBeginFrame")) return false;
+    // The Frame's runtime sometimes answers xrWaitFrame at once with a display time less than a refresh after the
+    // frame just submitted, and then rejects the second submission for that refresh (VRCompositorError_AlreadySubmitted
+    // in xrclient_<pkg>.txt). VrApi blocks in vrapi_SubmitFrame, so a game that renders faster than the display ran
+    // ahead (Journey of the Gods: ~120 submits a second at 90 Hz, ~30 of them rejected, the scene stepped unevenly).
+    // Wait again for a later display time: an xrBeginFrame after a begun frame discards that frame
+    // (XR_FRAME_DISCARDED), nothing is submitted for it.
+    for (int attempt = 0;; ++attempt) {
+        const double waitStart = secondsNow();
+        s.frame = {XR_TYPE_FRAME_STATE};
+        if (!xrOk(s.xr.xrWaitFrame(s.session, &wait, &s.frame), "xrWaitFrame")) return false;
+        pacingWaited(secondsNow() - waitStart, s.frame);
+        const XrResult began = s.xr.xrBeginFrame(s.session, &begin);
+        if (!xrOk(began, "xrBeginFrame")) return false;
+        if (began == XR_FRAME_DISCARDED) ++gPacing.discarded;
+        const XrTime half = s.frame.predictedDisplayPeriod > 0 ? s.frame.predictedDisplayPeriod / 2 : 5000000;
+        if (attempt >= 3 || !s.lastEndedDisplayTime || s.frame.predictedDisplayTime >= s.lastEndedDisplayTime + half)
+            break;
+        ++gPacing.rewaits;
+        if (s.repeatedWaits++ % 500 == 0)
+            OVP_LOG("xrWaitFrame gave a display time %.2f ms after the last submitted one (period %.2f ms): waiting for "
+                    "the next refresh (%u times)", (s.frame.predictedDisplayTime - s.lastEndedDisplayTime) / 1e6,
+                    s.frame.predictedDisplayPeriod / 1e6, s.repeatedWaits);
+    }
     s.frameBegun = true;
     s.frameIndex = index;
     if (!s.timeMapped) {
@@ -467,6 +537,13 @@ XrResult endFrame(const XrCompositionLayerBaseHeader* const* layers, uint32_t co
     info.layers = layers;
     XrResult result = s.xr.xrEndFrame(s.session, &info);
     s.frameBegun = false;
+    ++gPacing.ends;
+    if (!count) ++gPacing.empty;
+    if (XR_FAILED(result)) ++gPacing.failed;
+    if (s.lastEndedDisplayTime && s.frame.predictedDisplayPeriod > 0 &&
+        info.displayTime < s.lastEndedDisplayTime + s.frame.predictedDisplayPeriod / 2)
+        ++gPacing.sameRefresh;
+    if (XR_SUCCEEDED(result)) s.lastEndedDisplayTime = info.displayTime;
     xrOk(result, "xrEndFrame");
     return result;
 }
@@ -706,29 +783,35 @@ VRAPI ovrMobile* vrapi_EnterVrMode(const ovrModeParms* parms) {
         EGLContext context = reinterpret_cast<EGLContext>(parms->ShareContext);
         if (display == EGL_NO_DISPLAY) display = eglGetCurrentDisplay();
         if (context == EGL_NO_CONTEXT) context = eglGetCurrentContext();
-        if (s.session && s.running && display == s.eglDisplay && context == s.eglContext) {
-            // re-entry with the context of the session vrapi_LeaveVrMode kept (see there)
+        // re-entry with the context of the session vrapi_LeaveVrMode kept (see there). Events that arrived while the
+        // game was outside VR come first: a lost or exiting session is replaced, a stopped one waits for READY below.
+        const bool kept = s.session && display == s.eglDisplay && context == s.eglContext && pollEvents();
+        if (kept && s.running) {
             ++s.mobile.generation;
             s.inVr = true;
             OVP_LOG("Entered VR mode again (kept GLES session)");
             return &s.mobile;
         }
-        if (s.session) destroySession();  // another context: a new session
-        s.eglDisplay = display;
-        s.eglContext = context;
-        EGLint configId = 0, count = 0;
-        eglQueryContext(s.eglDisplay, s.eglContext, EGL_CONFIG_ID, &configId);
-        // EGL_KHR_no_config_context (Unity 2019): the context has no config (id 0); use the window's, else RGBA8 ES3
-        EGLSurface drawn = eglGetCurrentContext() == s.eglContext ? eglGetCurrentSurface(EGL_DRAW) : EGL_NO_SURFACE;
-        if (!configId && drawn != EGL_NO_SURFACE) eglQuerySurface(s.eglDisplay, drawn, EGL_CONFIG_ID, &configId);
-        const EGLint byId[] = {EGL_CONFIG_ID, configId, EGL_NONE};
-        const EGLint rgba8[] = {EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
-                                EGL_RENDERABLE_TYPE, 0x40 /* EGL_OPENGL_ES3_BIT */, EGL_NONE};
-        if (!eglChooseConfig(s.eglDisplay, configId ? byId : rgba8, &s.eglConfig, 1, &count) || count != 1) {
-            OVP_ERROR("EnterVrMode(GLES): could not resolve the context's EGLConfig");
-            return nullptr;
+        if (kept) {
+            OVP_LOG("EnterVrMode: the kept GLES session isn't running (state %d), waiting for it", s.sessionState);
+        } else {
+            if (s.session) destroySession();  // another context, or the kept session was lost: a new session
+            s.eglDisplay = display;
+            s.eglContext = context;
+            EGLint configId = 0, count = 0;
+            eglQueryContext(s.eglDisplay, s.eglContext, EGL_CONFIG_ID, &configId);
+            // EGL_KHR_no_config_context (Unity 2019): the context has no config (id 0); use the window's, else RGBA8 ES3
+            EGLSurface drawn = eglGetCurrentContext() == s.eglContext ? eglGetCurrentSurface(EGL_DRAW) : EGL_NO_SURFACE;
+            if (!configId && drawn != EGL_NO_SURFACE) eglQuerySurface(s.eglDisplay, drawn, EGL_CONFIG_ID, &configId);
+            const EGLint byId[] = {EGL_CONFIG_ID, configId, EGL_NONE};
+            const EGLint rgba8[] = {EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
+                                    EGL_RENDERABLE_TYPE, 0x40 /* EGL_OPENGL_ES3_BIT */, EGL_NONE};
+            if (!eglChooseConfig(s.eglDisplay, configId ? byId : rgba8, &s.eglConfig, 1, &count) || count != 1) {
+                OVP_ERROR("EnterVrMode(GLES): could not resolve the context's EGLConfig");
+                return nullptr;
+            }
+            OVP_LOG("EnterVrMode(GLES): display=%p context=%p config id=%d", s.eglDisplay, s.eglContext, configId);
         }
-        OVP_LOG("EnterVrMode(GLES): display=%p context=%p config id=%d", s.eglDisplay, s.eglContext, configId);
     }
     if (!ensureSession(queue)) return nullptr;
     // Runtime READY can arrive asynchronously. Wait only for a bounded lifecycle transition.
@@ -795,10 +878,18 @@ VRAPI ovrPosef vrapi_GetTrackingTransform(ovrMobile* mobile, int which) {
     if (!validMobile(mobile)) return result;
     if (which == 1) return s.trackingTransform;
     if (which == 2) return s.centerEyeTransform;
-    if (which == 3 && s.stageSpace) {
+    if (which == 3) {
         if (!s.frameBegun && !beginFrame(s.frameIndex + 1)) return result;
+        // Same floor origin as appSpaceFor: a runtime STAGE floor, else 1.6 m below the eye origin.
+        // Older OVRPlugin changes its origin via GetTrackingTransform(3)/SetTrackingTransform,
+        // so an identity fallback here silently puts a floor-level camera at eye level.
+        result = fromXrPose(s.eyeOrigin);
+        result.Position.y -= 1.6f;
         XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
-        if (xrOk(s.xr.xrLocateSpace(s.stageSpace, s.localSpace, s.frame.predictedDisplayTime, &location), "floor transform") && (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT)) return fromXrPose(location.pose);
+        if (s.stageSpace && xrOk(s.xr.xrLocateSpace(s.stageSpace, s.localSpace, s.frame.predictedDisplayTime, &location), "floor transform") &&
+            (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT)) {
+            return fromXrPose(location.pose);
+        }
     }
     return result;
 }

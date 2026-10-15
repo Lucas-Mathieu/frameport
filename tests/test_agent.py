@@ -37,6 +37,65 @@ def test_vdf_roundtrip_and_upsert(monkeypatch, tmp_path):
     assert a.vdf_decode(vdf.read_bytes())["shortcuts"] == {}
 
 
+@pytest.mark.parametrize("root_key", ["Shortcuts", "SHORTCUTS", "shortcuts"])
+def test_shortcuts_keep_steams_key_spelling_and_existing_games(monkeypatch, tmp_path, root_key):
+    a = load_agent(monkeypatch, tmp_path)
+    vdf = tmp_path / "shortcuts.vdf"
+    exe = '"/game/launch.sh"'
+    other = {"AppID": 123, "AppName": "Other", "EXE": '"/other"', "Tags": {"0": "Favorite"}}
+    original = {root_key: {"0": {"AppID": 456, "AppName": "Old", "EXE": exe, "ICON": "/old.png",
+                                 "Tags": {"0": "Favorite"}, "LastPlayTime": 99}, "1": other}}
+    data = a.vdf_encode(original)
+    vdf.write_bytes(data)
+    assert a.vdf_encode(a.vdf_decode(data)) == data
+    assert a.upsert_shortcut(str(vdf), exe, "New", "/game", tags=["Action"], write=False) == (456, True)
+    assert vdf.read_bytes() == data
+    assert a.upsert_shortcut(str(vdf), exe, "New", "/game", tags=["Action"]) == 456
+    root = a.vdf_decode(vdf.read_bytes())
+    assert list(root) == [root_key]
+    entry = root["shortcuts"]["0"]
+    assert entry["appname"] == "New" and "AppName" in list(entry) and "appname" not in list(entry)
+    assert entry["appid"] == 456 and entry["icon"] == "/old.png" and entry["LastPlayTime"] == 99
+    assert list(entry["tags"].values()) == ["Favorite", "Quest on Frame", "Action"]
+    assert root["shortcuts"]["1"] == other
+    assert a.upsert_shortcut(str(vdf), exe, "New", "/game", tags=["Action"], write=False) == (456, False)
+    a.upsert_shortcut(str(vdf), '"/third"', "Third", "/")
+    assert len(a.vdf_decode(vdf.read_bytes())["shortcuts"]) == 3
+    assert a.prune_shortcuts(str(vdf), "New", '"/replacement"', "Quest on Frame") == [456]
+    assert a.remove_shortcut(str(vdf), '"/other"')
+    root = a.vdf_decode(vdf.read_bytes())
+    assert list(root) == [root_key] and len(root["shortcuts"]) == 1
+    assert root["shortcuts"]["0"]["appname"] == "Third"
+
+
+def test_capitalized_shortcuts_are_found_by_library_and_devkit_checks(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    cfg = Path(a.STEAM) / "userdata/42/config"
+    cfg.mkdir(parents=True)
+    exe = '"/game/launch.sh"'
+    vdf = cfg / "shortcuts.vdf"
+    vdf.write_bytes(a.vdf_encode({"Shortcuts": {"0": {"APPID": 0xF0000001, "EXE": exe,
+                                                     "APPNAME": "Game", "DEVKITGAMEID": "fp_game"}}}))
+    monkeypatch.setattr(a, "library_users", lambda: ["42"])
+    monkeypatch.setattr(a, "steam_users", lambda: ["42"])
+    monkeypatch.setattr(a, "shortcut_args", lambda pkg: (exe,))
+    monkeypatch.setattr(a.time, "sleep", lambda seconds: None)
+    assert a.shortcut_appid_for(exe) == 0xF0000001
+    assert a.devkit_appid("fp_game") == 0xF0000001
+    assert a.shortcut_names("42") == {str(0xF0000001): "Game"}
+    assert a.shortcuts_lost(["42"], ["com.x.y"], wait=0) == []
+
+
+def test_case_variant_duplicate_vdf_keys_are_not_overwritten(monkeypatch, tmp_path):
+    a = load_agent(monkeypatch, tmp_path)
+    vdf = tmp_path / "shortcuts.vdf"
+    data = a.vdf_encode({"Shortcuts": {"0": {"appid": 1}}, "shortcuts": {"0": {"appid": 2}}})
+    vdf.write_bytes(data)
+    with pytest.raises(a.AgentError, match="duplicate VDF key"):
+        a.upsert_shortcut(str(vdf), '"/game"', "Game", "/")
+    assert vdf.read_bytes() == data
+
+
 def test_launcher_template(monkeypatch, tmp_path):
     a = load_agent(monkeypatch, tmp_path)
     anchor = tmp_path / "anchor"
@@ -994,6 +1053,35 @@ def test_launch_re_adds_a_forgotten_devkit_entry_live(monkeypatch, tmp_path):
     got = a.cmd_launch({"package": "com.x.y"})  # no NOT_IN_LIBRARY (whose repair restarts Steam)
     assert got["via"] == "devkit" and got["steam"]["appid"] == 333
 
+def test_library_falls_back_to_a_devkit_entry_when_steam_drops_the_shortcut(monkeypatch, tmp_path):
+    # this Frame's Steam drops every shortcuts.vdf entry on restart (GitHub #41): "Add to Steam library" failed every
+    # time with "Steam removed the new library entry again"; the devkit entry is the one Steam keeps
+    a = load_agent(monkeypatch, tmp_path)
+    anchor = tmp_path / "Applications/quest-frame/com.x.y"
+    anchor.mkdir(parents=True)
+    (anchor / "deployment.json").write_text(json.dumps({"package": "com.x.y", "appid": 1, "title": "X", "base": "b"}))
+    (tmp_path / ".local/share/Steam/userdata/42/config").mkdir(parents=True)
+    monkeypatch.setattr(a, "library_users", lambda: ["42"])
+    monkeypatch.setattr(a, "game_running", lambda: False)
+    monkeypatch.setattr(a, "desktop_mode", lambda: False)
+    monkeypatch.setattr(a, "stop_steam", lambda: True)
+    monkeypatch.setattr(a, "start_steam", lambda s: None)
+    monkeypatch.setattr(a, "shortcuts_lost", lambda users, pkgs, wait=25: list(pkgs))
+    registered = []
+    monkeypatch.setattr(a, "devkit_register", lambda pkg: registered.append(pkg) or 333)
+    a.shortcuts_worker(json.dumps({"packages": ["com.x.y"], "remove": []}))
+    status = json.load(open(a.STATUS_FILE))
+    assert registered == ["com.x.y"] and status["state"] == "done" and not status["errors"]
+    assert status["added"] == [{"package": "com.x.y", "appid": 333, "expected": 1, "via": "devkit"}]
+
+    monkeypatch.setattr(a, "devkit_register", lambda pkg: (_ for _ in ()).throw(a.AgentError("no answer")))
+    (tmp_path / ".local/share/Steam/userdata/42/config/shortcuts.vdf").unlink()  # Steam dropped it, as above
+    a.shortcuts_worker(json.dumps({"packages": ["com.x.y"], "remove": []}))
+    status = json.load(open(a.STATUS_FILE))
+    assert not status["added"] and "Steam removed the new library entry" in status["errors"][0]
+    assert "no answer" in status["errors"][0]
+
+
 def test_shortcuts_lost_after_steam_restart(monkeypatch, tmp_path):
     a = load_agent(monkeypatch, tmp_path)
     anchor = tmp_path / "Applications/quest-frame/com.x.y"
@@ -1852,6 +1940,9 @@ def test_launcher_starts_lepton_again_once_when_the_game_restarts_itself(monkeyp
     """End to end in bash (agent v86): a fake Lepton whose game restarts itself (the logs of Sports Scramble's first
     start) is started a second time; a game that keeps restarting isn't started a third time."""
     a = load_agent(monkeypatch, tmp_path)
+    # no dashboard helper (matching its command line as text fails when the agent's path needs quoting, and the real
+    # one would briefly keep the launch lock after the first run)
+    monkeypatch.setattr(a, "dashboard_line", lambda: "true")
     home = tmp_path / "home"
     syslog_dir = home / ".local/share/Steam/logs/lepton-logcats/steamlaunch-2821789967"
     syslog_dir.mkdir(parents=True)

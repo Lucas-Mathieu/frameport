@@ -297,8 +297,9 @@ class LibraryView:
         self._lock = threading.Lock()
         self._search_timer: threading.Timer | None = None
         self._gen = 0
+        # (left padding: the grid clips at its edge, and a hovered card's lift and accent border were cut off there)
         self.grid = ft.GridView(expand=True, max_extent=T.px(196), child_aspect_ratio=0.62, spacing=T.S4,
-                                run_spacing=T.S4, padding=ft.Padding(0, T.S2, T.S2, T.S5))
+                                run_spacing=T.S4, padding=ft.Padding(T.S2, T.S2, T.S2, T.S5))
         self.count = C.meta("")
         self.subtitle = C.body("", max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
         # typing anywhere on the Library goes here (app._on_key); search_focused tracks where keys already land
@@ -663,12 +664,12 @@ class LibraryView:
             tile.border = ft.Border.all(1, T.ACCENT if on else T.BORDER)
             quick.opacity = 1 if on else 0
             button.show(on)
-            tile.update()
+            C.update(tile)  # a hover can still arrive for a card the shelf just replaced
         tile.on_hover = hover
         # (padding: room for the hover lift and shadow inside the scrolling row, which clips)
         return ft.Container(ft.GestureDetector(content=tile,
                                                on_secondary_tap_down=lambda e: self.open_menu(pkg, e.global_position)),
-                            padding=ft.Padding(T.px(2), T.px(6), T.px(2), T.px(8)))
+                            padding=ft.Padding(T.px(6), T.px(6), T.px(6), T.px(8)))
 
     # ---------------------------------------------------------------- header / filter bar
     def _update_hint(self):
@@ -855,7 +856,7 @@ class LibraryView:
             if quick:
                 quick.opacity = 1 if show else 0
                 button.show(show)
-            tile.update()
+            C.update(tile)  # a hover can still arrive for a card the grid just replaced (it raised and crashed)
         tile.on_hover = hover
         self.marks[pkg] = (tile, overlay, False)
         self._paint_card(pkg)

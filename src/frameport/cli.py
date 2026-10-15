@@ -465,6 +465,7 @@ def install(package: Optional[str] = typer.Argument(None), all_: bool = typer.Op
             frame: Optional[str] = typer.Option(None, help=FRAME_HELP),
             password: Optional[str] = typer.Option(None, help="the Frame's password (first connection only)"),
             apk_only: bool = typer.Option(False, help="reuse game data already on the Frame"),
+            force: bool = typer.Option(False, help="rebuild and reinstall even if the Frame is already current"),
             no_library: bool = typer.Option(False, help="don't add to the Steam library now"),
             to: str = typer.Option("frame", help="frame, or pc (PC VR games only: install on this PC)"),
             apk: Optional[Path] = typer.Option(None, help="install this APK instead of the last build (one game; "
@@ -479,12 +480,16 @@ def install(package: Optional[str] = typer.Argument(None), all_: bool = typer.Op
     pkgs = _pkgs(package, all_)
     if apk and len(pkgs) != 1:
         raise typer.BadParameter("--apk needs exactly one game")
+    shortcuts = []
     for pkg in pkgs:
         if not apk_only and pipeline.missing_obb(library.game(pkg) or {}):
             typer.echo(f"{pkg}: warning: " + pipeline.MISSING_OBB_NOTE.format(package=pkg), err=True)
-        pipeline.install_game(pkg, target, printing_reporter(False), apk_only, add_to_library=False, apk=apk)
-    if not no_library:
-        target.add_to_library(pkgs, printing_reporter(False))
+        result = pipeline.install_game(pkg, target, printing_reporter(False), apk_only,
+                                       add_to_library=False, apk=apk, force=force)
+        if result.get("shortcut_required", True):
+            shortcuts.append(pkg)
+    if not no_library and shortcuts:
+        target.add_to_library(shortcuts, printing_reporter(False))
 
 
 @app.command()

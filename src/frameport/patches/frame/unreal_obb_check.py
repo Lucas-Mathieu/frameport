@@ -8,11 +8,34 @@ the downloader (GitHub #159, Contractors). Setting the meta-data to false skips 
 check stays (a missing or wrong-size OBB still stops at the downloader). One 4-byte manifest value changes."""
 from __future__ import annotations
 
+import struct
+
 from ...analysis.detect import UE_VERIFY_OBB_KEY
 from ...apk import axml
+from ...apk.dex import Dex
 from ..base import ApkContext, Patch, Suggestion, register
 
 MANIFEST = "AndroidManifest.xml"
+
+
+def delivery_methods(dex: Dex, package: str) -> list[tuple[int, int]]:
+    classes = {f"L{package.replace('.', '/')}/{name};" for name in ("DownloaderActivity", "OBBData")}
+    classes.update(f"Lcom/epicgames/{engine}/{name};" for engine in ("ue4", "unreal")
+                   for name in ("DownloadShim", "GameActivity"))
+    return [(idx, code) for cls in dex.class_names() if cls in classes
+            for idx, code in dex.class_methods(cls)
+            if dex.method(idx)[1] == "expansionFilesDelivered" and dex.return_type(idx) == "Z"]
+
+
+def has_delivery_check(data: bytes, package: str) -> bool:
+    if b"expansionFilesDelivered" not in data:
+        return False
+    return bool(delivery_methods(Dex(data), package))
+
+
+def patch_dex(dex: Dex, package: str) -> list[str]:
+    return [dex.method(idx)[0] for idx, code in delivery_methods(dex, package)
+            if dex.return_early(code, "Z", boolean_value=True)]
 
 
 class UnrealSkipObbCheck(Patch):
@@ -49,3 +72,52 @@ class UnrealSkipObbCheck(Patch):
 
 
 register(UnrealSkipObbCheck)
+
+
+class UnrealSkipObbDelivery(Patch):
+    id = "frame.unreal_skip_obb_delivery"
+    title = "Unreal: skip the OBB delivery check"
+    description = ("Unreal's Java OBB delivery check can leave a game on an invisible DownloaderActivity screen "
+                   "even with the manifest CRC check off (e.g. Into The Radius). Makes known Unreal "
+                   "expansionFilesDelivered methods return true, bypassing the Java name and size gate. "
+                   "Experimental: the native engine still needs complete, matching, readable OBB data.")
+    order = 24
+    needs_vr = False
+    experimental = True
+
+    def applies(self, a):
+        return bool((a.extra or {}).get("unreal_obb_delivery"))
+
+    def detect(self, a):
+        return None  # triage-only: most games pass the delivery check
+
+    def apply(self, ctx: ApkContext) -> bool:
+        changed = False
+        for name in sorted(n for n in ctx.ws.names() if n.startswith("classes") and n.endswith(".dex")):
+            data = ctx.ws.read(name)
+            if not has_delivery_check(data, ctx.analysis.package):
+                continue
+            dex = Dex(data)
+            done = patch_dex(dex, ctx.analysis.package)
+            if done:
+                ctx.ws.put(name, dex.finish())
+                ctx.notes.append(f"{name}: expansionFilesDelivered=true in {', '.join(sorted(done))}")
+                changed = True
+        return changed
+
+    def validate(self, ctx):
+        checks = []
+        for name in sorted(n for n in ctx.ws.names() if n.startswith("classes") and n.endswith(".dex")):
+            data = ctx.ws.read(name)
+            if not has_delivery_check(data, ctx.analysis.package):
+                continue
+            dex = Dex(data)
+            for idx, code in delivery_methods(dex, ctx.analysis.package):
+                ready = (struct.unpack_from("<H", data, code)[0] > 0
+                         and struct.unpack_from("<I", data, code + 12)[0] >= 2
+                         and struct.unpack_from("<2H", data, code + 16) == (0x1012, 0x000F))
+                checks.append(("OBB delivery check bypassed", ready, f"{name}: {dex.method(idx)[0]}"))
+        return checks
+
+
+register(UnrealSkipObbDelivery)

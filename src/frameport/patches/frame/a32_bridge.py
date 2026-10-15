@@ -52,9 +52,48 @@ def original_signature(ws) -> bytes | None:
         except ValueError:
             continue
         if certs:
-            der = certs[0].public_bytes(Encoding.DER)
+            # the signer's own certificate: the one that issued none of the others (a block may carry its CA
+            # chain, in any order)
+            leaves = [c for c in certs if not any(o is not c and o.issuer == c.subject for o in certs)] or certs
+            der = leaves[0].public_bytes(Encoding.DER)
             return base64.b64encode(hashlib.sha1(der).digest()) + b"\n"
     return None
+
+
+# Repacks carry a Frida gadget (libfrda.so + its config and script, loaded from Java with System.loadLibrary("frda"))
+# that rewrites Meta's entitlement and platform checks. OVRPort's patch_clean_up_frida removes it from 64-bit games;
+# OVRPort doesn't run on this path, so the conversion does the same (in the translator the gadget also crashed while
+# scanning the process's memory: Shadow Point).
+FRIDA_LIBS = ("libfrda.so", "libfrda.config.so", "libscript.so")
+
+
+def strip_frida_load(data: bytes) -> bytes | None:
+    """The dex with every `System.loadLibrary("frda")` call turned into nops; None if it has none."""
+    import struct
+
+    from ...apk.dex import Dex
+
+    if b"frda" not in data:
+        return None
+    dex = Dex(data)
+    frda = [i for i in range(dex.strings_n) if dex.string(i) == "frda"]
+    loads = set(dex.method_index("Ljava/lang/System;", "loadLibrary"))
+    if not frda or not loads:
+        return None
+    done = 0
+    for cls in dex.class_names():
+        for _idx, code in dex.class_methods(cls):
+            consts = {}
+            for pos, unit in list(dex._insns(code)):
+                op = unit[0] & 0xFF
+                if op == 0x1A:  # const-string vAA, string@BBBB
+                    consts[unit[0] >> 8] = unit[1]
+                elif op == 0x1B:  # const-string/jumbo vAA, string@BBBBBBBB
+                    consts[unit[0] >> 8] = unit[1] | unit[2] << 16
+                elif op == 0x71 and unit[1] in loads and unit[0] >> 12 == 1 and consts.get(unit[2] & 0xF) in frda:
+                    struct.pack_into("<3H", dex.data, code + 16 + 2 * pos, 0, 0, 0)  # invoke-static: 3 nops
+                    done += 1
+    return dex.finish() if done else None
 
 
 def unity_oculus_check(data: bytes) -> bytes:
@@ -92,6 +131,12 @@ def convert(ws, prebuilt: Callable[[str], bytes], ovrport: Callable[[str, str], 
     if any(n.startswith(f"lib/{HOST}/") for n in names):
         raise RuntimeError("the APK has 64-bit libraries already")
     libs = sorted(n[len(f"lib/{abi}/"):] for n in names if n.startswith(f"lib/{abi}/") and n.endswith(".so"))
+    if "libfrda.so" in libs:  # a repack's Frida gadget: not shipped, and its load is removed (FRIDA_LIBS)
+        for name in [n for n in names if n.startswith("classes") and n.endswith(".dex")]:
+            fixed = strip_frida_load(ws.read(name))
+            if fixed:
+                ws.put(name, fixed)
+        libs = [b for b in libs if b not in FRIDA_LIBS]
     signature = original_signature(ws)
     if signature and any(n.startswith(f"lib/{abi}/libUE4.so") for n in names):
         ws.put(SIGNATURE_ASSET, signature)
@@ -158,6 +203,7 @@ class A32Bridge(Patch):
         "run slower than native ones.")
     order = 5  # before frame.adapter, which wraps the OpenXR loader this patch adds
     experimental = True
+    needs_vr = False  # translates the game's native code: a flat 32-bit app needs it as much as a VR game
 
     def detect(self, a):
         if self.applies(a):

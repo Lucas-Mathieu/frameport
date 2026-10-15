@@ -4,14 +4,17 @@ tested_version: 1.0.479431
 source_hint: Journey of the Gods
 engine: Unreal
 xr: VrApi
-status: unsupported
-notes: 32-bit only; the Frame has no AArch32.
-details: 32-bit (armeabi-v7a) only; the Frame has no AArch32. UE4 cannot be rebuilt for arm64.
+status: works
+notes: 32-bit only (armeabi-v7a), runs through FramePort's 32-bit bridge (experimental). Plays in the headset.
+details: 'Unreal Engine 4 NativeActivity with OVRPlugin + VrApi, GLES. Needed DT_ANDROID_RELR relocations in the 32-bit
+  loader (it crashed at start) and the VrApi bridge''s frame pacing: the Frame''s runtime can return from
+  xrWaitFrame early, and this light game then ran at ~120 fps on a 90 Hz display, so the scene slid and snapped
+  back. Plays in the headset (owner, 2026-10-14).'
 alt_overport:
 - patch_remove_unreal_force_quit
+frame:
+- frame.a32_bridge
 pcvr_alternative: Rift (Meta PC) version via Revive + SteamVR.
 verified:
-  date: '2026-09-28'
-  overport_cli: 1.2.3
-  overport_runtime: 3.4.3-23204ea
-  known_good_sha256: e85141e3e9a8a3226f653d8ffbd21b44268101f3a207f56e657454a3639b3201
+  date: '2026-10-14'
+min_app: 1.1.2

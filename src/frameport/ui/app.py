@@ -164,6 +164,7 @@ class FramePortApp:
             for key, value in window_geometry(library.setting("ui.window"), T.SCALE).items():
                 setattr(page.window, key, value)
             page.window.on_event = self._on_window_event
+            self._log_window("ready")
             if sys.platform == "win32" and (icon := G.window_icon(Path(assets_dir()))):
                 page.window.icon = str(icon)  # source runs: FramePort's icon instead of Flet's
         page.on_keyboard_event = self._on_key
@@ -263,10 +264,21 @@ class FramePortApp:
         self.activity.set_open(open_activity)
         self.render()
 
+    def _log_window(self, event: str) -> None:
+        if sys.platform == "win32":
+            from ..diag import display
+
+            try:  # diagnostics only: never let a window property stop the app from starting
+                display.record_window(event, self.page.window, theme=T.THEME, reduce_motion=self.reduce_motion)
+            except Exception as exc:  # noqa: BLE001
+                applog.log.debug("window diagnostics: %s", exc)
+
     def _on_window_event(self, e) -> None:
         """Remember the window's size and position (once a resize/move ends; not while maximized or full screen) and
         whether it is maximized."""
         win, change = self.page.window, None
+        if e.type not in (ft.WindowEventType.MOVE, ft.WindowEventType.RESIZE):
+            self._log_window(getattr(e.type, "value", str(e.type)))
         if e.type == ft.WindowEventType.CLOSE:
             _stop_link_watch()  # also when maximized (that returns below)
         if e.type in (ft.WindowEventType.MAXIMIZE, ft.WindowEventType.UNMAXIMIZE):
@@ -1518,6 +1530,8 @@ class FramePortApp:
         if not g:
             return None  # removed from the library meanwhile
         rift = g.get("kind") == "rift"
+        # An explicit install action on a current game is the existing "Reinstall" action.
+        force = to == "frame" and C.install_state(g, getattr(self, "frame_info", None)) == "installed"
         where = tr("your Frame") if to == "frame" else tr("this PC")
         self._record(pkg, to=to, state="queued", apk_only=apk_only)
 
@@ -1526,12 +1540,13 @@ class FramePortApp:
             self._record(pkg, to=to, state="running")
             as_is = library.recipe_from_dict(library.game(pkg)["recipe"]).as_is
             rep.stage("Checking the game" if rift or as_is else "Patching the game")
-            info = pipeline.build_game(pkg, rep)
-            if not info["ok"]:
-                raise RuntimeError(tr("the game failed its checks (see the list above)"))
+            if rift or to != "frame":
+                info = pipeline.build_game(pkg, rep)
+                if not info["ok"]:
+                    raise RuntimeError(tr("the game failed its checks (see the list above)"))
             rep.check_cancel()
             target = self._target_for(to)
-            pipeline.install_game(pkg, target, rep, apk_only=apk_only)
+            result = pipeline.install_game(pkg, target, rep, apk_only=apk_only, force=force)
             self._record(pkg, remove=True)  # installed; the launch test below is a separate question
             if to == "frame":  # the install sent the current artwork to the Frame's Steam library
                 library.update_game(pkg, lambda e: e.pop("steam_art_stale", None))
@@ -1544,7 +1559,7 @@ class FramePortApp:
                 rep.stage("Installed")
                 return tr("{get} is installed on {where}: SteamVR shows it over your games").format(
                     get=g.get('title'), where=where)
-            if not library.setting("install.launch_test", True):  # Settings → Installing
+            if result.get("launch_test_required") is False or not library.setting("install.launch_test", True):
                 rep.stage("Installed")
                 return tr("{get} is installed on {where}: put the headset on and launch it from your Steam "
                           "library").format(get=g.get('title'), where=where)

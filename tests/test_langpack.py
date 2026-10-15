@@ -484,3 +484,89 @@ def test_asset_files_patch_switches_the_library_on(built, tmp_path):
                   extra={"size": 1, "asset_files": ["Season1Taco-Android_ASTC.pak"], "asset_file_api": True})
     assert p.applies(a) and p.detect(a)
     assert not p.detect(_analysis(libs=["libovrplatformloader.so"], extra={"size": 1, "asset_files": ["a.pak"]}))
+
+
+def test_asset_stub_empty_list_and_installed_status(api, packs, monkeypatch):
+    monkeypatch.setenv("FRAMEPORT_ASSET_FILES_STUB", "1")
+    monkeypatch.setenv("FAKE_SILENT_LIST", "1")
+    m = api.ask("ovr_AssetFile_GetList")  # immediate, even with packs and a silent dispatcher
+    arr = api.f("ovr_Message_GetAssetDetailsArray", VOIDP, VOIDP)(m)
+    assert arr and api.f("ovr_AssetDetailsArray_GetSize", C.c_size_t, VOIDP)(arr) == 0
+    get = api.f("ovr_AssetDetailsArray_GetElement", VOIDP, VOIDP, C.c_size_t)
+    assert get(arr, 0) is None and get(arr, 2**32) is None
+    api.free(m)
+    for asset in (7, 0x4650000000001234):
+        m = api.ask("ovr_AssetFile_StatusById", asset)
+        assert api.msg_type(m) == STATUSBYID and not api.is_error(m)
+        det = api.f("ovr_Message_GetAssetDetails", VOIDP, VOIDP)(m)
+        assert api.details(det) == {"id": asset, "type": b"default", "status": b"installed", "path": b""}
+        assert api.f("ovr_AssetDetails_GetIapStatus", C.c_char_p, VOIDP)(det) == b"free"
+        path = api.f("ovr_AssetDetails_GetFilepath", VOIDP, VOIDP)(det)
+        assert path and C.string_at(path) == b""  # allocated empty string, not a NULL pointer
+        assert api.f("ovr_AssetDetails_GetMetadata", C.c_char_p, VOIDP)(det) == b""
+        api.free(m)
+    assert api.pop() is None
+    assert api.loader.fake_freed() == 0  # no dispatcher requests were sent
+    monkeypatch.setenv("FRAMEPORT_ASSET_FILES_STUB", "0")
+    m = api.ask("ovr_AssetFile_StatusById", 7)
+    assert api.details(api.f("ovr_Message_GetAssetDetails", VOIDP, VOIDP)(m))["path"] == b"/store/a"
+    api.free(m)
+
+
+def test_asset_stub_patch_without_language_packs(built, tmp_path, monkeypatch):
+    lib = built["lib"].read_bytes()
+    assert patch_mod.STUB_MARK + b"0" in lib
+    assert patch_mod.STUB_MARK + b"0" in patch_mod.with_assets(lib)
+    assert patch_mod.STUB_MARK + b"0" in patch_mod.with_metadata(lib, "1.0")
+    on = patch_mod.with_stub(lib)
+    assert len(on) == len(lib) and patch_mod.STUB_MARK + b"1" in on
+    assert patch_mod.with_stub(on) == on
+    monkeypatch.setattr(patch_mod, "artifact", lambda abi, name: lib)
+    patch = base.get("frame.asset_files_stub")
+    a = _analysis(libs=["libovrplatformloader.so"])
+    assert patch.applies(a) and patch.detect(a) is None
+    assert not patch.applies(_analysis(libs=[]))
+    assert not patch.applies(_analysis(libs=["libovrplatformloader.so"], abis=["armeabi-v7a"]))
+    with ApkWorkspace(_apk(tmp_path, built)) as ws:
+        ctx = base.ApkContext(ws, a, {}, Reporter(), {})
+        assert patch.apply(ctx)
+        loader = ws.read_lib(patch_mod.LOADER)
+        assert elf.needed(loader)[0] == patch_mod.LIB
+        assert not elf.hide_exports(loader, patch_mod.EXPORTS)[1]
+        assert patch_mod.STUB_MARK + b"1" in ws.read_lib(patch_mod.LIB)
+        assert all(ok for _, ok, _ in patch.validate(ctx))
+        assert not patch.apply(ctx)
+
+
+def test_asset_stub_marker_and_environment_override(built, tmp_path, monkeypatch):
+    marked = tmp_path / "marked.so"
+    marked.write_bytes(patch_mod.with_stub(built["lib"].read_bytes()))
+    monkeypatch.delenv("FRAMEPORT_ASSET_FILES_STUB", raising=False)
+    for api in _api({**built, "marked": marked}, tmp_path, monkeypatch, "marked"):
+        assert _list(api) == []
+        m = api.ask("ovr_AssetFile_StatusById", 7)
+        assert not api.is_error(m)
+        assert api.details(api.f("ovr_Message_GetAssetDetails", VOIDP, VOIDP)(m))["status"] == b"installed"
+        api.free(m)
+        monkeypatch.setenv("FRAMEPORT_ASSET_FILES_STUB", "0")
+        assert _list(api)[0]["path"] == b"/store/a"
+
+
+def test_asset_stub_via_platform_loader_handle(built, tmp_path, monkeypatch):
+    """Unity's P/Invoke resolves against the dispatcher's handle, including its DT_NEEDED library."""
+    lib = tmp_path / "libfp_langpack.so"
+    lib.write_bytes(patch_mod.with_stub(built["lib"].read_bytes()))
+    loader_path = tmp_path / "libovrplatformloader.so"
+    loader_path.write_bytes(elf.add_needed(built["patched"], str(lib)))
+    monkeypatch.delenv("FRAMEPORT_ASSET_FILES_STUB", raising=False)
+    loader = C.CDLL(str(loader_path))
+    api = Api(loader, loader)
+    try:
+        assert _list(api) == []
+        m = api.ask("ovr_AssetFile_StatusById", 7)
+        assert api.msg_type(m) == STATUSBYID and not api.is_error(m)
+        assert api.details(api.f("ovr_Message_GetAssetDetails", VOIDP, VOIDP)(m))["status"] == b"installed"
+        api.free(m)
+        assert api.pop() is None
+    finally:
+        _dlclose(loader)

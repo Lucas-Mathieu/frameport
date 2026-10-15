@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import tempfile
 from pathlib import Path
 
 from ..core.events import Reporter
@@ -59,15 +60,36 @@ def patch(apk: Path, outdir: Path, name: str, patches: list[str], reporter: Repo
     outdir.mkdir(parents=True, exist_ok=True)
     target = outdir / name
     target.unlink(missing_ok=True)
-    args = ["-jar", _jar(), "patch", f"--input={apk}", f"--output={outdir}", f"--output-name={name}",
-            f"--workspace={workspace()}", f"--version={version}", "--patches=" + ";".join(patches)]
-    reporter.log("OVRPort " + " ".join(a for a in args[3:] if not a.startswith("--patches")))
-    p = toolchain.run_java(args)
-    # overport draws spinners with \r; keep only final line states
-    for line in (p.stdout + p.stderr).splitlines():
-        line = line.split("\r")[-1].strip()
-        if line:
-            reporter.log("  " + line)
+    jar, work = _jar(), workspace()
+
+    def run(input_apk):
+        args = ["-jar", jar, "patch", f"--input={input_apk}", f"--output={outdir}", f"--output-name={name}",
+                f"--workspace={work}", f"--version={version}", "--patches=" + ";".join(patches)]
+        reporter.log("OVRPort " + " ".join(a for a in args[3:] if not a.startswith("--patches")))
+        result = toolchain.run_java(args)
+        # overport draws spinners with \r; keep only final line states
+        for line in (result.stdout + result.stderr).splitlines():
+            line = line.split("\r")[-1].strip()
+            if line:
+                reporter.log("  " + line)
+        return result
+
+    p = run(apk)
+    output = p.stdout + p.stderr
+    if p.returncode and "java.util.NoSuchElementException: Sequence is empty." in output \
+            and "PatcherContext.appName(" in output:
+        from ..apk.axml import copy_activity_label_to_application
+        from ..apk.workspace import ApkWorkspace
+
+        with ApkWorkspace(apk) as staged:
+            manifest = copy_activity_label_to_application(staged.read("AndroidManifest.xml"))
+            if manifest is not None:
+                reporter.log("OVRPort could not read the app name; retrying with the activity's label")
+                with tempfile.TemporaryDirectory(prefix="ovrport-label-", dir=outdir) as tmp:
+                    staged.put("AndroidManifest.xml", manifest)
+                    prepared = staged.write(Path(tmp) / apk.name)
+                    target.unlink(missing_ok=True)
+                    p = run(prepared)
     if p.returncode or not target.exists():
         raise RuntimeError(f"OVRPort failed (exit {p.returncode}); see log")
     return target

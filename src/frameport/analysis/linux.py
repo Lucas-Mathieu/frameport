@@ -12,6 +12,7 @@ import zipfile
 from pathlib import Path
 
 from ..core.paths import user_data_dir
+from ..i18n import tr
 
 EM_AARCH64, EM_X86_64 = 183, 62
 ARCHIVES = (".zip", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tar")
@@ -234,6 +235,10 @@ def inspect(path: Path) -> dict:
                 "vr_overlay": False, "vr_overlay_app": None, "vr_overlay_from": ""}
     programs = rank_programs(root)
     if not programs:
+        if any(p.is_file() and p.name.lower() in ("install.sh", "setup.sh")
+               for pattern in ("*", "*/*") for p in root.glob(pattern)):
+            raise ValueError(tr("This folder contains an installer without a launchable Linux program. "
+                             "FramePort runs programs, not installers. Use the project's own install instructions."))
         raise ValueError(f"no Linux program found in {path.name}")
     # an arm64 build wins; x86_64 programs only when there is nothing else (they run through FEX on the Frame)
     for want in (EM_AARCH64, EM_X86_64):

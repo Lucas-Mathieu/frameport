@@ -104,6 +104,9 @@ static int fade_quad = 0;
 static uint32_t runtime_max_layers = 16;  // XrSystemGraphicsProperties::maxLayerCount (the Frame: 16)
 static int snapshot = 0;  // seconds between eye-image snapshots (snapshot_gl.c; 0 = off)
 static char snap_dir[256];
+static int gl_error_clear;  // GLES: clear GL errors the app left pending before calling the runtime (Vader)
+static int gles_session;
+static int flip_dump;  // diagnostics: save the first N flipped quads before/after the flip (flip_vk.c)
 static void snap_on_create(XrSwapchain handle, const XrSwapchainCreateInfo *info);
 static void snap_on_destroy(XrSwapchain handle);
 static void snap_on_enumerate(XrSwapchain handle, uint32_t count, const XrSwapchainImageBaseHeader *images);
@@ -176,6 +179,8 @@ static void read_settings(const char *path) {
         if (sscanf(line, "fade_quad=%f", &value) == 1) fade_quad = value > 0 ? (int)value : 0;
         if (sscanf(line, "frame_balance=%f", &value) == 1) frame_balance = value != 0;
         if (sscanf(line, "snapshot=%f", &value) == 1) snapshot = value > 0 ? (int)value : 0;
+        if (sscanf(line, "flip_dump=%f", &value) == 1) flip_dump = value > 0 ? (int)value : 0;
+        if (sscanf(line, "gl_error_clear=%f", &value) == 1) gl_error_clear = value != 0;
         if (sscanf(line, "controller_fix=%f", &value) == 1) controller_fix = value != 0;
         if (sscanf(line, "swapchain_fix=%f", &value) == 1) swapchain_fix = value != 0;
         if (sscanf(line, "cube_standin=%f", &value) == 1) cube_standin = value != 0;
@@ -256,7 +261,7 @@ static void initialize(void) {
     }
     const char *env = getenv("FRAMEBRIDGE_CONFIG");
     if (env && *env) read_settings(env);
-    if (snapshot && *process && !strchr(process, '/')) {
+    if ((snapshot || flip_dump) && *process && !strchr(process, '/')) {
         snprintf(snap_dir, sizeof(snap_dir), "/sdcard/Android/data/%s/files", process);
         LOG("per-game: snapshot every %d s to %s/fb_snap_N.ppm", snapshot, snap_dir);
     }
@@ -554,6 +559,8 @@ static void forget_swapchain(XrSwapchain handle) {
 }
 
 static void flip_on_create_swapchain(XrSwapchain handle, const XrSwapchainCreateInfo *info);
+static int flip_wants_transfer(const XrSwapchainCreateInfo *info);
+static void clear_gl_errors(const char *where);
 static void flip_on_destroy(XrSwapchain handle);
 static void emul_on_create_swapchain(XrSwapchain handle, const XrSwapchainCreateInfo *info);
 static void emul_on_destroy_swapchain(XrSwapchain handle);
@@ -636,12 +643,16 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
     if(surface_native && fixed.arraySize==2 && fixed.sampleCount==1 &&
         (fixed.usageFlags&XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT))
         fixed.usageFlags |= XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT;
+    // in-place flips of upside-down quads (flip_vk.c) blit from and back into these images
+    if (flip_wants_transfer(&fixed))
+        fixed.usageFlags |= XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
     if (equirect_emul && swapchain && emul_virtual_create(session, &fixed, swapchain)) {
         remember_swapchain(*swapchain);
         emul_on_create_swapchain(*swapchain, &fixed);
         snap_on_create(*swapchain, &fixed);
         return XR_SUCCESS;
     }
+    clear_gl_errors("xrCreateSwapchain");
     XrResult result = fn(session, &fixed, swapchain);
     LOG("xrCreateSwapchain %ux%u format=%lld samples=%u array=%u faces=%u usage=0x%llx flags=0x%llx result=%d",
         fixed.width, fixed.height, (long long)fixed.format, fixed.sampleCount, fixed.arraySize, fixed.faceCount,
@@ -1096,6 +1107,35 @@ static int ask_graphics_requirements(XrInstance instance, const XrSessionCreateI
     return 0;
 }
 
+// gl_error_clear: the runtime's GL interop checks glGetError after its own GL calls and fails on any error, also one
+// the app left pending on the same context. Vader Immortal leaves GL_INVALID_OPERATION pending before its first
+// frame; the runtime then logs "SXR_GL_CHECK: error:0x502 ... glGenTextures", and from that moment allocates a new
+// command buffer every frame (CVRCompositorSharedTextures::BeginCommandBuffer, ~20 MB/s, GitHub #285).
+static void clear_gl_errors(const char *where) {
+    if (!gl_error_clear || !gles_session) return;
+    static unsigned (*get_error)(void);
+    static void *(*current_context)(void);
+    static int resolved;
+    if (!resolved) {
+        resolved = 1;
+        get_error = (unsigned (*)(void))dlsym(RTLD_DEFAULT, "glGetError");
+        current_context = (void *(*)(void))dlsym(RTLD_DEFAULT, "eglGetCurrentContext");
+        if (!get_error || !current_context) {
+            void *gl = dlopen("libGLESv2.so", RTLD_NOW | RTLD_NOLOAD), *egl = dlopen("libEGL.so", RTLD_NOW | RTLD_NOLOAD);
+            if (!get_error && gl) get_error = (unsigned (*)(void))dlsym(gl, "glGetError");
+            if (!current_context && egl) current_context = (void *(*)(void))dlsym(egl, "eglGetCurrentContext");
+        }
+        LOG("gl_error_clear: %s", get_error && current_context ? "on" : "glGetError/eglGetCurrentContext not found");
+    }
+    if (!get_error || !current_context || !current_context()) return;
+    for (int i = 0; i < 16; ++i) {
+        unsigned err = get_error();
+        if (!err) break;
+        static int logged;
+        if (logged++ < 20) LOG("gl_error_clear: cleared the app's pending GL error 0x%x before %s", err, where);
+    }
+}
+
 XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance instance, const XrSessionCreateInfo *info, XrSession *session) {
     PFN_xrCreateSession fn = (PFN_xrCreateSession)lookup(instance, "xrCreateSession");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
@@ -1103,6 +1143,9 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance instance, const XrSess
     if (result == XR_ERROR_GRAPHICS_REQUIREMENTS_CALL_MISSING && ask_graphics_requirements(instance, info))
         result = fn(instance, info, session);
     if (XR_SUCCEEDED(result)) {
+        gles_session = 0;
+        for (const XrBaseInStructure *b = info ? (const XrBaseInStructure *)info->next : NULL; b; b = b->next)
+            gles_session |= b->type == (XrStructureType)1000024001;  // XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR
         foveation_eye_supported = 0;
         if (foveation_eye_enabled) {
             PFN_xrGetSystemProperties properties = (PFN_xrGetSystemProperties)lookup(instance, "xrGetSystemProperties");
@@ -1496,6 +1539,7 @@ static XrTime last_begin_display_time;
 XRAPI_ATTR XrResult XRAPI_CALL xrBeginFrame(XrSession session, const XrFrameBeginInfo *info) {
     PFN_xrBeginFrame fn = (PFN_xrBeginFrame)lookup(active_instance, "xrBeginFrame");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    clear_gl_errors("xrBeginFrame");
     if (frame_open && frame_balance) {
         PFN_xrEndFrame end = (PFN_xrEndFrame)lookup(active_instance, "xrEndFrame");
         XrFrameEndInfo empty = {XR_TYPE_FRAME_END_INFO, NULL, last_begin_display_time ? last_begin_display_time
@@ -1520,6 +1564,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
     PFN_xrEndFrame fn = (PFN_xrEndFrame)lookup(active_instance, "xrEndFrame");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
     frame_open = 0;
+    clear_gl_errors("xrEndFrame");
     __atomic_add_fetch(&frame_ends, 1, __ATOMIC_RELAXED);
     snap_end_frame(info);
     if(surface_native)++sc_serial;

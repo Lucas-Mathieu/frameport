@@ -303,7 +303,7 @@ int main() {
     format(text, sizeof(text), live);
     CHECK(parse(text, fov) && fov[0] > 118.13f && fov[0] < 118.15f);
     CHECK(changed(false, none, live) && !changed(true, live, live));
-    const float near[2] = {118.145f, 119.55f}, far[2] = {118.2f, 119.55f};
+    const float near[2] = {118.16f, 119.53f}, far[2] = {118.5f, 119.55f};  // frame-to-frame wobble / a new value
     CHECK(!changed(true, live, near) && changed(true, live, far));
     char buf[300];
     CHECK(path("ru.targem.blazerush", buf, sizeof(buf)) &&

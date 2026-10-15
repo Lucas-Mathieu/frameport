@@ -6,6 +6,23 @@
 # with diagnostics. Launch tests and real play sessions (agent session_log, `frameport session`) are both matched.
 # Sources: every failure we hit porting 34 games to the Steam Frame (see docs/PLAYBOOK.md).
 signatures:
+  - id: meta-asset-status-error
+    pattern: 'Asset status error\s+\(code 100\)'
+    severity: error
+    diagnosis: A DLC manager reports a Meta asset-file status error after VR starts (e.g. PixelRipped 1995). The asset-file check failed; the log does not identify the native call or asset ID. Try the experimental asset-file bypass (empty list, installed status with no file path); this does not supply DLC and has not been verified in the game.
+    suggest: [frame.asset_files_stub]
+  - id: lua-lightuserdata-pointer
+    pattern: 'bad light userdata pointer'
+    severity: fatal
+    diagnosis: The Lua runtime rejected a pointer outside its supported address range. In the verified older xLua build, valid wider Frame pointers trigger this failure; a scoped compatible engine is available. For other builds, inspect the rejected pointer before assuming this cause.
+    suggest: [frame.luajit_pointers]
+    supersedes: [native-crash]
+  - id: lua-startup-exit
+    pattern: '(?s)\A(?=.*libxlua\.so[^\r\n]*lj_err_throw)(?=.*(?:__cxa_finalize|exit\+\d+))(?=.*(?:Fatal signal 6|FORTIFY:))'
+    severity: error
+    diagnosis: An uncaught Lua error triggered process exit, followed by a crash during Unity cleanup. The mutex failure is secondary; capture the original Lua error before choosing a fix. This stack alone does not identify a pointer-range problem.
+    suggest: []
+    supersedes: [native-crash]
   - id: vrapi-frame-rejected
     pattern: 'OVRPortVrApi:\s+Unsupported frame flags or swap interval'
     severity: fatal
@@ -364,10 +381,19 @@ signatures:
       The game stays on Unreal's OBB check screen (DownloaderActivity), which the Frame doesn't show, and never
       starts VR (for example Contractors, GitHub #159). Unreal checks that the data file (.obb) has the name and size
       this APK expects, and with bVerifyOBBOnStartUp it also reads the whole file to check it; a failed check waits
-      on an error screen. "Unreal - start without the OBB check" skips the content check. If the game still stops
-      here, the OBB doesn't match this APK version - copy the APK and the OBB from the same install, add the game
-      again and reinstall.
-    suggest: [frame.unreal_skip_obb_check]
+      on an error screen. "Unreal - start without the OBB check" skips the content check. Copy the APK and OBB
+      from the same install, add the game again and reinstall.
+      If the downloader still appears with bVerifyOBBOnStartUp=false (the skip patch already applied), try
+      "Unreal: skip the OBB delivery check", an experimental bypass of the separate Java name and size gate
+      (e.g. Into The Radius, GitHub #283). An external-storage path or visibility failure can reject an uploaded
+      OBB; the native engine still needs complete, matching, readable data.
+    suggest: [frame.unreal_skip_obb_check, frame.unreal_skip_obb_delivery]
+  - id: tbxr-fdm-shutdown-crash
+    pattern: '(?s)\A(?=.*Fatal signal 11)(?=.*fdm_injection_xrDestroySwapchain)(?=.*TBXR_LeaveVR)'
+    severity: error
+    diagnosis: The game crashed while leaving VR, inside Valve's foveation layer when it destroys a swapchain (for example Lambda1VR). This can happen after manually quitting; it is not a startup crash and does not explain distorted geometry seen before quitting.
+    suggest: []
+    supersedes: [native-crash]
   - id: native-crash
     pattern: 'Fatal signal (\d+) \(SIG[A-Z]+\)'
     severity: fatal

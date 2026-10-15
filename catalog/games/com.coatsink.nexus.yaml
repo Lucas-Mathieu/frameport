@@ -4,13 +4,16 @@ tested_version: '1.4'
 source_hint: Shadow Point
 engine: Unity
 xr: VrApi
-status: unsupported
-notes: 32-bit only; the Frame has no AArch32.
-details: 32-bit (armeabi-v7a) only; the Frame has no AArch32. 64-bit conversion was researched and dropped (IL2CPP
-  + FMOD + custom rasterizer).
+status: works
+notes: 32-bit only (armeabi-v7a), runs through FramePort's 32-bit bridge (experimental). Plays in the headset.
+details: 'Unity with OVRPlugin + VrApi, GLES. Needed the bridge''s vrapi_GetTrackingTransform/SetTrackingTransform
+  (the game sets its floor level through them; without them the player stood below the floor). Plays in the headset
+  (owner, 2026-10-14).'
+frame:
+- frame.a32_bridge
+device:
+- device.text_input_window
 pcvr_alternative: Rift version via Revive + SteamVR.
 verified:
-  date: '2026-09-28'
-  overport_cli: 1.2.3
-  overport_runtime: 3.4.3-23204ea
-  known_good_sha256: ea0c0d09d2c3d8da04d165732ead64875fef7573a5739608de0de9c93654007e
+  date: '2026-10-14'
+min_app: 1.1.2

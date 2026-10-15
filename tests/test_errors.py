@@ -41,3 +41,46 @@ def test_other_errors_keep_their_message():
     assert explain(auth).startswith("This Frame isn't set up") and not is_connection_error(auth)
     assert explain(AgentFailed("Lepton is not installed (Developer Mode → …)")).startswith("Lepton is not installed")
     assert explain(RuntimeError()) == "RuntimeError"
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_certificate_verification_explanation(wrapped):
+    import ssl
+
+    import requests
+
+    exc = ssl.SSLCertVerificationError(1, "self-signed certificate in certificate chain")
+    if wrapped:
+        exc = requests.exceptions.SSLError(exc)
+    message = explain(exc)
+    assert "HTTPS certificate couldn't be verified" in message
+    assert "another network" in message and "HTTPS scanning" in message
+    assert not is_connection_error(exc)
+
+
+def test_unrelated_ssl_error_keeps_message():
+    import requests
+
+    assert explain(requests.exceptions.SSLError("TLS protocol mismatch")) == "TLS protocol mismatch"
+
+
+@pytest.mark.parametrize("stage", ["metadata", "archive"])
+def test_java_certificate_failure_reaches_explain(monkeypatch, stage):
+    from unittest.mock import Mock
+
+    import requests
+
+    from frameport.tools import toolchain
+
+    exc = requests.exceptions.SSLError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed")
+    get = Mock(side_effect=exc)
+    if stage == "archive":
+        get = Mock(return_value=Mock(json=lambda: [{"binary": {"package": {
+            "link": "https://example.invalid/java.tar.gz", "name": "java.tar.gz", "checksum": "unused"}},
+            "version": {"semver": "test"}}]))
+        monkeypatch.setattr(toolchain.cache, "download", Mock(side_effect=exc))
+    monkeypatch.setattr(toolchain.cache, "http_get", get)
+    with pytest.raises(requests.exceptions.SSLError) as caught:
+        toolchain.install_java()
+    assert "another network" in explain(caught.value)
+    assert "verify" not in get.call_args.kwargs
