@@ -11,18 +11,20 @@ from frameport.frame.connection import Frame, FrameTarget
 from frameport.install import installer
 
 
-def test_pinned_credentials(tmp_path, monkeypatch):
+@pytest.mark.parametrize("port_flag", ["-P", "-p"])
+def test_pinned_credentials(tmp_path, monkeypatch, port_flag):
     monkeypatch.setattr(native, "ssh_dir", lambda: tmp_path)
     (tmp_path / "id_ed25519").write_text("private")
     key = SimpleNamespace(get_name=lambda: "ssh-ed25519", get_base64=lambda: "PAIRED_KEY")
     client = SimpleNamespace(get_transport=lambda: SimpleNamespace(get_remote_server_key=lambda: key))
     frame = Frame(FrameTarget("paired.example", port=2222), client=client)
-    with native.credentials(frame) as args:
+    with native.credentials(frame, port_flag=port_flag) as args:
         known = next(arg.split("=", 1)[1].strip('"') for arg in args if arg.startswith("UserKnownHostsFile="))
         from pathlib import Path
         assert Path(known).read_text() == "[paired.example]:2222 ssh-ed25519 PAIRED_KEY\n"
         assert "StrictHostKeyChecking=yes" in args
         assert "BatchMode=yes" in args
+        assert args[-2:] == [port_flag, "2222"]
         copy = args[args.index("-i") + 1]
         assert Path(copy).read_text() == "private"
         assert Path(copy) != tmp_path / "id_ed25519"
@@ -174,3 +176,114 @@ def test_production_fallback_and_cancel(tmp_path, monkeypatch, cancel):
         assert call() == installer.BIG_FILE
         frame.put.assert_called_once()
         assert fractions == sorted(fractions)
+
+
+@pytest.mark.parametrize("failure", [None, OSError("ssh failed"), Cancelled()])
+def test_tar_transport_selection(tmp_path, monkeypatch, failure):
+    path = tmp_path / "small.bin"
+    path.write_bytes(b"payload")
+    frame = Frame(FrameTarget("paired.example"))
+    frame.mkdirs = Mock()
+    frame.put_tar = Mock()
+    events = []
+    report = Reporter([events.append])
+    stream = Mock(side_effect=failure)
+    monkeypatch.setattr(native, "put_tar", stream)
+    args = (frame, [(path, "data/small.bin", 7)], "/incoming", report, 7)
+    if isinstance(failure, Cancelled):
+        with pytest.raises(Cancelled):
+            installer.upload_files(*args)
+        frame.put_tar.assert_not_called()
+    else:
+        assert installer.upload_files(*args) == 7
+        assert frame.put_tar.called == (failure is not None)
+        logs = [event.message for event in events if event.kind == "log"]
+        assert any("tar batch with OpenSSH" in message for message in logs)
+        if failure:
+            assert any("OpenSSH unavailable or failed; resuming with Paramiko" in message for message in logs)
+            assert any("tar batch with Paramiko" in message for message in logs)
+    stream.assert_called_once()
+
+
+def setup_tar(tmp_path, monkeypatch, code=0):
+    import io
+
+    path = tmp_path / "small.bin"
+    path.write_bytes(b"payload")
+    frame = SimpleNamespace(target=FrameTarget("paired.example", port=2222))
+    pipe = io.BytesIO()
+    pipe.close = lambda: None
+    process = Mock(stdin=pipe, returncode=code)
+    process.poll.return_value = code
+    popen = Mock(return_value=process)
+    monkeypatch.setattr(native.subprocess, "Popen", popen)
+    monkeypatch.setattr(native.shutil, "which", lambda _: "ssh")
+    @contextlib.contextmanager
+    def creds(frame, port_flag):
+        assert port_flag == "-p"
+        yield ["-o", "StrictHostKeyChecking=yes", port_flag, "2222"]
+    monkeypatch.setattr(native, "credentials", creds)
+    return frame, [(path, "nested/small.bin")], process, popen, pipe
+
+
+def test_native_tar_stream_and_command(tmp_path, monkeypatch):
+    import tarfile
+
+    frame, files, process, popen, pipe = setup_tar(tmp_path, monkeypatch)
+    progress = Mock()
+    native.put_tar(frame, files, "/incoming with 'quote", Reporter(), progress)
+    args = popen.call_args.args[0]
+    assert args == ["ssh", "-o", "StrictHostKeyChecking=yes", "-p", "2222", "steamos@paired.example",
+                    "mkdir -p '/incoming with '\"'\"'quote' && tar -xf - -C '/incoming with '\"'\"'quote'"]
+    pipe.seek(0)
+    with tarfile.open(fileobj=pipe) as archive:
+        assert archive.getnames() == ["nested/small.bin"]
+        assert archive.extractfile("nested/small.bin").read() == b"payload"
+    progress.assert_called_once_with(7, "nested/small.bin")
+    process.wait.assert_called_once()
+
+
+def test_native_tar_failed_exit(tmp_path, monkeypatch):
+    frame, files, process, popen, pipe = setup_tar(tmp_path, monkeypatch, code=1)
+    with pytest.raises(OSError, match="OpenSSH tar failed"):
+        native.put_tar(frame, files, "/incoming", Reporter(), Mock())
+    process.wait.assert_called_once()
+
+
+def test_native_tar_cancel_blocked_writer(tmp_path, monkeypatch):
+    import threading
+
+    frame, files, process, popen, pipe = setup_tar(tmp_path, monkeypatch)
+    report = Reporter()
+    released = threading.Event()
+    def blocked_write(data):
+        report.cancelled.set()
+        assert released.wait(5)
+        raise BrokenPipeError()
+    pipe.write = blocked_write
+    pipe.close = Mock(side_effect=BrokenPipeError())
+    process.poll.return_value = None
+    stop = Mock(side_effect=lambda process: released.set())
+    monkeypatch.setattr(native, "stop_process", stop)
+    with pytest.raises(Cancelled):
+        native.put_tar(frame, files, "/incoming", report, Mock())
+    stop.assert_called_once_with(process)
+
+
+@pytest.mark.parametrize("prefer_native", [False, True])
+def test_tar_unavailable_and_explicit_paramiko(tmp_path, monkeypatch, prefer_native):
+    path = tmp_path / "small.bin"
+    path.write_bytes(b"payload")
+    frame = Frame(FrameTarget("paired.example"))
+    frame.mkdirs = Mock()
+    frame.put_tar = Mock()
+    monkeypatch.setattr(native.shutil, "which", lambda _: None)
+    monkeypatch.setattr(installer, "BATCH_FILES", 1)
+    stream = Mock(wraps=native.put_tar)
+    monkeypatch.setattr(native, "put_tar", stream)
+    events = []
+    assert installer.upload_files(frame, [(path, "one", 7), (path, "two", 7)], "/incoming",
+                                  Reporter([events.append]), 14, prefer_native=prefer_native) == 14
+    assert stream.call_count == int(prefer_native)  # a failed backend isn't retried for every batch
+    assert frame.put_tar.call_count == 2
+    assert sum("OpenSSH unavailable or failed" in event.message for event in events) == int(prefer_native)

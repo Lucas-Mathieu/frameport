@@ -9,6 +9,7 @@ handshake separately. Windows-native Python and WSL must be measured separately.
 Use --methods app-files-1,app-files-2,sftp-files-1,sftp-files-2 to compare parallel file uploads.
 Both file methods accept worker counts 1, 2, 3, 4 and 8, using the same eight-file payload.
 app-files-N uses the production backend (OpenSSH preferred, Paramiko fallback); its log records the actual choice.
+Use --methods app-small,paramiko-small to compare production tar batches with the same small-file payload.
 """
 from __future__ import annotations
 
@@ -125,13 +126,13 @@ def stream_ssh(frame, key, command, writer, cipher=None):
 def send(method, frame, local, remote, key, small, large=None, logs=None):
     """Returns measured setup seconds (None when the native tool cannot expose handshake completion)."""
     t0 = time.monotonic()
-    if method.startswith(("app-files-", "paramiko-files-")):
+    if method in ("app-small", "paramiko-small") or method.startswith(("app-files-", "paramiko-files-")):
         from frameport.core.events import Reporter
         from frameport.install.installer import upload_files
 
-        workers = int(method.rsplit("-", 1)[1])
+        workers = 1 if method.endswith("-small") else int(method.rsplit("-", 1)[1])
         with contextlib.closing(Frame(frame.target, frame.password).connect()) as transfer:
-            items = [(path, path.name, path.stat().st_size) for path in large]
+            items = [(path, path.name, path.stat().st_size) for path in (small if method.endswith("-small") else large)]
             def record(event):
                 if event.kind == "log":
                     if logs is not None:
@@ -139,7 +140,7 @@ def send(method, frame, local, remote, key, small, large=None, logs=None):
                     print(f"  {event.message}", flush=True)
             reporter = Reporter([record])
             upload_files(transfer, items, remote, reporter, sum(size for _, _, size in items), workers=workers,
-                         prefer_native=not method.startswith("paramiko-files-"))
+                         prefer_native=not method.startswith("paramiko-"))
         return None  # worker handshakes overlap transfers; measure the production end-to-end operation
     if method.startswith("sftp-files-"):
         workers = min(int(method.rsplit("-", 1)[1]), len(large))
@@ -206,7 +207,8 @@ def send(method, frame, local, remote, key, small, large=None, logs=None):
 METHODS = ("app", "paramiko-tuned", "ssh", "ssh-gcm", "ssh-chacha", "sftp", "scp", "app-tar", "ssh-tar",
            "app-files-1", "app-files-2", "app-files-3", "app-files-4", "app-files-8",
            "paramiko-files-1", "paramiko-files-2", "paramiko-files-3", "paramiko-files-4", "paramiko-files-8",
-           "sftp-files-1", "sftp-files-2", "sftp-files-3", "sftp-files-4", "sftp-files-8")
+           "sftp-files-1", "sftp-files-2", "sftp-files-3", "sftp-files-4", "sftp-files-8",
+           "app-small", "paramiko-small")
 
 
 def check_resume(frame, local, remote, key):
@@ -369,7 +371,8 @@ def main():
                     report["methods"].append(row)
                     continue
                 remote = f"{scratch}/{method}-{repeat}"
-                size = sum(p.stat().st_size for p in small) if method.endswith("-tar") else local.stat().st_size
+                size = (sum(p.stat().st_size for p in small) if method.endswith(("-tar", "-small"))
+                        else local.stat().st_size)
                 c0, t0 = cpu(), time.monotonic()
                 try:
                     row["logs"] = []
@@ -380,7 +383,7 @@ def main():
                                payload_MB_s=size / (elapsed - setup) / 1e6 if setup is not None else None)
                     verify_start = time.monotonic()
                     large_trial = method.startswith(("app-files-", "paramiko-files-", "sftp-files-"))
-                    if method.endswith("-tar") or large_trial:
+                    if method.endswith(("-tar", "-small")) or large_trial:
                         pattern = "*.obb" if large_trial else "*.bin"
                         _, out, _ = frame.run(f"cd {sh_quote(remote)} && sha256sum {pattern}")
                         actual = {line.split(maxsplit=1)[1].strip(): line.split()[0] for line in out.splitlines()}

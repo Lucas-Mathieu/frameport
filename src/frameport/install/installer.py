@@ -151,6 +151,7 @@ def install(frame: Frame, plan: InstallPlan, reporter: Reporter) -> dict:
             if plan.apk.stat().st_size >= BIG_FILE:
                 upload_files(xfer, [(plan.apk, "game.apk", plan.apk.stat().st_size)], incoming, reporter, total)
             else:
+                reporter.log("uploading APK with Paramiko SFTP")
                 xfer.put(plan.apk, posixpath.join(incoming, "game.apk"), apk_cb)
             sent += plan.apk.stat().st_size
         if to_send:
@@ -585,10 +586,12 @@ def upload_files(frame: Frame, items: list[tuple[Path, str, int]], remote_root: 
     if native_done:
         pass
     elif threads > 1 and hasattr(frame, "upload_session"):
-        reporter.log(f"uploading large files with {threads} workers")
+        reporter.log(f"uploading large files with Paramiko SFTP ({threads} workers)")
         state["sent"] = _upload_parallel(frame, big, remote_root, reporter, total, sent, threads)
         speed.samples.clear()
     else:
+        if big:
+            reporter.log("uploading large files with Paramiko SFTP (1 worker)")
         for local, rel, size in big:
             reporter.check_cancel()
             frame.put(local, posixpath.join(remote_root, rel),
@@ -598,11 +601,36 @@ def upload_files(frame: Frame, items: list[tuple[Path, str, int]], remote_root: 
     batch: list[tuple[Path, str]] = []
     batch_bytes = 0
 
+    use_native_tar = prefer_native and isinstance(frame, Frame)
+
     def flush():
-        nonlocal batch, batch_bytes
+        nonlocal batch, batch_bytes, use_native_tar
         if batch:
             base = state["sent"]
-            frame.put_tar(batch, remote_root, lambda done, rel: show(done, f"{len(batch)} files · {rel}"))
+            last = 0
+
+            def progress(done, rel):
+                nonlocal last
+                last = max(last, done)
+                show(last, f"{len(batch)} files · {rel}")
+            uploaded = False
+            if use_native_tar:
+                from ..frame import native_upload
+
+                try:
+                    reporter.log(f"uploading tar batch with OpenSSH SSH ({len(batch)} files)")
+                    native_upload.put_tar(frame, batch, remote_root, reporter, progress)
+                    uploaded = True
+                except Cancelled:
+                    raise
+                except Exception as exc:
+                    reporter.check_cancel()
+                    reporter.log(f"OpenSSH unavailable or failed; resuming with Paramiko: {exc}")
+                    use_native_tar = False
+                    speed.samples.clear()
+            if not uploaded:
+                reporter.log(f"uploading tar batch with Paramiko ({len(batch)} files)")
+                frame.put_tar(batch, remote_root, progress)
             state["sent"] = base + batch_bytes
         batch, batch_bytes = [], 0
     for local, rel, size in small:

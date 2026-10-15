@@ -9,7 +9,9 @@ import posixpath
 import shutil
 import signal
 import subprocess
+import tarfile
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -34,7 +36,7 @@ def size_of(sftp, path):
 
 
 @contextlib.contextmanager
-def credentials(frame):
+def credentials(frame, port_flag="-P"):
     """Private temporary copies avoid modifying pairing keys, including their Windows ACLs."""
     key_paths = [ssh_dir() / name for name in ("id_ed25519", "id_rsa") if (ssh_dir() / name).exists()]
     if not key_paths:
@@ -68,7 +70,7 @@ def credentials(frame):
                "-o", "StrictHostKeyChecking=yes", "-o", f'UserKnownHostsFile="{known.as_posix()}"',
                "-o", f"GlobalKnownHostsFile={os.devnull}", "-o", "ConnectTimeout=10",
                "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3",
-               "-P", str(frame.target.port)]
+               port_flag, str(frame.target.port)]
 
 
 def hidden():
@@ -181,3 +183,53 @@ def upload(frame, items, remote_root, reporter, total, sent, workers):
             for process, _ in processes:
                 stop_process(process)
     return sent + sum(size for _, _, size in items)
+
+
+def put_tar(frame, files, remote_root, reporter, progress):
+    """Stream a tar batch over paired OpenSSH; supervise writes so Cancel also stops a blocked pipe."""
+    executable = shutil.which("ssh")
+    if not executable:
+        raise OSError("system OpenSSH SSH is unavailable")
+    reporter.check_cancel()
+    with credentials(frame, port_flag="-p") as args, tempfile.TemporaryFile() as errors:
+        command = f"mkdir -p {sh_quote(remote_root)} && tar -xf - -C {sh_quote(remote_root)}"
+        process = subprocess.Popen([executable, *args, f"{frame.target.user}@{frame.target.host}", command],
+                                   stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=errors,
+                                   **(hidden() if os.name == "nt" else {"start_new_session": True}))
+        failures = []
+
+        def write():
+            done = 0
+            try:
+                with tarfile.open(fileobj=process.stdin, mode="w|", format=tarfile.PAX_FORMAT) as archive:
+                    for local, rel in files:
+                        reporter.check_cancel()
+                        archive.add(str(local), arcname=rel, recursive=False)
+                        done += Path(local).stat().st_size
+                        progress(done, rel)
+                process.stdin.close()
+            except Exception as exc:
+                failures.append(exc)
+
+        writer = threading.Thread(target=write, name="frameport-tar", daemon=True)
+        writer.start()
+        try:
+            while writer.is_alive() or process.poll() is None:
+                reporter.check_cancel()
+                if failures or process.poll() not in (None, 0):
+                    break
+                writer.join(timeout=0.1)
+                if not writer.is_alive() and process.poll() is None:
+                    time.sleep(0.1)
+            reporter.check_cancel()
+            if failures:
+                raise failures[0]
+            if process.poll() != 0:
+                errors.seek(0)
+                raise OSError(f"OpenSSH tar failed ({process.returncode}): "
+                              + errors.read().decode(errors="replace")[-1500:])
+        finally:
+            stop_process(process)
+            writer.join()
+            with contextlib.suppress(OSError):
+                process.stdin.close()
