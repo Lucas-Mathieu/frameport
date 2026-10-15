@@ -13,19 +13,30 @@ import tarfile
 import tempfile
 import threading
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from .connection import sh_quote, ssh_dir
 
 
-def quote(value) -> str:
+def quote(value, windows=False) -> str:
+    """One sftp batch argument, taken literally.
+
+    Inside double quotes sftp escapes glob characters (* ? [) itself and undoes that for put's destination, so
+    they must NOT be escaped again: an extra backslash became part of the name (GitHub #324: "[ENG]" in a folder
+    name made every OpenSSH upload fail, on Linux too). Only backslash and the quote are escaped. ``windows``: a
+    local Windows path goes with forward slashes; Win32-OpenSSH's sftp turns every backslash of a local path into
+    '/', escapes included ("C:\\\\Users" → "C://Users").
+    """
     value = str(value)
     if any(c in value for c in "\r\n\x00"):
         raise ValueError("SFTP paths cannot contain newlines or NUL")
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    for char in "*?[":
-        escaped = escaped.replace(char, "\\" + char)
-    return '"' + escaped + '"'
+    if windows:
+        value = PureWindowsPath(value).as_posix()
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def quote_local(path) -> str:
+    return quote(path, windows=os.name == "nt")
 
 
 def size_of(sftp, path):
@@ -111,7 +122,7 @@ def upload(frame, items, remote_root, reporter, total, sent, workers):
     sizes, offsets, progress = {}, {}, {}
     for path, rel, size in sorted(items, key=lambda item: item[2], reverse=True):
         remote = posixpath.join(remote_root, rel)
-        quote(path)
+        quote_local(path)
         quote(remote)
         offset = size_of(frame.sftp, remote + ".part")
         if offset > size:
@@ -139,7 +150,7 @@ def upload(frame, items, remote_root, reporter, total, sent, workers):
                 for path, rel, _ in group:
                     remote = posixpath.join(remote_root, rel) + ".part"
                     command = "reput" if offsets[rel] else "put"
-                    batch.write(f"{command} {quote(path)} {quote(remote)}\n".encode())
+                    batch.write(f"{command} {quote_local(path)} {quote(remote)}\n".encode())
                 batch.seek(0)
                 errors = stack.enter_context(tempfile.TemporaryFile())
                 process = subprocess.Popen([executable, *args, "-b", "-",

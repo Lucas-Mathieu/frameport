@@ -38,8 +38,36 @@ def test_quote_refuses_batch_injection(value):
         native.quote(value)
 
 
-def test_quote_protects_spaces_quotes_globs():
-    assert native.quote('a *?["b') == '"a \\*\\?\\[\\"b"'
+def test_quote_leaves_globs_to_sftp():
+    """Inside double quotes sftp escapes * ? [ itself: an extra backslash became part of the name (GitHub #324)."""
+    assert native.quote('a *?["b') == '"a *?[\\"b"'
+    assert native.quote("/x/te*s?t [ENG] \\b+(1).apk") == '"/x/te*s?t [ENG] \\\\b+(1).apk"'
+
+
+def test_quote_windows_local_path_uses_forward_slashes():
+    """Win32-OpenSSH turns a local path's backslashes into '/', escapes included ("C://Users", "/[ENG]")."""
+    path = r"C:\Users\user_name\AppData\Local\FramePort\output\All-In-One - Sports VR [ENG] v100+1.9.0 (x)\a.apk"
+    assert native.quote(path, windows=True) == (
+        '"C:/Users/user_name/AppData/Local/FramePort/output/All-In-One - Sports VR [ENG] v100+1.9.0 (x)/a.apk"')
+    assert native.quote(r"\\server\share\*?[a].apk", windows=True) == '"//server/share/*?[a].apk"'
+    assert native.quote('C:\\odd "name"\\a.apk', windows=True) == '"C:/odd \\"name\\"/a.apk"'
+
+
+@pytest.mark.parametrize("os_name,expected", [("nt", '"C:/games/[ENG] a/x.apk"'),
+                                              ("posix", '"C:\\\\games\\\\[ENG] a\\\\x.apk"')])
+def test_quote_local_follows_the_platform(monkeypatch, os_name, expected):
+    monkeypatch.setattr(native.os, "name", os_name)
+    assert native.quote_local(r"C:\games\[ENG] a\x.apk") == expected
+
+
+def test_batch_line_for_bracketed_folder(tmp_path, monkeypatch):
+    folder = tmp_path / "All-In-One - Sports VR [ENG] v100+1.9.0"
+    folder.mkdir()
+    frame, items, files, commands, processes = setup_batch(folder, monkeypatch)
+    monkeypatch.setattr(native.os, "name", "posix")
+    native.upload(frame, items, "/incoming", Reporter(), 20, 0, 1)
+    assert sorted(commands[0].splitlines()) == [f'put "{folder}/patch.obb" "/incoming/patch.obb.part"',
+                                                f'reput "{folder}/main.obb" "/incoming/main.obb.part"']
 
 
 def test_size_lookup_does_not_hide_connection_errors():
