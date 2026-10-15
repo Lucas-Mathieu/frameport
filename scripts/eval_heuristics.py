@@ -184,26 +184,31 @@ def _rates(tp: int, fp: int, fn: int) -> dict:
             "f1": 2 * tp / (2 * tp + fp + fn) if 2 * tp + fp + fn else 0.0}
 
 
-def score_signatures(want: dict, got: dict) -> dict:
-    """Compare one pair of signatures; value mismatches count as both missing and extra."""
+def score_signatures(want: dict, got: dict, gaps: frozenset | set = frozenset()) -> dict:
+    """Compare one pair of signatures; value mismatches count as both missing and extra. `gaps` = decisions the
+    catalog entry couldn't have made (the patch didn't exist when it was verified): left out of both sides."""
     result = {}
     for scope, w, g in zip(("headline", "runtime"), _parts(want), _parts(got), strict=True):
         wanted, actual = _decisions(w), _decisions(g)
+        gap = {k: actual.pop(k) for k in list(actual) if k in gaps and k not in wanted}
         missing = {k: v for k, v in wanted.items() if k not in actual or actual[k] != v}
         extra = {k: v for k, v in actual.items() if k not in wanted or wanted[k] != v}
         per_patch = {k: _rates(int(k in wanted and k in actual and wanted[k] == actual[k]),
                                int(k in extra), int(k in missing)) for k in sorted(wanted.keys() | actual.keys())}
         fields = {k: w.get(k) == g.get(k) for k in sorted(w.keys() | g.keys())}
-        result[scope] = {"exact": all(fields.values()), "fields": fields, "missing": missing, "extra": extra,
-                         "per_patch": per_patch}
+        exact = all(fields.values()) if not gap else not missing and not extra
+        result[scope] = {"exact": exact, "fields": fields, "missing": missing, "extra": extra,
+                         "per_patch": per_patch, "gap": gap}
     return result
 
 
-def _aggregate(rows: list[dict], scope: str) -> dict:
+def _aggregate(rows: list[dict], scope: str, score_key: str = "score") -> dict:
     fields = defaultdict(lambda: {"matched": 0, "total": 0})
     counts = defaultdict(Counter)
+    gaps = Counter()
     for row in rows:
-        s = row["score"][scope]
+        s = row[score_key][scope]
+        gaps.update(s.get("gap") or {})
         for key, match in s["fields"].items():
             fields[key]["matched"] += int(match)
             fields[key]["total"] += 1
@@ -213,15 +218,17 @@ def _aggregate(rows: list[dict], scope: str) -> dict:
     total = Counter()
     for stats in counts.values():
         total.update(stats)
-    exact = sum(row["score"][scope]["exact"] for row in rows)
+    exact = sum(row[score_key][scope]["exact"] for row in rows)
     return {"games": len(rows), "exact": exact, "exact_ratio": exact / len(rows) if rows else 0.0,
-            "fields": dict(sorted(fields.items())), "per_patch": per_patch,
+            "fields": dict(sorted(fields.items())), "per_patch": per_patch, "gaps": dict(sorted(gaps.items())),
             "patches": _rates(*(total[k] for k in ("tp", "fp", "fn")))}
 
 
 def score_records(records: list[dict]) -> dict:
     """Score {package, engine, status, converted, want, got, ...} records; no filesystem needed."""
-    rows = [{**r, "score": score_signatures(r["want"], r["got"])} for r in sorted(records, key=lambda r: r["package"])]
+    rows = [{**r, "score": score_signatures(r["want"], r["got"]),
+             "score_dated": score_signatures(r["want"], r["got"], set(r.get("gaps") or ()))}
+            for r in sorted(records, key=lambda r: r["package"])]
 
     def metrics(group):
         supported = [r for r in group if r["status"] != "unsupported"]
@@ -229,6 +236,7 @@ def score_records(records: list[dict]) -> dict:
         return {"total_games": len(group), "converted_games": sum(bool(r.get("converted")) for r in group),
                 "excluded_unsupported": len(unsupported),
                 "headline": _aggregate(supported, "headline"), "runtime": _aggregate(supported, "runtime"),
+                "headline_dated": _aggregate(supported, "headline", "score_dated"),
                 "unsupported": {scope: _aggregate(unsupported, scope) for scope in ("headline", "runtime")}}
 
     return {**metrics(rows), "by_engine": {name: metrics([r for r in rows if engine_group(r["engine"]) == name])
@@ -260,7 +268,16 @@ def read_dumps(path: Path) -> dict:
     return records
 
 
-def evaluate(snapshot: dict, entries: dict, split: str = "dev") -> dict:
+def gap_decisions(entry, intro_dates: dict | None) -> set[str]:
+    """Decision keys for patches introduced after the entry was verified: the catalog can't be wrong about them."""
+    verified = str((entry.verified or {}).get("date") or "")
+    if not intro_dates or not verified:
+        return set()
+    return {(f"alt:{pid}" if pid.startswith("patch_remove_unreal") else pid)
+            for pid, date in intro_dates.items() if date and date > verified}
+
+
+def evaluate(snapshot: dict, entries: dict, split: str = "dev", intro_dates: dict | None = None) -> dict:
     analyses = {pkg: analysis_from_dict(v["analysis"]) for pkg, v in snapshot.items() if pkg in entries}
     assignments = split_packages({pkg: a.engine for pkg, a in analyses.items()})
     records = []
@@ -273,7 +290,8 @@ def evaluate(snapshot: dict, entries: dict, split: str = "dev") -> dict:
                         "converted": bool(snapshot[pkg].get("converted", a.is_overport_output)),
                         "analysis_version": snapshot[pkg].get("analysis_version"), "split": assignments[pkg],
                         "want": catalog_signature(entry, defaults, a),
-                        "got": signature(engine.suggest(a, use_catalog=False), defaults)})
+                        "got": signature(engine.suggest(a, use_catalog=False), defaults),
+                        "gaps": sorted(gap_decisions(entry, intro_dates))})
     return {"schema_version": 1, "split": split, "runtime_only": RUNTIME_ONLY, "snapshot_packages": len(snapshot),
             "default_policy": "per-analysis default detection, then explicit catalog removals",
             "catalog_packages": len(entries), "matched_packages": len(analyses),
@@ -331,7 +349,9 @@ def patch_intro_dates(cache_path: Path) -> dict:
 
 
 def entry_date(entry) -> str:
-    return max(str(entry.verified.get("date") or ""), str(entry.updated or ""))
+    """When the recipe was verified; `updated` only when there is no verified date (it also moves for unrelated
+    edits, e.g. a note, so it says nothing about which patches the verifier could pick)."""
+    return str(entry.verified.get("date") or "") or str(entry.updated or "")
 
 
 def fit_report(snapshot: dict, entries: dict, intro_dates: dict) -> dict:
@@ -403,6 +423,15 @@ def print_metrics(report: dict, verbose: bool = False) -> None:
         p = h["patches"]
         print(f"{name:10} {h['games']:5} {h['exact']:4}/{h['games']:<4} {f:>11} "
               f"{p['precision']:7.1%} {p['recall']:7.1%} {p['f1']:7.1%} {r['exact']:4}/{r['games']:<4}")
+    print("\nDated (extras on entries verified before the patch existed = catalog gaps, not errors):")
+    for name, metrics in [("All", report), *report["by_engine"].items()]:
+        d = metrics["headline_dated"]
+        p = d["patches"]
+        print(f"{name:10} {d['games']:5} {d['exact']:4}/{d['games']:<4} {'':>11} "
+              f"{p['precision']:7.1%} {p['recall']:7.1%} {p['f1']:7.1%}")
+    gaps = report["headline_dated"]["gaps"]
+    if gaps:
+        print("Catalog gaps by patch: " + ", ".join(f"{k}={v}" for k, v in sorted(gaps.items(), key=lambda kv: -kv[1])))
     for name, metrics in [("All", report), *report["by_engine"].items()]:
         print(f"\n{name}: field matches (headline / runtime)")
         for scope in ("headline", "runtime"):
@@ -456,7 +485,10 @@ def main() -> int:
         else:
             print(markdown, end="")
     else:
-        report = evaluate(snapshot, entries, args.split)
+        cache = (args.snapshot.parent if args.snapshot else args.dumps) / "patch-intro-dates.json"
+        # dated scoring reads the cache --fit-report writes; a plain run never shells out for dates
+        dates = json.loads(cache.read_text(encoding="utf-8")) if cache.is_file() else None
+        report = evaluate(snapshot, entries, args.split, dates)
         print_metrics(report, args.verbose)
     if args.json_out:
         args.json_out.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")

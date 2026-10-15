@@ -201,7 +201,7 @@ def test_fit_metadata_dates_and_converted(monkeypatch):
     report = ev.fit_report({"com.a": {"analysis": _analysis(package="com.a").to_dict(), "converted": True}}, entries,
                            {"frame.new": "2026-03-01"})
     assert report["games"][0]["candidates"][0]["newer_patch"] is True
-    assert report["games"][0]["entry_date"] == "2026-02-01"
+    assert report["games"][0]["entry_date"] == "2026-01-01"  # verified, not updated
     assert report["games"][0]["converted"]
     assert report["metadata_only"][0]["package"] == "com.b"
     assert report["metadata_only"][0]["xr"] == "VrApi"
@@ -299,3 +299,21 @@ def test_catalog_truth_applies_the_a32_bridge_transform():
     got = ev.signature(engine.suggest(a, use_catalog=False), defaults)
     assert want["overport_removed"] == got["overport_removed"]
     assert want["frame_removed"] == got["frame_removed"]
+
+
+def test_dated_score_sets_aside_patches_newer_than_the_entry():
+    want = ev.catalog_signature(_entry(frame=["frame.unity_text_input"]))
+    got = ev.catalog_signature(_entry(frame=["frame.unity_text_input", "frame.hw_video_decode"]))
+    strict = ev.score_signatures(want, got)["headline"]
+    dated = ev.score_signatures(want, got, {"frame.hw_video_decode"})["headline"]
+    assert strict["extra"] and not strict["exact"]
+    assert dated["exact"] and dated["gap"] == {"frame.hw_video_decode": True}
+    assert "frame.hw_video_decode" not in dated["per_patch"]
+
+
+def test_gap_decisions_use_the_verified_date_not_updated():
+    e = _entry(verified={"date": "2026-09-28"}, updated="2026-10-14")
+    gaps = ev.gap_decisions(e, {"frame.unity_text_input": "2026-10-03", "frame.adapter": "2026-09-28",
+                                "patch_remove_unreal_force_quit": "2026-10-01"})
+    assert gaps == {"frame.unity_text_input", "alt:patch_remove_unreal_force_quit"}
+    assert ev.entry_date(e) == "2026-09-28"
