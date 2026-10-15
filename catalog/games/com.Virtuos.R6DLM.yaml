@@ -1,0 +1,19 @@
+package: com.Virtuos.R6DLM
+title: 'Medal of Honor: Above and Beyond'
+status: unknown
+notes: 'Not yet tested on the Frame (the game is ~41 GB, too large to install on the dev unit). Its first-run
+  Downloader screen is invisible in Lepton, so it stayed stuck there; frame.unreal_skip_obb_delivery skips the check.
+  The OBB files still have to be present. Please report back whether it reaches the game (GitHub 159).'
+details: 'Medal of Honor packs its data in OBBs behind Epic''s DownloaderActivity, whose name/size check is
+  obfuscated (its methods are renamed), so FramePort didn''t recognise it and the "skip the OBB delivery check"
+  option never appeared. Detection now recognises the obfuscated predicate and frame.unreal_skip_obb_delivery
+  rewrites it to pass. frame.hw_video_decode gives the game''s videos the Frame''s hardware decoder.'
+tested_version: '0.518'
+engine: Unreal
+xr: VrApi
+frame:
+- frame.hw_video_decode
+- frame.unreal_skip_obb_delivery
+updated: '2026-10-15'
+min_app: 1.1.2
+source_hint: Medal of Honor
