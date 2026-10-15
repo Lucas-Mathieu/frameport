@@ -217,7 +217,7 @@ def test_delivery_ignores_unrelated_referenced_and_unsupported_methods():
 def test_triage_does_not_blame_only_a_wrong_version_when_crc_is_off():
     log = STUCK.replace("Boot complete!", "Boot complete!\nbVerifyOBBOnStartUp=false")
     finding = next(f for f in triage(log, "RUNNING", PKG).findings if f.id == "unreal-obb-check-stuck")
-    assert "skip patch already applied" in finding.diagnosis
+    assert "already disabled in the APK or by the skip patch" in finding.diagnosis
     assert "external-storage path" in finding.diagnosis
 
 

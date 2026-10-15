@@ -274,3 +274,11 @@ def test_suggestions_that_cant_matter_for_the_game_are_dropped():
     assert pipeline.useful_suggestions(PKG, ["adapter.equirect_emul", "adapter.scale=0.85"]) == ["adapter.scale=0.85"]
     library.update_game(PKG, lambda e: e["analysis"].update(graphics="GLES3"))
     assert pipeline.useful_suggestions(PKG, ["adapter.equirect_emul"]) == ["adapter.equirect_emul"]
+
+
+def test_session_projection_frames_without_pacing():
+    log = START + fb("17:39:02", "projection view 0: space=0x1") + fb("17:39:28", "focus: back after 20 ms")
+    result = session.analyze(log, PKG, {})
+    finding = next(f for f in result["findings"] if f["id"] == "frames-stopped")
+    assert finding["severity"] == "info"
+    assert finding in session.shown_findings(result)

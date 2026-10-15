@@ -91,7 +91,7 @@ signatures:
     pattern: 'xrCreateSwapchain \d+x\d+ .*faces=6 .*result=-\d+'
     unless: 'cube_standin: runtime refused'
     severity: fatal
-    diagnosis: The game asked for a cube-map swapchain (for example an OVROverlay skybox or loading cube), which the Frame's runtime doesn't have. OVRPlugin goes on without images and crashes in ovrp_EndFrame4 (Unity's render thread SIGSEGV in memset, for example Budget Cuts Ultimate). FrameBridge from FramePort 0.12 serves such swapchains itself and drops their cube layers (cube_standin, GLES games) - rebuild and reinstall the game.
+    diagnosis: The game asked for a cube-map swapchain (for example an OVROverlay skybox or loading cube), which the Frame's runtime doesn't have. OVRPlugin goes on without images and crashes in ovrp_EndFrame4 (Unity's render thread SIGSEGV in memset, for example Budget Cuts Ultimate). FrameBridge from FramePort 0.12 serves such swapchains itself and drops their cube layers (cube_standin, GLES games); rebuild and reinstall a GLES game to try this workaround. For a Vulkan game, the current build cannot stand in for the cube swapchain yet.
     suggest: [frame.adapter]
     supersedes: [unity-render-crash, native-crash]
   - id: swapchain-rect-invalid
@@ -381,12 +381,12 @@ signatures:
       The game stays on Unreal's OBB check screen (DownloaderActivity), which the Frame doesn't show, and never
       starts VR (for example Contractors, GitHub #159). Unreal checks that the data file (.obb) has the name and size
       this APK expects, and with bVerifyOBBOnStartUp it also reads the whole file to check it; a failed check waits
-      on an error screen. "Unreal - start without the OBB check" skips the content check. Copy the APK and OBB
+      on an error screen. "Unreal: start without the OBB check" (frame.unreal_skip_obb_check) skips only the CRC content check and applies only when the APK enables bVerifyOBBOnStartUp. Copy the APK and OBB
       from the same install, add the game again and reinstall.
-      If the downloader still appears with bVerifyOBBOnStartUp=false (the skip patch already applied), try
-      "Unreal: skip the OBB delivery check", an experimental bypass of the separate Java name and size gate
+      If the downloader still appears with bVerifyOBBOnStartUp=false (already disabled in the APK or by the skip patch), try
+      "Unreal: skip the OBB delivery check" (frame.unreal_skip_obb_delivery), an experimental bypass of the separate Java name and size gate
       (e.g. Into The Radius, GitHub #283). An external-storage path or visibility failure can reject an uploaded
-      OBB; the native engine still needs complete, matching, readable data.
+      OBB; neither option is a guaranteed fix, and the native engine still needs complete, matching, readable data.
     suggest: [frame.unreal_skip_obb_check, frame.unreal_skip_obb_delivery]
   - id: tbxr-fdm-shutdown-crash
     pattern: '(?s)\A(?=.*Fatal signal 11)(?=.*fdm_injection_xrDestroySwapchain)(?=.*TBXR_LeaveVR)'

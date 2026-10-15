@@ -35,6 +35,8 @@ class TriageResult:
     @property
     def verdict(self) -> str:
         fatal = [f for f in self.findings if f.severity == "fatal"]
+        if not fatal and any(f.id == "frames-stopped" for f in self.findings):
+            return "unknown"
         if (self.state == "RUNNING" or self.headless_end) and not fatal:
             return "pass"
         return "fail" if fatal or self.state in ("EXITED", "NEVER_STARTED") else "unknown"
@@ -157,13 +159,23 @@ def triage(log: str, state: str = "UNKNOWN", package: str | None = None, crash: 
     if fps:
         res.fps = float(fps[-1])
     stopped = frames_stopped(lines)
-    if (stopped and state == "RUNNING" and not res.headless_end
+    has_pacing = any(re.search(r"FrameBridge\s*: pacing:", ln) for ln in lines)
+    if (stopped and has_pacing and state == "RUNNING" and not res.headless_end
             and not any(f.severity == "fatal" for f in res.findings)):
         res.findings.append(Finding(
             "frames-stopped", "fatal",
             f"The game stopped sending frames {stopped:.0f} s before the test ended although its process kept "
             "running (a crashed or stuck render thread: a frozen picture in the headset).", [],
             "last FrameBridge pacing line"))
+    elif (stopped and not has_pacing and state in ("RUNNING", "UNKNOWN") and not res.headless_end
+          and not any(f.severity == "fatal" for f in res.findings)
+          and not any(re.search(m["pattern"], text) for m in db.get("headless_end") or [])):
+        res.findings.append(Finding(
+            "frames-stopped", "info",
+            "The game submitted projection frames but produced no FrameBridge pacing summary for at least "
+            f"{stopped:.0f} s while its process appeared alive. It may have stopped drawing; collect diagnostics "
+            "while the picture is stuck to investigate.", [],
+            "FrameBridge projection frames without a pacing summary", report=True))
     return res
 
 
@@ -221,12 +233,12 @@ LOGCAT_TIME = re.compile(r"^\d\d-\d\d (\d\d):(\d\d):(\d\d)\.(\d{3})")
 
 
 def frames_stopped(lines: list[str], gap: float = 20.0) -> float | None:
-    """Seconds between FrameBridge's last pacing line and the end of the log when that is over `gap` (the frame loop
-    died while the process lived on, e.g. The Room VR's render thread crash, PowerWash Simulator's rejected frames)."""
+    """Seconds since the last pacing summary (or initial projection submission if none), when over `gap`.
+    Twenty seconds allows several of FrameBridge's 5 s pacing windows before suspecting a stalled frame loop."""
     def secs(line):
         m = LOGCAT_TIME.match(line)
         return int(m[1]) * 3600 + int(m[2]) * 60 + int(m[3]) + int(m[4]) / 1000 if m else None
-    last_pacing = last = None
+    last_projection = last_pacing = last = None
     for ln in lines:  # logcat lines aren't strictly in time order: the latest time counts, not the last line
         t = secs(ln)
         if t is None:
@@ -234,8 +246,12 @@ def frames_stopped(lines: list[str], gap: float = 20.0) -> float | None:
         if last is not None and t < last - 43200:  # past midnight
             t += 86400
         last = t if last is None else max(last, t)
-        if "FrameBridge: pacing:" in ln:
-            last_pacing = t
+        if re.search(r"FrameBridge\s*: pacing:", ln):
+            last_pacing = t if last_pacing is None else max(last_pacing, t)
+        if re.search(r"FrameBridge\s*: (?:new layer: type=35\b|projection view \d+:)", ln):
+            last_projection = t if last_projection is None else max(last_projection, t)
+    if last_pacing is None:
+        last_pacing = last_projection
     if last_pacing is None or last is None:
         return None
     delta = last - last_pacing

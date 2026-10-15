@@ -482,3 +482,31 @@ def test_pixelripped_asset_status_error():
     assert "meta-asset-status-error" in {f.id for f in result.findings}
     assert "frame.asset_files_stub" in result.suggestions()
     assert "meta-asset-status-error" not in {f.id for f in triage("Asset status OK\n", "RUNNING").findings}
+
+
+def test_projection_frames_without_pacing_are_informational():
+    for projection in ("new layer: type=35 swapchain=0x1 usable=1", "projection view 0: space=0x1"):
+        log = (f"10-15 12:00:01.000  1  2 I FrameBridge: {projection}\n"
+               "10-15 12:00:26.000  1  2 I Game: still alive\n")
+        r = triage(log, "RUNNING")
+        f = next(f for f in r.findings if f.id == "frames-stopped")
+        assert f.severity == "info" and f.report and r.verdict == "unknown"
+        for state in ("EXITED", "NEVER_STARTED"):
+            assert "frames-stopped" not in [f.id for f in triage(log, state).findings]
+        for extra in ("FrameBridge: pacing: 72 fps", "OVRPortVrApi: EnterVrMode: no tracked head pose before deadline"):
+            normal = log + f"10-15 12:00:27.000  1  2 I {extra}\n"
+            assert "frames-stopped" not in [f.id for f in triage(normal, "RUNNING", headless=True).findings]
+        short = log.replace("12:00:26", "12:00:10")
+        assert "frames-stopped" not in [f.id for f in triage(short, "RUNNING").findings]
+
+
+def test_obb_and_cube_advice_describes_limits():
+    obb = triage("Displayed com.example.game/.DownloaderActivity", "RUNNING")
+    advice = next(f for f in obb.findings if f.id == "unreal-obb-check-stuck")
+    assert "only when the APK enables bVerifyOBBOnStartUp" in advice.diagnosis
+    assert "frame.unreal_skip_obb_delivery" in advice.diagnosis
+    assert "neither option is a guaranteed fix" in advice.diagnosis
+    cube = triage("FrameBridge: xrCreateSwapchain 512x512 format=43 faces=6 result=-9", "RUNNING")
+    advice = next(f for f in cube.findings if f.id == "cube-swapchain-refused")
+    assert "GLES" in advice.diagnosis
+    assert "For a Vulkan game, the current build cannot stand in" in advice.diagnosis
