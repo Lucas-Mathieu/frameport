@@ -510,3 +510,32 @@ def test_obb_and_cube_advice_describes_limits():
     advice = next(f for f in cube.findings if f.id == "cube-swapchain-refused")
     assert "GLES" in advice.diagnosis
     assert "For a Vulkan game, the current build cannot stand in" in advice.diagnosis
+
+
+# Deadly Delivery 1.0.30 (GitHub #322): renders, then its lobby's Meta entitlement check fails four times and it quits
+LOG_ENTITLEMENT = """
+10-15 12:45:23.964   212   240 I ActivityManager: Start proc 1214:com.FlatHeadStudio.DeadlyDelivery/u0a14 for \
+pre-top-activity {com.FlatHeadStudio.DeadlyDelivery/com.unity3d.player.UnityPlayerActivity}
+10-15 12:45:38.349  1214  1238 E Unity   : [LobbyManager]: Entitlement check failed: .
+10-15 12:45:38.349  1214  1238 E Unity   : FlatHeads.<>c__DisplayClass105_0:<CheckEntitlementAndConfigureAsync>b__0(Message)
+10-15 12:45:38.352  1214  1238 I Unity   : [LobbyManager]: Retrying oculus authentication in 2 seconds.
+10-15 12:45:43.372  1214  1286 I FrameBridge: pacing: 71.6 fps, displayTime vs predicted: avg 13.97 ms, max 83.33 ms
+10-15 12:45:46.349  1214  1238 I Unity   : stopping xr plugin
+10-15 12:45:47.424  1214  1238 I Unity   : [Photon] Disconnected from Photon (None)
+10-15 12:45:48.857  1214  1214 I Process : Sending signal. PID: 1214 SIG: 9
+"""
+
+
+def test_meta_entitlement_quest():
+    r = triage(LOG_ENTITLEMENT, "EXITED", "com.FlatHeadStudio.DeadlyDelivery")
+    f = next(f for f in r.findings if f.id == "meta-entitlement")
+    assert f.severity == "error" and f.suggest == []
+    assert "Entitlement check failed" in f.evidence
+    assert "oculus-entitlement" not in {x.id for x in r.findings}  # the Rift signature stays PC VR only
+    assert r.verdict == "fail"
+    assert "meta-entitlement" in {x.id for x in triage("E Unity: ovrPlatformInitialize_NotEntitled", "EXITED").findings}
+    # routine Platform SDK lines of games that work don't match; a game that logs it and keeps running still passes
+    for ok in ("I Unity   : CheckEntitlementAndConfigureAsync", "I Unity   : Entitlement check passed",
+               "I Unity   : ovr_Entitlement_GetIsViewerEntitled", "I Unity   : User is entitled"):
+        assert "meta-entitlement" not in {x.id for x in triage(ok + "\n" + LOG_OK, "RUNNING").findings}
+    assert triage("E Unity   : Entitlement check failed\n" + LOG_OK, "RUNNING").verdict == "pass"

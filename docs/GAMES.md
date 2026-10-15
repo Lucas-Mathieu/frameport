@@ -14,10 +14,12 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Asgard's Wrath 2 | Quest | ✅ Works |  |
 | Assassin's Creed Nexus | Quest | ✅ Works |  |
 | Audica | Quest | ✅ Works |  |
+| AugmentedEmpire | Quest | ✅ Works |  |
 | BAM | Quest | ✅ Works |  |
 | BARTENDER VR SIMULATOR | Quest | ✅ Works |  |
 | Batman: Arkham Shadow | Quest | ✅ Works |  |
 | BattleGlide | Quest | ✅ Works |  |
+| Battlemarked | Quest | ✅ Works |  |
 | BattleSisters | Quest | ✅ Works |  |
 | Beat Saber | Quest | ✅ Works |  |
 | Beat Saber | Quest | ✅ Works |  |
@@ -37,6 +39,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | cubism | Quest | ✅ Works |  |
 | Dance Central | Quest | ✅ Works |  |
 | Deep Cuts | Quest | ✅ Works |  |
+| Demeo | Quest | ✅ Works |  |
 | Demeter | Quest | ✅ Works |  |
 | Dinosaur Island | Quest | ✅ Works |  |
 | Doom3Quest | Quest | ✅ Works |  |
@@ -46,10 +49,12 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Eleven Table Tennis | Quest | ✅ Works |  |
 | Eleven: Table Tennis VR | PC VR | ✅ Works |  |
 | Espire 2 | Quest | ✅ Works |  |
+| Eye of the Temple | Quest | ✅ Works |  |
 | FrenzyVR | Quest | ✅ Works |  |
 | Fruit Ninja | Quest | ✅ Works |  |
 | Fruit Salon | Quest | ✅ Works |  |
 | Genotype | Quest | ✅ Works |  |
+| Ghost Town | Quest | ✅ Works |  |
 | Ghostbusters: Rise of the Ghost Lord | Quest | ✅ Works |  |
 | GORN2 | Quest | ✅ Works |  |
 | Gravity Lab | Quest | ✅ Works |  |
@@ -61,6 +66,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | In Death: Unchained | Quest | ✅ Works |  |
 | Into The Radius 2 | Quest | ✅ Works |  |
 | Job Simulator | Quest | ✅ Works |  |
+| Journey of the Gods | Quest | ✅ Works |  |
 | Jurassic World Aftermath Collection | Quest | ✅ Works |  |
 | Keep Talking and Nobody Explodes | Quest | ✅ Works |  |
 | Kill It With Fire VR | Quest | ✅ Works |  |
@@ -68,18 +74,23 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Lambda1VR | Quest | ✅ Works |  |
 | LEGO® Bricktales | Quest | ✅ Works |  |
 | Lucky's Tale | Quest | ✅ Works |  |
+| Maestro | Quest | ✅ Works |  |
 | Marvel's Deadpool VR | Quest | ✅ Works |  |
 | Marvel's Iron Man VR | Quest | ✅ Works |  |
 | Max Mustard | Quest | ✅ Works |  |
 | Medieval Dynasty New Settlement | Quest | ✅ Works |  |
 | Metro Awakening | Quest | ✅ Works |  |
+| Mini Motor Racing X | Quest | ✅ Works |  |
 | Mobile Suit Gundam: Silver Phantom | Quest | ✅ Works |  |
+| Moss | Quest | ✅ Works |  |
 | Moss: Book II | Quest | ✅ Works |  |
 | Munkr Funkr (The Legacy Days) | Quest | ✅ Works |  |
 | Nano | Quest | ✅ Works |  |
 | NEX Player | Quest | ✅ Works |  |
 | NFL PRO ERA II | Quest | ✅ Works |  |
 | NOPE CHALLENGE | Quest | ✅ Works |  |
+| Ocean Rift | Quest | ✅ Works |  |
+| Operation Wolf Returns: First Mission VR | Quest | ✅ Works |  |
 | palazzo_santacruz | Quest | ✅ Works |  |
 | Path of the Warrior | Quest | ✅ Works |  |
 | Pistol Whip | Quest | ✅ Works |  |
@@ -97,9 +108,11 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Riven | Quest | ✅ Works |  |
 | Robo Recall | Quest | ✅ Works |  |
 | RUINSMAGUS | Quest | ✅ Works |  |
+| Shadow Point | Quest | ✅ Works |  |
 | Shoot The Zombirds VR | Quest | ✅ Works |  |
 | Shores of Loci | Quest | ✅ Works |  |
 | SilentSlayer | Quest | ✅ Works |  |
+| Smash Drums | Quest | ✅ Works |  |
 | Sniper Elite VR | Quest | ✅ Works |  |
 | Sniper Elite VR: Winter Warrior | Quest | ✅ Works |  |
 | Space Pirate Trainer Quest | Quest | ✅ Works |  |
@@ -112,6 +125,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | SUPERHOT VR | Quest | ✅ Works |  |
 | SynthRiders | Quest | ✅ Works |  |
 | Taskmaster | Quest | ✅ Works |  |
+| Tea For God | Quest | ✅ Works |  |
 | TetrisEffect | Quest | ✅ Works |  |
 | The Boys VR | Quest | ✅ Works |  |
 | The Climb 2 | Quest | ✅ Works |  |
@@ -128,6 +142,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Vader Immortal: Episode II | Quest | ✅ Works |  |
 | Vader Immortal: Episode III | Quest | ✅ Works |  |
 | Vampire Survivors | Quest | ✅ Works |  |
+| Vendetta Forever | Quest | ✅ Works |  |
 | VR HOT Quest | Quest | ✅ Works |  |
 | VR4 | Quest | ✅ Works |  |
 | Walkabout Mini Golf | Quest | ✅ Works |  |
@@ -144,12 +159,15 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | ExploreVR | Quest | ⚠️ Works with issues | The 3D world warps and shifts with head movement (wrong perspective). |
 | Fisherman | Quest | ⚠️ Works with issues | Loading screens have corruption, but everything works otherwise. |
 | Freedom | Quest | ⚠️ Works with issues | Volume can't be changed in the game. |
+| Homeworld: Vast Reaches | Quest | ⚠️ Works with issues | The game starts but after selecting to start a new game it seems to crash. |
 | MacacoVR | Quest | ⚠️ Works with issues | 2d loading screens are glitchy, otherwise main gameplay is fine |
 | Majora's Mask VR | Quest | ⚠️ Works with issues | Audio on the file select screen sounds crunchy. |
 | Myst | Quest | ⚠️ Works with issues | Minor graphical glitches on some objects. |
 | Phantom: Covert Ops | Quest | ⚠️ Works with issues | DLC/store button crashes (no Meta store). |
 | Pinball FX VR | Quest | ⚠️ Works with issues | Plays; mixed reality mode not working yet. |
 | Plezy | Quest | ⚠️ Works with issues | Some videos play with strong artifacts and wrong colours; the cause is unknown, possibly hardware video decoding. |
+| Quantum Void | Quest | ⚠️ Works with issues | no hands |
+| Ragnarock | Quest | ⚠️ Works with issues |  |
 | Silhouette | Quest | ⚠️ Works with issues | Hand-tracking game; the Frame synthesizes hands from controllers, so it is janky. |
 | Spunky Dungeon | Quest | ⚠️ Works with issues | Gear VR / Oculus Go game (32-bit only), runs through FramePort's 32-bit bridge (experimental). |
 | Swarm 2 | Quest | ⚠️ Works with issues | MSAA creates visible seams around edge geometry and also the skybox edge |
@@ -158,9 +176,8 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Time Stall | Quest | ⚠️ Works with issues | Both eyes distort during movement (unresolved). |
 | Vermillion | Quest | ⚠️ Works with issues | Runs. |
 | WiiCompiled VR | Quest | ⚠️ Works with issues | To add a game: in FramePort's Files tab, upload your .wcgame file to this game's storage, folder Android/data/org.wiicompiled.quest/files/WiiCompiledOpenXRVR… |
+| Deadly Delivery | Quest | ❌ Doesn't run | Quits after Meta's entitlement check fails: it needs Meta's online services. |
 | Espire 1: VR Operative (Quest Edition) | Quest | ❌ Doesn't run | Mesa GL driver crash during texture upload. |
 | GOLF+ | Quest | ❌ Doesn't run | Black screen. |
 | HITMAN 3 VR: Reloaded | Quest | ❌ Doesn't run | Vulkan driver crash (freedreno), even without Valve layers. |
-| Journey of the Gods | Quest | ❌ Doesn't run | 32-bit only; the Frame has no AArch32. |
 | Roblox | Quest | ❌ Doesn't run | Crashes on its first VR frame on the Frame. |
-| Shadow Point | Quest | ❌ Doesn't run | 32-bit only; the Frame has no AArch32. |

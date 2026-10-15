@@ -1,0 +1,10 @@
+package: com.FlatHeadStudio.DeadlyDelivery
+title: Deadly Delivery
+status: unsupported
+notes: "Quits after Meta's entitlement check fails: it needs Meta's online services."
+tested_version: 1.0.30
+engine: Unity
+xr: OpenXR
+verified:
+  date: '2026-10-15'
+  issue: 322

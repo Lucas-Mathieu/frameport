@@ -11,6 +11,16 @@ signatures:
     severity: error
     diagnosis: A DLC manager reports a Meta asset-file status error after VR starts (e.g. PixelRipped 1995). The asset-file check failed; the log does not identify the native call or asset ID. Try the experimental asset-file bypass (empty list, installed status with no file path); this does not supply DLC and has not been verified in the game.
     suggest: [frame.asset_files_stub]
+  - id: meta-entitlement
+    # Quest games (the pcvr oculus-entitlement signature covers Rift games). Only explicit failure results: a bare
+    # ovr_PlatformInitialize error isn't matched. `error`, not fatal: offline games may log it and play on; an online
+    # game that then quits (e.g. Deadly Delivery, GitHub #322) fails the test through its exit.
+    pattern: '(?i)entitlement check failed|\bnot entitled to (use|play)|ovrPlatformInitialize_(NotEntitled|UnableToVerify|FileInvalid|SignatureInvalid)'
+    severity: error
+    diagnosis: The game's Meta licence check (entitlement) failed. It needs Meta's online login and licence check,
+      which the Frame doesn't have; games that depend on it (often online games) quit or stay offline. FramePort
+      doesn't get around such checks.
+    suggest: []
   - id: lua-lightuserdata-pointer
     pattern: 'bad light userdata pointer'
     severity: fatal
