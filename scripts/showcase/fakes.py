@@ -296,7 +296,7 @@ class FakeMonitorSession:
                        "clusters": [{"cpus": [0, 1], "max_mhz": 2265}, {"cpus": [2, 3, 4], "max_mhz": 3148},
                                     {"cpus": [5, 6], "max_mhz": 2956}, {"cpus": [7], "max_mhz": 3052}],
                        "temp_groups": ["CPU", "GPU", "Memory", "Battery", "NPU", "Power ICs", "Modem", "Camera"]}
-        self.t = 0
+        self.t, self.t0 = 0, None
         threading.Thread(target=self._run, daemon=True).start()
 
     def _sample(self) -> dict:
@@ -314,8 +314,13 @@ class FakeMonitorSession:
                   "rss": r, "age": 1500 + t, "uid": 1000, "critical": grp in ("steamvr", "steam"), "locked": False,
                   "context": grp != "game"}
                  for i, (n, grp, c, gp, r) in enumerate(self.PROCS) if not (idle and grp == "game")]
+        if t == 0 or self.t0 is None:
+            self.t0 = time.time()
+        # the two minutes sent first get exact 1 s steps (the Monitor's numbers are averaged by time: the real clock's
+        # jitter between samples made every render of a page differ on slow machines), later samples the real time
+        when = self.t0 - (self.BACKFILL - t) if t <= self.BACKFILL else time.time()
         return {
-            "t": time.time() - max(0, self.BACKFILL - t), "dt": 1.0, "self_ms": 11.5,
+            "t": when, "dt": 1.0, "self_ms": 11.5,
             "cpu": {"total": round(15 + wave(4, 4), 1), "cores": [round(4 + wave(30, 3 + i, i), 1) for i in range(8)],
                     "mhz": [2265, 1996, 1920, 518]},
             "gpu": {"busy": round(52 + wave(8, 5), 1), "mhz": 903},
