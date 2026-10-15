@@ -904,6 +904,13 @@ hide_space_warp / vk_hide_fdm / no Valve layers; FNAF HW (#135) "freeze" = first
 on Zink (threads busy in zink/disk cache), not a hang; VR4 (#199) reporter's patch.203 OBB truncated. Upload benchmark
 (`scripts/upload_bench.py`, #242): home Wi-Fi caps every method at ~11 MB/s; paramiko uses ~3x OpenSSH's CPU; Windows
 OpenSSH refuses FramePort's key file (ACL "bad permissions") until its permissions are tightened.
+**OpenSSH uploads (2026-10-15, #324/#242):** sftp escapes `* ? [` inside double quotes itself (and undoes it for
+put's destination), so `native_upload.quote` escapes only `\\`/`"`; Win32 sftp turns every local backslash into `/`
+(escapes too) → local paths go as `C:/…`. Logins: `Frame.auth` = the attempt that worked (app_key / user_key = a key
+file from Settings → Installing → SSH keys, library `ssh.extra_keys`, CLI `frame ssh-keys` / agent / password).
+OpenSSH strict (FramePort + Settings keys, IdentitiesOnly) unless auth was "agent"; a refused strict login retries
+relaxed (+ private copies of ~/.ssh/id_{rsa,dsa,ecdsa,ed25519}: OpenSSH skips its defaults once any -i is given, + the
+agent); `-v` key lines go into the error. FramePort doesn't add its key to the Frame for this. Windows-tested.
 **Meta user id (GitHub #182, 2026-10-11):** OVRPort's platform loader (runtimes 3.4.3-23204ea and -aa54c3f) answers
 `ovr_GetLoggedInUserID` (and two other callers) without a Meta account with a made-up id from a helper (`stp; mov x29,
 sp; bl random; …; mov/movk x9 = 0x53444835ec580000 (6e18); add x0, x8, x9; ldp; ret`), kept only in memory → a new id

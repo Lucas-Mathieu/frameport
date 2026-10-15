@@ -131,8 +131,54 @@ class SettingsView:
                           C.meta(tr("Large files upload together using OpenSSH when available. "
                                     "Default: 3. Lower this on a busy network.")),
                           C.ghost(tr("Remove converted copies now"), ft.Icons.CLEANING_SERVICES_OUTLINED, clean,
-                                  tooltip=tr("Your own game files aren't touched."))],
+                                  tooltip=tr("Your own game files aren't touched.")),
+                          ft.Container(height=T.S2), self.ssh_keys()],
                          spacing=T.S2, horizontal_alignment=ft.CrossAxisAlignment.START)
+
+    def ssh_keys(self) -> ft.Control:
+        """Settings → Installing: private key files FramePort logs in with besides its own (frame.connection
+        EXTRA_KEYS_SETTING; the Frame connection and OpenSSH uploads both use them, GitHub #242)."""
+        from ...frame import connection
+
+        app = self.app
+        rows = ft.Column(spacing=T.S1)
+
+        def fill():
+            items = []
+            for path, problem in connection.extra_key_status():
+                items.append(ft.Row([
+                    C.as_icon(ft.Icons.KEY_ROUNDED if not problem else ft.Icons.WARNING_AMBER_ROUNDED, T.px(18),
+                              T.TEXT_2 if not problem else T.WARN),
+                    ft.Column([C.body(path.name, T.TEXT), C.meta(problem or str(path), selectable=True)],
+                              spacing=0, expand=True),
+                    C.icon_btn(ft.Icons.DELETE_OUTLINE_ROUNDED, tr("Stop using this key (the file stays)"),
+                               on_click=lambda e, p=path: remove(p)),
+                ], spacing=T.S2, vertical_alignment=ft.CrossAxisAlignment.CENTER))
+            rows.controls = items or [C.meta(tr("Only FramePort's own key, and your SSH agent's keys."))]
+            C.update(rows)
+
+        def remove(path):
+            connection.remove_extra_key(path)
+            fill()
+
+        async def add(e):
+            for path in await C.pick_files(app.page, dialog_title=tr("Private SSH key file (not the .pub file)"),
+                                           multiple=True):
+                try:
+                    stored = connection.add_extra_key(path)
+                except connection.KeyFileError as exc:
+                    app.toast(tr("That key can't be used: {error}").format(error=exc), error=True)
+                    continue
+                app.toast(tr("FramePort also logs in with {name} from the next connection.").format(name=stored.name))
+            fill()
+
+        fill()
+        return ft.Column([
+            ft.Row([C.body(tr("SSH keys"), T.TEXT, weight=ft.FontWeight.W_500), C.help_icon("ssh_keys")],
+                   spacing=T.px(4), vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            rows,
+            C.secondary(tr("Add a key file…"), ft.Icons.VPN_KEY_ROUNDED, add),
+        ], spacing=T.S2, horizontal_alignment=ft.CrossAxisAlignment.START)
 
     def updates_card(self) -> ft.Control:
         """Settings → Updates: FramePort's own updates (ui/updater.py, frameport/updates.py)."""

@@ -62,6 +62,9 @@ HELP: dict[str, str] = _Translated({
     "hw_video_decode": "Games with the Hardware video decoding patch play their videos on the Frame's video hardware. "
                        "Turn it off if videos misbehave; games pick it up at their next start. For one game only, put "
                        "FRAMEPORT_NO_HW_VIDEO=1 before %command% in its Steam launch options.",
+    "ssh_keys": "FramePort logs in to the Frame with its own key. If your Frame accepts only one of your own keys, "
+                "add that private key file here; fast uploads use it too. A key with a passphrase: add it to your SSH "
+                "agent instead.",
     "launch_test": "Starts the game on the Frame while nobody wears the headset and reads the log: did it start and "
                    "draw frames. It can't check the picture.",
     "last_session": "After you play a game on the Frame, FramePort reads that session's log: crashes, frame rate and "

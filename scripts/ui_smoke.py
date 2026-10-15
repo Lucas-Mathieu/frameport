@@ -137,7 +137,8 @@ def main() -> int:
              ("monitor", lambda a: a.go("monitor")), ("monitor-details", open_monitor_details),
              ("tools", lambda a: a.go("settings")),
              # the index on the left: "This PC" scrolls the page there
-             ("settings-index", lambda a: a.page.run_task(a.settings_view.show_section, "pc"))]
+             ("settings-index", lambda a: a.page.run_task(a.settings_view.show_section, "pc")),
+             ("settings-installing", lambda a: a.page.run_task(a.settings_view.show_section, "installing"))]
     if game:
         steps.insert(1, ("game", lambda a: a.open_game(game)))
         steps.insert(2, ("game-customize", lambda a: a.open_game(game, advanced=True)))

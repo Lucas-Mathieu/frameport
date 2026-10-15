@@ -706,6 +706,31 @@ def frame_trust_key(frame: Optional[str] = typer.Option(None, help=FRAME_HELP)):
     typer.echo(f"connected: {info.get('hostname') or t.host} (new key saved)")
 
 
+@frame_app.command("ssh-keys")
+def frame_ssh_keys(add: list[str] = typer.Option([], "--add", help="a private key file to log in with too"),
+                   remove: list[str] = typer.Option([], "--remove", help="stop using this key file (it stays)")):
+    """Private SSH key files FramePort logs in with besides its own key (Settings → Installing → SSH keys): for a
+    Frame that accepts only your own key. The Frame connection and OpenSSH uploads both use them. Lists them."""
+    from .frame.connection import KeyFileError, add_extra_key, extra_key_status, remove_extra_key
+
+    failed = False
+    for path in remove:
+        typer.echo(f"removed {path}" if remove_extra_key(path) else f"not in the list: {path}")
+    for path in add:
+        try:
+            typer.echo(f"added {add_extra_key(path)}")
+        except KeyFileError as exc:
+            typer.echo(f"can't use {path}: {exc}", err=True)
+            failed = True
+    status = extra_key_status()
+    for path, problem in status:
+        typer.echo(f"{path}" + (f"  (not usable: {problem})" if problem else ""))
+    if not status:
+        typer.echo("no extra keys: FramePort's own key and your SSH agent's keys only")
+    if failed:
+        raise typer.Exit(1)
+
+
 @frame_app.command("usb-check")
 def frame_usb_check(frame: Optional[str] = typer.Option(None, help=FRAME_HELP),
                     no_speed: bool = typer.Option(False, help="skip the upload speed test (2 × 128 MB)")):

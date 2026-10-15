@@ -1,8 +1,8 @@
 """SSH connection to a Steam Frame and the remote agent protocol.
 
 Authentication: FramePort's own keys first (<user data>/ssh/id_ed25519, installed by the bootstrap script, and
-id_rsa, registered through Valve's devkit pairing, which only takes RSA keys), then the user's SSH agent/keys, then a
-password if given.
+id_rsa, registered through Valve's devkit pairing, which only takes RSA keys), then key files the user added in
+Settings (EXTRA_KEYS_SETTING), then the user's SSH agent/keys, then a password if given.
 """
 from __future__ import annotations
 
@@ -160,6 +160,96 @@ def app_keys() -> list[paramiko.PKey]:
     keys: list[paramiko.PKey] = [app_key()]
     if (ssh_dir() / "id_rsa").exists():
         keys.append(devkit_key())
+    return keys
+
+
+EXTRA_KEYS_SETTING = "ssh.extra_keys"  # library setting: private key files the user added (Settings → Installing)
+
+
+class KeyFileError(ValueError):
+    """A key file the user named can't be used (missing, not a private key, protected with a passphrase)."""
+
+
+def load_key_file(path) -> paramiko.PKey:
+    """A private key FramePort can log in with, or KeyFileError with a sentence saying why not."""
+    p = Path(path).expanduser()
+    if not p.is_file():
+        raise KeyFileError(f"{p}: file not found")
+    try:
+        return paramiko.PKey.from_path(p)
+    except (paramiko.SSHException, ValueError, OSError, UnicodeDecodeError, TypeError) as exc:
+        # paramiko says so with PasswordRequiredException (PEM) or a plain SSHException (OpenSSH format)
+        if isinstance(exc, paramiko.PasswordRequiredException) or "password" in str(exc).lower():
+            raise KeyFileError(f"{p.name} is protected with a passphrase, which FramePort can't ask for: add the "
+                               "key to your SSH agent instead (FramePort also logs in with the agent's keys)") from None
+        raise KeyFileError(f"{p.name} isn't a private SSH key FramePort can read "
+                           f"(OpenSSH or PEM format; a .pub file is the public half): {exc}") from None
+
+
+def extra_key_paths() -> list[Path]:
+    """The key files from Settings, as stored (each may be missing or unreadable by now: see extra_keys)."""
+    try:
+        from ..core import library
+
+        stored = library.peek_setting(EXTRA_KEYS_SETTING, [])
+    except Exception:  # noqa: BLE001 - no library yet
+        return []
+    if isinstance(stored, str):
+        stored = [stored]
+    paths: list[Path] = []
+    for value in stored if isinstance(stored, list) else []:
+        if isinstance(value, str) and value.strip():
+            p = Path(value.strip()).expanduser()
+            if p not in paths:
+                paths.append(p)
+    return paths
+
+
+def add_extra_key(path) -> Path:
+    """Check a key file (KeyFileError if FramePort can't use it) and add it to Settings. Returns the stored path."""
+    p = Path(path).expanduser()
+    if p.name.endswith(".pub") and p.with_name(p.name[:-4]).is_file():
+        raise KeyFileError(f"{p.name} is the public half: pick {p.name[:-4]} (the file without .pub) instead")
+    load_key_file(p)
+    p = p.resolve()
+    from ..core import library
+
+    library.update_setting(EXTRA_KEYS_SETTING, lambda old: [v for v in (old if isinstance(old, list) else [])
+                                                              if Path(v).expanduser() != p] + [str(p)], [])
+    return p
+
+
+def remove_extra_key(path) -> bool:
+    """Take a key file out of Settings (the file itself stays). False if it wasn't there."""
+    from ..core import library
+
+    p = Path(path).expanduser()
+    before = extra_key_paths()
+    library.update_setting(EXTRA_KEYS_SETTING, lambda old: [v for v in (old if isinstance(old, list) else [])
+                                                              if Path(v).expanduser() != p], [])
+    return p in before
+
+
+def extra_key_status() -> list[tuple[Path, str]]:
+    """Each key file from Settings with "" when usable, else why not (for Settings and the CLI)."""
+    status = []
+    for path in extra_key_paths():
+        try:
+            load_key_file(path)
+            status.append((path, ""))
+        except KeyFileError as exc:
+            status.append((path, str(exc)))
+    return status
+
+
+def extra_keys() -> list[tuple[Path, paramiko.PKey]]:
+    """The usable keys from Settings; unusable ones are logged and skipped (a login still tries the others)."""
+    keys = []
+    for path in extra_key_paths():
+        try:
+            keys.append((path, load_key_file(path)))
+        except KeyFileError as exc:
+            log.warning("SSH key from Settings skipped: %s", exc)
     return keys
 
 
@@ -409,6 +499,10 @@ class Frame:
     _video_codec_digest: str = ""  # "<manifest digest>:<on|off>" handled on this connection (incl. a failed install)
     _video_codec_lock: threading.Lock = field(default_factory=threading.Lock)
     home: str = ""
+    # how the last login worked: "app_key" (FramePort's own key), "user_key" (a key file from Settings),
+    # "agent" (this PC's SSH agent / ~/.ssh keys) or "password"; OpenSSH uploads follow it (native_upload)
+    auth: str = ""
+    openssh_relaxed: bool | None = None  # native_upload: True once OpenSSH needed this PC's own keys/agent
 
     # ------------------------------------------------------------------ connect
     def connect(self, timeout: float = 10) -> Frame:
@@ -459,7 +553,8 @@ class Frame:
         kwargs = dict(hostname=self.target.host, port=self.target.port, username=self.target.user, timeout=timeout,
                       banner_timeout=timeout, auth_timeout=timeout)
         errors = []
-        attempts = [("app_key", k) for k in app_keys()] + [("agent", None), ("password", None)]
+        attempts = ([("app_key", k) for k in app_keys()] + [("user_key", k) for _, k in extra_keys()]
+                    + [("agent", None), ("password", None)])
         for attempt, pkey in attempts:
             if attempt == "password" and not self.password:
                 continue
@@ -467,7 +562,7 @@ class Frame:
             client.load_host_keys(str(known))
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # trust on first use (pairing)
             try:
-                if attempt == "app_key":
+                if attempt in ("app_key", "user_key"):
                     client.connect(pkey=pkey, allow_agent=False, look_for_keys=False, **kwargs)
                 elif attempt == "agent":
                     client.connect(allow_agent=True, look_for_keys=True, **kwargs)
@@ -492,6 +587,7 @@ class Frame:
                 raise
         else:
             raise FrameNotPaired(bool(self.password), errors)
+        self.auth = attempt
         client.save_host_keys(str(known))
         transport = client.get_transport()
         transport.set_keepalive(15)

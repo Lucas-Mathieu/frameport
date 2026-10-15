@@ -93,10 +93,11 @@ def setup_batch(tmp_path, monkeypatch, code=0):
     monitor.stat.side_effect = stat
     monitor.remove.side_effect = lambda path: files.pop(path)
     frame = SimpleNamespace(sftp=monitor, client=SimpleNamespace(open_sftp=lambda: monitor),
-                            target=FrameTarget("paired"), run=Mock(return_value=(0, "", "")))
+                            target=FrameTarget("paired"), run=Mock(return_value=(0, "", "")), modes_seen=[])
     monkeypatch.setattr(native.shutil, "which", lambda _: "sftp")
     @contextlib.contextmanager
-    def creds(frame):
+    def creds(frame, relaxed=False):
+        frame.modes_seen.append(relaxed)
         yield ["-o", "StrictHostKeyChecking=yes"]
     monkeypatch.setattr(native, "credentials", creds)
     commands, processes = [], []
@@ -238,7 +239,7 @@ def setup_tar(tmp_path, monkeypatch, code=0):
 
     path = tmp_path / "small.bin"
     path.write_bytes(b"payload")
-    frame = SimpleNamespace(target=FrameTarget("paired.example", port=2222))
+    frame = SimpleNamespace(target=FrameTarget("paired.example", port=2222), modes_seen=[])
     pipe = io.BytesIO()
     pipe.close = lambda: None
     process = Mock(stdin=pipe, returncode=code)
@@ -247,8 +248,9 @@ def setup_tar(tmp_path, monkeypatch, code=0):
     monkeypatch.setattr(native.subprocess, "Popen", popen)
     monkeypatch.setattr(native.shutil, "which", lambda _: "ssh")
     @contextlib.contextmanager
-    def creds(frame, port_flag):
+    def creds(frame, port_flag, relaxed=False):
         assert port_flag == "-p"
+        frame.modes_seen.append(relaxed)
         yield ["-o", "StrictHostKeyChecking=yes", port_flag, "2222"]
     monkeypatch.setattr(native, "credentials", creds)
     return frame, [(path, "nested/small.bin")], process, popen, pipe
