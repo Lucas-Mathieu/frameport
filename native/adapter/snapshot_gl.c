@@ -1,6 +1,6 @@
 // FramePort FrameBridge: eye-image snapshots for headless diagnostics (setting snapshot=<seconds>, GLES games only).
 // Every <seconds>, at xrEndFrame, the left-eye image the game just submitted (projection layer, view 0: its swapchain
-// image and array layer) is read back on the game's own GL context and written at a quarter of its size as
+// image and array layer; without a projection layer the first quad/cylinder layer's) is read back on the game's own GL context and written at a quarter of its size as
 // /sdcard/Android/data/<package>/files/fb_snap_<n>.ppm (n = 0-7, the oldest is overwritten). Nobody wears the headset
 // in a launch test, so the headset view stays black: this shows what the game itself draws (e.g. which screen it is
 // stuck on). The game's framebuffer, pack-buffer and pack-alignment bindings are restored afterwards.
@@ -118,18 +118,27 @@ static void snap_end_frame(const XrFrameEndInfo *info) {
     int64_t t = (int64_t)now.tv_sec * 1000000000ll + now.tv_nsec;
     if (t < next_ns) return;
     next_ns = t + (int64_t)snapshot * 1000000000ll;
-    const XrCompositionLayerProjection *proj = NULL;
-    for (uint32_t i = 0; i < info->layerCount && !proj; ++i)
+    // The projection layer's left eye; a frame without one (e.g. a menu shown only as a quad or cylinder layer) gives
+    // its first quad/cylinder layer's image instead.
+    const XrSwapchainSubImage *sub = NULL;
+    int type = 0;
+    for (uint32_t i = 0; i < info->layerCount && !sub; ++i)
         if (info->layers[i] && info->layers[i]->type == XR_TYPE_COMPOSITION_LAYER_PROJECTION &&
             ((const XrCompositionLayerProjection *)info->layers[i])->viewCount)
-            proj = (const XrCompositionLayerProjection *)info->layers[i];
-    if (!proj || !snap_load_gl()) return;
+            sub = &((const XrCompositionLayerProjection *)info->layers[i])->views[0].subImage, type = info->layers[i]->type;
+    for (uint32_t i = 0; i < info->layerCount && !sub; ++i) {
+        const XrCompositionLayerBaseHeader *layer = info->layers[i];
+        if (layer && layer->type == XR_TYPE_COMPOSITION_LAYER_QUAD)
+            sub = &((const XrCompositionLayerQuad *)layer)->subImage, type = layer->type;
+        else if (layer && layer->type == XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR)
+            sub = &((const XrCompositionLayerCylinderKHR *)layer)->subImage, type = layer->type;
+    }
+    if (!sub || !snap_load_gl()) return;
     if (!s_eglGetCurrentContext()) {
         static int logged;
         if (!logged++) LOG("snapshot: no GL context current in xrEndFrame, no snapshot");
         return;
     }
-    const XrSwapchainSubImage *sub = &proj->views[0].subImage;
     pthread_mutex_lock(&snap_lock);
     int i = snap_find(sub->swapchain, 0);
     GLuint tex = 0;
@@ -167,6 +176,21 @@ static void snap_end_frame(const XrFrameEndInfo *info) {
     s_glDeleteFramebuffers(1, &fb);
     while (s_glGetError() != GL_NO_ERROR) {}  // our calls must not leave errors for the game to find
     if (rgba) {
+        // brightness of the submitted area: tells a black image from a drawn one without fetching the file
+        uint64_t sum = 0, n = 0;
+        unsigned max = 0;
+        const XrRect2Di *r = &sub->imageRect;
+        for (int32_t y = r->offset.y; y < r->offset.y + r->extent.height; y += 4)
+            for (int32_t x = r->offset.x; x < r->offset.x + r->extent.width; x += 4) {
+                if (x < 0 || y < 0 || (uint32_t)x >= w || (uint32_t)y >= h) continue;
+                const unsigned char *p = rgba + ((size_t)y * w + (size_t)x) * 4;
+                unsigned v = p[0] > p[1] ? (p[0] > p[2] ? p[0] : p[2]) : (p[1] > p[2] ? p[1] : p[2]);
+                sum += v, ++n;
+                if (v > max) max = v;
+            }
+        LOG("snapshot: layer type=%d image %u array=%u rect=%d,%d %dx%d of %ux%u: mean %.1f max %u",
+            type, tex, sub->imageArrayIndex, r->offset.x, r->offset.y, r->extent.width, r->extent.height, w, h,
+            n ? (double)sum / (double)n : 0.0, max);
         snap_write(rgba, w, h, taken++ % 8);
         free(rgba);
     }
