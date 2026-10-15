@@ -1055,6 +1055,13 @@ GitHub identity + credentials are maintainer-local (`CLAUDE.local.md`): check `g
 GitHub write. **The owner approves before posting, labelling or closing anything.** Reply style: "I"/neutral, never
 we/our/us; never mention agent version numbers or internal tool versions; show the owner every draft in full with a
 short recap of the thread so far; read **all** comments on a thread first (a later one often has the zip or the answer).
+- **Every triage also sweeps for unanswered comments**, not just new threads: open AND recently closed issues, PRs
+  (incl. merged/closed ones) and discussions (top-level comments and their replies) whose latest comment isn't the
+  maintainer's, plus earlier user comments a later maintainer reply skipped. Users often ask follow-ups after a fix or
+  after closing (#294: two questions after the reporter closed it; #249: a Q&A discussion with no reply for days;
+  #161/#110: requests posted after the close). Quick check: `gh issue list --state all --search "updated:>=<date>"
+  --json number,comments --jq '.[] | select(.comments[-1].author.login != "spoopyghosty0")'`; discussions via GraphQL
+  (`discussions(orderBy:UPDATED_AT)` with `comments{replies}`).
 - **Issue templates & labels** (`.github/ISSUE_TEMPLATE/`): `[Game report]` → `game-compatibility` (a game that
   doesn't work right); `[Working recipe]` (`working-config.yml`) → `working-config` (a headset-verified config to add);
   `[App]` → `bug` (FramePort itself). Mislabel/relabel to match.
