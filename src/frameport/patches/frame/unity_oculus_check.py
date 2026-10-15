@@ -112,10 +112,8 @@ class UnityOculusCheck(Patch):
         return a.engine == "Unity" and "libOVRPlugin.so" in a.libs and bool((a.extra or {}).get("unity_oculus_check"))
 
     def detect(self, a):
-        # XR Plugin Management starts VR through libOculusXRPlugin.so, rather than this built-in device check.
-        # The string may remain in libunity.so (Lucky's Tale runs either way; AGENTS.md). Keep applies() broad so
-        # the legacy fix remains available manually, but don't infer an active built-in path from the string alone.
-        if self.applies(a) and "libOculusXRPlugin.so" not in a.libs:
+        # not narrowed by libOculusXRPlugin.so: a verified game ships it and still needs this fix
+        if self.applies(a):
             return Suggestion(True, "Unity with built-in Oculus support: it checks for Meta's system apps before "
                                     "starting VR, else it runs as a 2D app (for example Accounting+, BattleSisters).")
         return None

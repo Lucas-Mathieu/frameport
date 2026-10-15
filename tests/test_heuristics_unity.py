@@ -72,12 +72,11 @@ def test_built_in_oculus_path_still_needs_system_app_bypass(version):
     assert p.id in suggest(a, use_catalog=False).patches
 
 
-def test_oculus_xr_plugin_does_not_use_the_builtin_startup_check():
+def test_oculus_xr_plugin_still_gets_the_builtin_startup_check():
+    """A verified game (com.coatsink.alone) ships libOculusXRPlugin.so and still needs the bypass."""
     a = _il2cpp(libs=["libunity.so", "libil2cpp.so", "libOVRPlugin.so", "libOculusXRPlugin.so"],
                 extra={"unity_version": "2019.4.35f1", "unity_oculus_check": True})
-    p = base.get("frame.unity_oculus_check")
-    assert p.detect(a) is None and p.applies(a)
-    assert p.id not in suggest(a, use_catalog=False).patches
+    assert base.get("frame.unity_oculus_check").detect(a).recommended
 
 
 def test_oculus_metadata_field_alone_does_not_prove_a_native_plugin_path():
