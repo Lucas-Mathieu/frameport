@@ -486,6 +486,11 @@ class AdapterSetting(Patch):
                                     "Tale, BattleSisters): vibrations are converted before they reach it.",
                               {"value": 1})
         if (self.key == "pose_time_fix" and a.engine == "Unity" and "libOVRPlugin.so" in a.libs
+                # Absence of the Oculus XR Plugin isn't proof of Unity's built-in VR: Unity OpenXR games can
+                # bundle OVRPlugin too. The system-app check in libunity is positive evidence of built-in Oculus
+                # (analysis/detect.py, frame/unity_oculus_check.py). Older analyses lack this signal; converted
+                # inputs may have had the check rewritten to "android", so keep the legacy fallback for those.
+                and (a.extra.get("unity_oculus_check", True) or a.is_overport_output)
                 and not a.extra.get("oculus_xr_plugin") and "libOculusXRPlugin.so" not in a.libs):
             return Suggestion(True, "Unity's built-in Oculus support reads controller poses through OVRPlugin at its "
                                     "monotonic \"now\", seconds in the past on the Frame: they are located at the "
