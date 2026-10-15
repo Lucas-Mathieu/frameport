@@ -10,8 +10,8 @@ pytestmark = pytest.mark.games
 
 # 2026-10-15 snapshot baseline: 3/65 supported games exact, patch F1=240/495; rounded down to two decimals.
 # See scripts/eval_heuristics.py; runtime-only choices and unsupported catalog entries are excluded.
-MIN_HEURISTICS_EXACT_RATIO = 0.04
-MIN_HEURISTICS_PATCH_F1 = 0.48
+MIN_HEURISTICS_EXACT_RATIO = 0.07
+MIN_HEURISTICS_PATCH_F1 = 0.65
 
 
 @pytest.fixture(scope="module")

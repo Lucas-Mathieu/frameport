@@ -187,7 +187,7 @@ def test_fit_uses_a32_and_flat_rules(monkeypatch):
     candidates = {r["patch"] for r in ev.fit_candidates(_analysis(abis=["armeabi-v7a"]), _entry())}
     assert "frame.eval_32_ok" in candidates
     assert "frame.eval_64_only" not in candidates
-    assert "frame.a32_bridge" in candidates
+    assert "frame.a32_bridge" not in candidates  # implied for 32-bit entries, as engine._a32_predates_bridge does
     flat = {r["patch"] for r in ev.fit_candidates(_analysis(extra={"vr_kind": "none"}), _entry())}
     assert "frame.eval_32_ok" not in flat  # needs_vr defaults True, removed by engine._non_quest
 
@@ -288,3 +288,14 @@ def test_evaluate_split_coverage_and_no_snapshot_analysis_mutation():
     assert reports["all"]["total_games"] == 10
     assert json.dumps(snapshot, sort_keys=True) == before
     assert reports["all"]["converted_games"] == 1
+
+
+def test_catalog_truth_applies_the_a32_bridge_transform():
+    """A 32-bit game's entry relies on the bridge switching OVRPort and the 64-bit fixes off; the heuristics do the
+    same, so neither side may count those as removals."""
+    a = _analysis(abis=["armeabi-v7a"], engine="Unreal", graphics="GLES")
+    defaults = ev.expected_defaults(a)
+    want = ev.catalog_signature(_entry(), defaults, a)
+    got = ev.signature(engine.suggest(a, use_catalog=False), defaults)
+    assert want["overport_removed"] == got["overport_removed"]
+    assert want["frame_removed"] == got["frame_removed"]

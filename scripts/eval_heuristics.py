@@ -81,8 +81,10 @@ def signature(recipe: Recipe, defaults: set[str] | None = None) -> dict:
     return out
 
 
-def catalog_recipe(entry: catalog.CatalogEntry, defaults: set[str] | None = None) -> Recipe:
-    """Materialize catalog choices plus expected defaults; never import heuristic opt-in choices."""
+def catalog_recipe(entry: catalog.CatalogEntry, defaults: set[str] | None = None, analysis=None) -> Recipe:
+    """Materialize catalog choices plus expected defaults; never import heuristic opt-in choices. With the game's
+    analysis, the engine's structural transforms apply as in suggest(): a 32-bit game goes through the bridge (its
+    entry relies on that instead of listing what the bridge replaces), a 2D app keeps only its non-VR patches."""
     r = Recipe(entry.package, status=entry.status, as_is=entry.as_is,
                alt_patches=list(entry.alt_overport), use_alt=entry.use_alt)
     rift = entry.kind == "rift" or entry.package.startswith("rift.")
@@ -105,11 +107,20 @@ def catalog_recipe(entry: catalog.CatalogEntry, defaults: set[str] | None = None
             r.patches["device.foveation"]["radius"] = entry.foveation_radius
         if entry.foveation_test:
             r.patches["device.foveation"]["test"] = True
+    if analysis is not None:
+        if analysis.only_32bit and "frame.a32_bridge" not in entry.frame_remove:
+            r.patches.setdefault("frame.a32_bridge", {})
+            engine.a32_recipe(analysis, r, newly=False)
+        elif analysis.vr_kind == "none":
+            needed = {pid for pid in r.patches if not base.get(pid).needs_vr and pid != "frame.launcher"}
+            needed |= {"frame.launcher"} if analysis.has_info_category else set()
+            r.patches = {pid: v for pid, v in r.patches.items() if pid in needed}
+            r.alt_patches = []
     return r
 
 
-def catalog_signature(entry: catalog.CatalogEntry, defaults: set[str] | None = None) -> dict:
-    return signature(catalog_recipe(entry, defaults), defaults)
+def catalog_signature(entry: catalog.CatalogEntry, defaults: set[str] | None = None, analysis=None) -> dict:
+    return signature(catalog_recipe(entry, defaults, analysis), defaults)
 
 
 def engine_group(name: str) -> str:
@@ -261,7 +272,7 @@ def evaluate(snapshot: dict, entries: dict, split: str = "dev") -> dict:
         records.append({"package": pkg, "title": entry.title, "engine": a.engine, "status": entry.status,
                         "converted": bool(snapshot[pkg].get("converted", a.is_overport_output)),
                         "analysis_version": snapshot[pkg].get("analysis_version"), "split": assignments[pkg],
-                        "want": catalog_signature(entry, defaults),
+                        "want": catalog_signature(entry, defaults, a),
                         "got": signature(engine.suggest(a, use_catalog=False), defaults)})
     return {"schema_version": 1, "split": split, "runtime_only": RUNTIME_ONLY, "snapshot_packages": len(snapshot),
             "default_policy": "per-analysis default detection, then explicit catalog removals",
@@ -277,7 +288,7 @@ def fit_candidates(analysis, entry: catalog.CatalogEntry) -> list[dict]:
     the hypothetical warning recipe.
     """
     suggested = engine.suggest(analysis, use_catalog=False)
-    chosen = catalog_recipe(entry, expected_defaults(analysis))
+    chosen = catalog_recipe(entry, expected_defaults(analysis), analysis)
     listed = set(chosen.patches) | set(entry.alt_overport)
     removed = set(entry.overport_remove) | set(entry.frame_remove) | set(entry.pcvr_remove)
     result = []
