@@ -45,7 +45,7 @@ try:
 except ImportError:  # Windows: pc_revive loads this file for its VDF code only (GitHub #131)
     fcntl = None
 
-AGENT_VERSION = 94
+AGENT_VERSION = 95
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -8035,6 +8035,11 @@ def _saves_tarinfo(arc, s, is_dir):
     return ti
 
 
+def _dep_version(dep):
+    """The installed build's game version (deployments record the APK's version as source_version)."""
+    return str((dep or {}).get("version") or (dep or {}).get("source_version") or "")
+
+
 def write_saves_tar(out, pkg, roots, dep=None, max_file=SAVES_MAX_FILE, max_total=SAVES_MAX_TOTAL):
     """Stream the game's saves as tar.gz to `out` (a binary file object). Returns the manifest (also the archive's
     last member, frameport-saves.json)."""
@@ -8048,7 +8053,7 @@ def write_saves_tar(out, pkg, roots, dep=None, max_file=SAVES_MAX_FILE, max_tota
         raise AgentError(f"{pkg}'s saves are {total / 2**30:.1f} GiB, more than the {max_total / 2**30:.0f} GiB a "
                          f"save backup takes (that's game content, not saves)")
     manifest = {"format": SAVES_FORMAT, "package": pkg, "title": (dep or {}).get("title") or pkg,
-                "version": (dep or {}).get("version") or "", "created": time.time(), "agent": AGENT_VERSION,
+                "version": _dep_version(dep), "created": time.time(), "agent": AGENT_VERSION,
                 "roots": sorted(roots), "max_file": max_file, "files": [], "dirs": [], "skipped": found["skipped"]}
     gz = gzip.GzipFile(fileobj=out, mode="wb", compresslevel=6)
     with tarfile.open(fileobj=gz, mode="w|", format=tarfile.PAX_FORMAT) as tar:
@@ -8449,7 +8454,7 @@ def cmd_saves_info(args):
     else:
         info = _saves_info(collect_saves(roots, max_file))
     rollback = os.path.join(dep["base"], SAVES_ROLLBACK)
-    info.update(package=pkg, running=saves_running(dep), version=dep.get("version") or "",
+    info.update(package=pkg, running=saves_running(dep), version=_dep_version(dep),
                 rollback={"size": os.path.getsize(rollback), "time": os.path.getmtime(rollback)}
                 if os.path.isfile(rollback) else None)
     return info

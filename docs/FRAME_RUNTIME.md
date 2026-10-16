@@ -60,7 +60,7 @@
   `launch.sh` at the new folder and only then deletes the old copy; on the same filesystem it renames instead.
   Moving a game whose Lepton data holds absolute paths, or a PC VR prefix, is not yet verified on the device.
 
-## Save backups (Quest games, agent v94, discussion #352)
+## Save backups (Quest games, agent v95, discussion #352)
 - A Lepton game's saves are two folders of `<base>/lepton-data`: `internal/<pkg>` (= `/data/data/<pkg>`:
   `shared_prefs/`, `files/`, `databases/`; Unreal's `files/UE4Game|UnrealGame/.../Saved` often lives here) and
   `external/Android/data/<pkg>` (= `/sdcard/Android/data/<pkg>`: Unity's `files/`, Unreal's external `Saved`). On the

@@ -242,7 +242,7 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
     flask icon (SCIENCE_OUTLINED) so they aren't confused with Play.
   - `uninstall.py` + `frameport uninstall-app` + Settings: removes the data dir (after an optional key backup zip),
     PC Steam shortcuts, the WSL Revive copy, and via agent `purge` FramePort's games/files on the Frame.
-  - Save backups (discussion #352, agent v94; docs/FRAME_RUNTIME.md "Save backups"): agent `_backup_saves`/
+  - Save backups (discussion #352, agent v95; docs/FRAME_RUNTIME.md "Save backups"): agent `_backup_saves`/
     `_restore_saves '<json>'` stream a tar.gz of `lepton-data/internal/<pkg>` + `external/Android/data/<pkg>` (caches,
     IL2CPP/shader caches, FrameBridge files, videos/OBBs, files >64 MiB left out; manifest `frameport-saves.json` last)
     over the exec channel, file work in `podman unshare` (`_saves_ns`), launch lock held, refused while running;
