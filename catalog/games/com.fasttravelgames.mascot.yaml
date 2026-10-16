@@ -1,0 +1,22 @@
+package: com.fasttravelgames.mascot
+title: 'Cities: VR'
+status: works
+notes: Loading screen Cities VR Logo doesn't load right.
+tested_version: 1.00.502
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-16'
+  known_good_sha256: 5537e4e9333a04eda8c1b2f96cdc9572c1bbed52a9d3af42269ba442ce9ba801
+  app: 1.2.0
+  overport_cli: 1.2.5
+  frame_build: '20261015.6141207'
+  agent: 91
+  issue: 345
+source_hint: CitiesSkylines

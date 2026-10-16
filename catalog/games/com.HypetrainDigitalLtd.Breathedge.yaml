@@ -1,0 +1,22 @@
+package: com.HypetrainDigitalLtd.Breathedge
+title: Breathedge VR
+status: works
+notes: Loading fade is broken and only shows a small square but the game works!
+tested_version: 1.0.7
+engine: Unreal
+xr: VrApi
+alt_overport:
+- patch_remove_unreal_force_quit
+frame:
+- frame.hw_video_decode
+adapter:
+  haptic_fix: 1
+verified:
+  date: '2026-10-16'
+  known_good_sha256: 4975a32fbf36b4d417142a944bf7d771c18a184dc0320b5937ac2c67bd013575
+  app: 1.2.0
+  overport_cli: 1.2.5
+  frame_build: '20261015.6141207'
+  agent: 91
+  issue: 347
+source_hint: Breathadge

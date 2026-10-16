@@ -1,0 +1,28 @@
+package: com.Miragesoft.RealVrFishingQ
+title: Real VR Fishing
+status: issues
+notes: Seems to be almost 100% functional with meta permissions enabled.  In the new Mixed Reality mode, the room
+  scan doesn't seem to do anything and I can't seem to manually place anything either.
+tested_version: '3.06096'
+engine: Unity
+xr: OpenXR
+frame:
+- frame.vivox_audio_route
+- frame.unity_text_input
+- frame.oculusos
+- frame.meta_permissions
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+  scene_emul: 1
+  controller_models: 1
+verified:
+  date: '2026-10-16'
+  known_good_sha256: 8b17dd26ef0486618ec006f9d948a60dabea4d7763bbe6061db07ee8aad27c76
+  app: 1.2.0
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 91
+  issue: 333
+source_hint: Real VR Fishing

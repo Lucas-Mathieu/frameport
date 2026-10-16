@@ -29,8 +29,10 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | BlazeRush | Quest | ✅ Works |  |
 | BodyCombat | Quest | ✅ Works |  |
 | BONELAB | Quest | ✅ Works |  |
+| Breathedge VR | Quest | ✅ Works |  |
 | Carve Snowboarding | Quest | ✅ Works |  |
 | Caves | Quest | ✅ Works |  |
+| Cities: VR | Quest | ✅ Works |  |
 | COMPOUND | Quest | ✅ Works |  |
 | Cook-Out | Quest | ✅ Works |  |
 | Cosmodread | Quest | ✅ Works |  |
@@ -73,6 +75,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Ladder | Quest | ✅ Works |  |
 | Lambda1VR | Quest | ✅ Works |  |
 | LEGO® Bricktales | Quest | ✅ Works |  |
+| Lost Recipes | Quest | ✅ Works |  |
 | Lucky's Tale | Quest | ✅ Works |  |
 | Maestro | Quest | ✅ Works |  |
 | Marvel's Deadpool VR | Quest | ✅ Works |  |
@@ -86,6 +89,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Moss: Book II | Quest | ✅ Works |  |
 | Munkr Funkr (The Legacy Days) | Quest | ✅ Works |  |
 | Nano | Quest | ✅ Works |  |
+| Neko Atsume Purrfect | Quest | ✅ Works |  |
 | NEX Player | Quest | ✅ Works |  |
 | NFL PRO ERA II | Quest | ✅ Works |  |
 | NOPE CHALLENGE | Quest | ✅ Works |  |
@@ -158,10 +162,12 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Does it Stack? | Quest | ⚠️ Works with issues | Mixed reality mode does not work (works on Demeo), everything else seems to be OK |
 | Dungeons of Eternity | Quest | ⚠️ Works with issues | It can not connect to servers |
 | End Space | Quest | ⚠️ Works with issues | Controls stop responding after the first mission loads. |
+| Exploding Kittens VR | Quest | ⚠️ Works with issues | Requires online for most modes. |
 | ExploreVR | Quest | ⚠️ Works with issues | The 3D world warps and shifts with head movement (wrong perspective). |
 | Fisherman | Quest | ⚠️ Works with issues | Loading screens have corruption, but everything works otherwise. |
 | Freedom | Quest | ⚠️ Works with issues | Volume can't be changed in the game. |
 | Homeworld: Vast Reaches | Quest | ⚠️ Works with issues | The game starts but after selecting to start a new game it seems to crash. |
+| Lawn Mowing Simulator VR | Quest | ⚠️ Works with issues | Left eye textures flicker only when mowing in specific areas. |
 | MacacoVR | Quest | ⚠️ Works with issues | 2d loading screens are glitchy, otherwise main gameplay is fine |
 | Majora's Mask VR | Quest | ⚠️ Works with issues | Audio on the file select screen sounds crunchy. |
 | Myst | Quest | ⚠️ Works with issues | Minor graphical glitches on some objects. |
@@ -170,6 +176,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Plezy | Quest | ⚠️ Works with issues | Some videos play with strong artifacts and wrong colours; the cause is unknown, possibly hardware video decoding. |
 | Quantum Void | Quest | ⚠️ Works with issues | no hands |
 | Ragnarock | Quest | ⚠️ Works with issues |  |
+| Real VR Fishing | Quest | ⚠️ Works with issues | Seems to be almost 100% functional with meta permissions enabled. |
 | Silhouette | Quest | ⚠️ Works with issues | Hand-tracking game; the Frame synthesizes hands from controllers, so it is janky. |
 | Spunky Dungeon | Quest | ⚠️ Works with issues | Gear VR / Oculus Go game (32-bit only), runs through FramePort's 32-bit bridge (experimental). |
 | Swarm 2 | Quest | ⚠️ Works with issues | MSAA creates visible seams around edge geometry and also the skybox edge |

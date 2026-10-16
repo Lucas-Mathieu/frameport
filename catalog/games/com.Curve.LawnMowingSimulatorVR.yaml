@@ -1,0 +1,24 @@
+package: com.Curve.LawnMowingSimulatorVR
+title: Lawn Mowing Simulator VR
+status: issues
+notes: Left eye textures flicker only when mowing in specific areas.
+tested_version: 1.0.50
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+  pose_consistency: 1
+  hide_space_warp: 1
+verified:
+  date: '2026-10-16'
+  known_good_sha256: 2653e9b1dfbd11d607b5dd17b9c07ab19d9e98e1004ef9b14cb52867b5f959dc
+  app: 1.2.0
+  overport_cli: 1.2.5
+  frame_build: '20261015.6141207'
+  agent: 91
+  issue: 344
+source_hint: com.Curve.LawnMowingSimulatorVR
