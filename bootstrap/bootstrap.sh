@@ -34,7 +34,11 @@ say "Letting FramePort log in"
 key=$(curl -fsS "$PC_URL/key?code=$PAIR_CODE")
 [[ "$key" == ssh-ed25519\ * ]] || { echo "Couldn't reach FramePort at $PC_URL. Is it still open?"; exit 1; }
 mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
-grep -qxF "$key" ~/.ssh/authorized_keys || echo "$key" >> ~/.ssh/authorized_keys
+# a file without a final newline would glue our key onto its last line, where sshd never matches it (GitHub #242)
+grep -qxF "$key" ~/.ssh/authorized_keys || {
+  [ -n "$(tail -c1 ~/.ssh/authorized_keys)" ] && echo >> ~/.ssh/authorized_keys
+  echo "$key" >> ~/.ssh/authorized_keys
+}
 
 say "Setting up Lepton's containers"
 # rootless podman leaks one kernel keyring per container start; ~200 game launches would exhaust the quota

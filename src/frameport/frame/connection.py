@@ -358,6 +358,15 @@ def save_target(target: FrameTarget) -> None:
 FAST_LINKS = {"usb0": "USB cable", "wlanap": "the Frame's own Wi-Fi hotspot"}
 
 
+def install_key_command(pub: str) -> str:
+    """Shell command that adds `pub` to ~/.ssh/authorized_keys once. A file without a final newline would glue the key
+    onto its last line, where sshd never matches it (GitHub #242: OpenSSH uploads refused FramePort's key)."""
+    q, f = sh_quote(pub), "~/.ssh/authorized_keys"
+    return (f"mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch {f} && "
+            f"{{ grep -qxF {q} {f} || {{ [ -n \"$(tail -c1 {f})\" ] && echo >> {f}; echo {q} >> {f}; }}; }}"
+            f" && chmod 600 {f}")
+
+
 def bundled_agent_version() -> int | None:
     """AGENT_VERSION of the agent this app ships (it's uploaded to the Frame whenever it differs)."""
     try:
@@ -675,10 +684,7 @@ class Frame:
 
     def install_key(self) -> None:
         """After a password login: add FramePort's public key to authorized_keys."""
-        pub = app_public_key()
-        self.run("mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && "
-                 f"grep -qxF {sh_quote(pub)} ~/.ssh/authorized_keys || echo {sh_quote(pub)} >> ~/.ssh/authorized_keys"
-                 " && chmod 600 ~/.ssh/authorized_keys")
+        self.run(install_key_command(app_public_key()))
 
     # ------------------------------------------------------------------ agent
     def ensure_agent(self) -> str:
