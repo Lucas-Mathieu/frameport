@@ -67,6 +67,12 @@ class Dex:
         cls, _proto, name = struct.unpack_from("<HHI", self.data, self.methods_off + 8 * idx)
         return self.type_name(cls), self.string(name)
 
+    def field(self, idx: int) -> tuple[str, str, str]:
+        """(class, type, name) of field id `idx`."""
+        fields_off = struct.unpack_from("<I", self.data, 84)[0]
+        cls, typ, name = struct.unpack_from("<HHI", self.data, fields_off + 8 * idx)
+        return self.type_name(cls), self.type_name(typ), self.string(name)
+
     def return_type(self, idx: int) -> str:
         proto = struct.unpack_from("<HHI", self.data, self.methods_off + 8 * idx)[1]
         protos_off = struct.unpack_from("<I", self.data, 76)[0]

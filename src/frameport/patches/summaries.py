@@ -76,6 +76,8 @@ SUMMARIES = {
                                       "with the content check off. Experimental; the game still needs its data.",
     "frame.unreal_skip_obb_check": "Starts Unreal games without re-checking their data file (they'd seem to hang "
                                    "on an invisible check screen).",
+    "frame.unity_appui_vibrator": "Lets games built with Unity's App UI start on the Frame (they'd quit at once on an "
+                                  "Android 12 vibrator call).",
     "frame.bhaptics_permission": "Stops bHaptics from asking for a Bluetooth permission the Frame doesn't have (the "
                                  "game would freeze on its loading screen).",
     "frame.eos_keychain_loop":"Stops Epic Online Services from retrying its login keychain forever (the game "

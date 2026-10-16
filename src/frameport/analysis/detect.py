@@ -274,6 +274,9 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         # Photon Voice's microphone plugin does the same (frame.photon_voice_audio_route, GitHub #362)
         photon_voice_api31 = any(b"Lcom/exitgames/photon/audioinaec/AudioInAEC;" in d and b"CommunicationDevice" in d
                                  for d in dexes)
+        # Unity App UI's activity gets Android 12's VibratorManager in onCreate: crashes in Lepton (Android 11)
+        unity_appui_vibrator = any(b"Lcom/unity3d/player/appui/" in d and b"Landroid/os/VibratorManager;" in d
+                                   and b"vibrator_manager" in d for d in dexes)
         # Epic Online Services' keychain (it can retry without end when it can't write: frame.eos_keychain_loop)
         eos_keychain = any(b"Lcom/epicgames/mobile/eossdk/EOSSDK;" in d and b"resetKeychain" in d for d in dexes)
         # bHaptics asks for an Android 12 permission; the prompt interrupts the game (frame.bhaptics_permission)
@@ -422,6 +425,7 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             "godot_clipboard": godot_clipboard,
             "vivox_api31": vivox_api31,
             "photon_voice_api31": photon_voice_api31,
+            "unity_appui_vibrator": unity_appui_vibrator,
             "eos_keychain": eos_keychain,
             "bhaptics_permission": bhaptics_permission,
             "media_codec": media_codec,

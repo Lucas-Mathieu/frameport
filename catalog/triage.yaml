@@ -418,6 +418,12 @@ signatures:
     diagnosis: The game has no internal storage (saves, settings) inside Lepton. Usually its folder's path has a space (a microSD card named for example "Steam Frame 512g"), which Lepton's own scripts can't handle; FramePort's launcher (agent 83 and newer) gives Lepton a path without spaces. Connect FramePort once so the launcher is updated, then start the game again.
     report: true
     supersedes: [java-crash, native-crash]
+  - id: unity-appui-vibrator
+    pattern: 'NoClassDefFoundError: Failed resolution of: Landroid/os/VibratorManager;'
+    severity: fatal
+    diagnosis: The game's start activity uses Android 12's VibratorManager (Unity's App UI package, for example PianoVision) and Lepton runs Android 11, so it quits before the game starts. The patch starts the activity without a vibrator; its UI haptic feedback then does nothing.
+    suggest: [frame.unity_appui_vibrator]
+    supersedes: [java-crash]
   - id: bhaptics-permission-prompt
     pattern: 'GrantPermissionsActivity: Permission grant result .*permission=android\.permission\.BLUETOOTH_CONNECT'
     severity: error

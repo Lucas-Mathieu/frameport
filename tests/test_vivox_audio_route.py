@@ -20,10 +20,11 @@ def _uleb(n: int) -> bytes:
 
 
 def build_dex(methods: list[tuple[str, str, str, list[int] | None]], strings_first: tuple[str, ...] = (),
-              types_first: tuple[str, ...] = ()) -> bytes:
+              types_first: tuple[str, ...] = (), fields: tuple[tuple[str, str, str], ...] = ()) -> bytes:
     """A minimal dex: methods = (class, name, return type, code units or None for a referenced-only method). Every
     method with code belongs to one class_def per class (virtual methods). strings_first / types_first get the first
-    string / type indices, in that order (for const-string / check-cast operands)."""
+    string / type indices, in that order (for const-string / check-cast operands). fields = (class, type, name) get
+    field ids 0, 1, … (for iget/iput operands)."""
     strings: list[str] = list(strings_first)
 
     def s(x: str) -> int:
@@ -51,6 +52,7 @@ def build_dex(methods: list[tuple[str, str, str, list[int] | None]], strings_fir
         return protos.index(key)
 
     mids = [(t(c), p(r), s(n)) for c, n, r, _ in methods]
+    fids = [(t(c), t(ft), s(n)) for c, ft, n in fields]
     header = 0x70
     off = header
     sid_off = off
@@ -59,6 +61,8 @@ def build_dex(methods: list[tuple[str, str, str, list[int] | None]], strings_fir
     off += 4 * len(types)
     pid_off = off
     off += 12 * len(protos)
+    fid_off = off
+    off += 8 * len(fids)
     mid_off = off
     off += 8 * len(mids)
     classes = sorted({c for c, _n, _r, code in methods if code is not None})
@@ -90,12 +94,13 @@ def build_dex(methods: list[tuple[str, str, str, list[int] | None]], strings_fir
         class_data[c] = place(blob)
     out = bytearray(header)
     out[:8] = b"dex\n035\0"
-    struct.pack_into("<10I", out, 56, len(strings), sid_off, len(types), tid_off, len(protos), pid_off, 0, 0,
-                     len(mids), mid_off)
+    struct.pack_into("<10I", out, 56, len(strings), sid_off, len(types), tid_off, len(protos), pid_off, len(fids),
+                     fid_off if fids else 0, len(mids), mid_off)
     struct.pack_into("<2I", out, 96, len(classes), cdef_off)
     out += b"".join(struct.pack("<I", o) for o in str_offs)
     out += b"".join(struct.pack("<I", i) for i in types)
     out += b"".join(struct.pack("<3I", a, b, 0) for a, b in protos)
+    out += b"".join(struct.pack("<HHI", *f) for f in fids)
     out += b"".join(struct.pack("<HHI", *m) for m in mids)
     out += b"".join(struct.pack("<8I", t(c), 1, 0, 0, 0, 0, class_data[c], 0) for c in classes)
     out += data

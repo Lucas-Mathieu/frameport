@@ -544,6 +544,11 @@
   "title": "Team Beef ports: treat the Frame as a Meta headset",
   "group": "Steam Frame patches"
  },
+ "frame.unity_appui_vibrator": {
+  "anchor": "frame-unity_appui_vibrator",
+  "title": "Unity App UI: no Android 12 vibrator",
+  "group": "Steam Frame patches"
+ },
  "frame.unity_gl_shim": {
   "anchor": "frame-unity_gl_shim",
   "title": "GL shim for Unity (no multisampled render-to-texture)",
