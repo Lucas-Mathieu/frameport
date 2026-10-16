@@ -32,6 +32,12 @@ extern void jit_exit(void);
 #define HASH_BITS 18
 #define LTAB_BITS 18
 #define MAX_INSNS 96
+/* stubs one more instruction (up to 3: a helper or side exit, a conditional skip, its fall-through exit) and the
+ * block's final exit may still need; a block ends before fewer than this are left of MAX_STUBS. Without it, runs of
+ * helper-translated instructions (each needs a stub) overflowed the table: OpenSSL's sha1_block_data_order_armv8
+ * (~60 SHA1 crypto instructions in a row, Pinball FX2 VR, GitHub #342) killed the game (fatal "overflowed the code
+ * buffer"). */
+#define STUB_RESERVE 8
 
 static uint32_t *cache, *cache_cur, *cache_end;
 static jit_block *htab[1u << HASH_BITS];
@@ -1381,7 +1387,8 @@ static jit_block *translate(uint32_t pc, int thumb, uint32_t it, int *fault, int
         x->it = it_after;
         if (x->ended || b->overflow) break;
         /* a fused VCMP needs its VMRS in the same block (x->next is set, so it is within MAX_INSNS) */
-        if ((!x->skip_vmrs && (n + 1 >= MAX_INSNS || (size_t)(b->p - b->start) > (CACHE_MARGIN / 4) / 2)) ||
+        if ((!x->skip_vmrs && (n + 1 >= MAX_INSNS || (size_t)(b->p - b->start) > (CACHE_MARGIN / 4) / 2 ||
+                               x->nstubs > MAX_STUBS - STUB_RESERVE)) ||
             !(len = nlen ? nlen : decode_guest(cur, thumb, x->it, &in))) {
             jx_exit_direct(x, cur, thumb, x->it);
             break;

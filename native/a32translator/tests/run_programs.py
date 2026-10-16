@@ -31,7 +31,9 @@ PROGRAMS = {  # name -> (source, variants, args)
     "jitguest": ("jitguest.c", ["arm", "thumb"], []),
     "exec": ("exec.c", ["arm", "thumb"], []),
     "bench": ("bench.c", ["arm", "thumb"], []),
+    "sha1ce": ("sha1ce.c", ["arm", "thumb"], []),
 }
+EXTRA_FLAGS = {"sha1ce.c": ["-march=armv8-a", "-mfpu=crypto-neon-fp-armv8"]}  # ARMv8 crypto instructions
 JIT_ONLY = {"bench"}  # far too slow for the interpreter under emulation
 
 
@@ -42,7 +44,7 @@ def build(name, src, variant):
         return out
     BUILD.mkdir(parents=True, exist_ok=True)
     cc = NDK_BIN / ("armv7a-linux-androideabi29-clang++" if src.endswith(".cpp") else "armv7a-linux-androideabi29-clang")
-    cmd = [str(cc), *VARIANTS[variant], "-mfpu=neon-vfpv4", "-static", "-g", str(srcp), "-lm", "-o", str(out)]
+    cmd = [str(cc), *VARIANTS[variant], "-mfpu=neon-vfpv4", *EXTRA_FLAGS.get(src, []), "-static", "-g", str(srcp), "-lm", "-o", str(out)]
     if src.endswith(".cpp"):
         cmd += ["-static-libstdc++", "-std=c++17"]
     subprocess.run(cmd, check=True)

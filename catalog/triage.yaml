@@ -82,6 +82,13 @@ signatures:
     severity: fatal
     diagnosis: 32-bit-only APK (e.g. a Gear VR or Oculus Go game). The Steam Frame has no 32-bit ARM support; FramePort's 32-bit bridge translates the game (experimental).
     suggest: [frame.a32_bridge]
+  - id: a32-jit-overflow
+    pattern: 'a32: block at 0x[0-9a-f]+ overflowed the code buffer'
+    severity: fatal
+    diagnosis: The 32-bit bridge's translator stopped the game on a long run of instructions it hands to its
+      interpreter, for example OpenSSL's ARMv8 SHA-1 code in Pinball FX2 VR. Fixed in newer FramePort versions;
+      update FramePort and rebuild the game ("Update on Frame").
+    suggest: [frame.a32_bridge]
   - id: android-too-new
     pattern: '(NoClassDefFoundError|ClassNotFoundException|NoSuchMethodError)\b.*(Landroid/window/|android\.window\.|(storeStoreFence|loadLoadFence)\(\)V in class Ljava/lang/invoke/VarHandle)'
     severity: fatal

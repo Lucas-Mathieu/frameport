@@ -530,3 +530,24 @@ def test_frida_gadget_load_is_removed():
     units = list(struct.unpack_from("<11H", dex.data, off + 16))
     assert units == [0x001A, 0, 0, 0, 0, 0x001A, 1, 0x1071, 1, 0, 0x000E]
     assert a32_bridge.strip_frida_load(out) is None and a32_bridge.strip_frida_load(b"dex\n" + bytes(108)) is None
+
+
+def test_jit_stub_overflow_is_triaged_and_rebuilds_pinball():
+    """GitHub #342: OpenSSL's ARMv8 SHA-1 rounds overflowed the translator's stub table (fatal, exit 127) in Pinball
+    FX2 VR. The log line is recognised, and the fixed bridge marks that game "Update on Frame" (only that one)."""
+    line = "10-16 14:09:04.833  1170  1195 W a32     : a32: block at 0xf68587a0 overflowed the code buffer\n"
+    hit = next(f for f in triage(line, "EXITED").findings if f.id == "a32-jit-overflow")
+    assert "frame.a32_bridge" in hit.suggest
+    patch = a32_bridge.A32Bridge()
+    assert patch.revision_for("com.zenstudios.PinballFX2VRQuest") > patch.revision
+    assert patch.revision_for("com.fallen.affected") == patch.revision
+
+
+def test_jit_ends_blocks_before_the_stub_table_is_full():
+    """The block loop in jit.c also ends a block when the exit-stub table is nearly full (it used to check only the
+    instruction count and the code size); tests/programs/sha1ce.c is the run-time check (run_programs.py)."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "native" / "a32translator"
+    assert "x->nstubs > MAX_STUBS - STUB_RESERVE" in (root / "src" / "jit.c").read_text()
+    assert '"sha1ce": ("sha1ce.c"' in (root / "tests" / "run_programs.py").read_text()
