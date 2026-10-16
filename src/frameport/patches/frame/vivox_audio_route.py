@@ -18,18 +18,40 @@ API31 = ("getAvailableCommunicationDevices", "setCommunicationDevice", "clearCom
          "removeOnCommunicationDeviceChangedListener")
 
 
-def patch_dex(dex: Dex) -> list[str]:
-    """Methods of Vivox's AudioChangeListener that now return at once; [] if nothing applies."""
+def patch_class(dex: Dex, cls: str) -> list[str]:
+    """Methods of class `cls` that call one of the Android 12 communication-device methods and now return at once;
+    [] if nothing applies. Shared with frame.photon_voice_audio_route."""
     targets = {i for name in API31 for i in dex.method_index(AUDIO_MANAGER, name)}
     if not targets:
         return []
     done = []
-    for idx, code in dex.class_methods(LISTENER):
+    for idx, code in dex.class_methods(cls):
         if not dex.invoked(code) & targets:
             continue
         if dex.return_early(code, dex.return_type(idx)):
             done.append(dex.method(idx)[1])
     return done
+
+
+def patch_dexes(ctx: ApkContext, cls: str, label: str) -> bool:
+    """patch_class on every classes*.dex that defines `cls`; notes what changed."""
+    changed = False
+    for name in sorted(n for n in ctx.ws.names() if n.startswith("classes") and n.endswith(".dex")):
+        data = ctx.ws.read(name)
+        if cls.encode() not in data:
+            continue
+        dex = Dex(data)
+        done = patch_class(dex, cls)
+        if done:
+            ctx.ws.put(name, dex.finish())
+            ctx.notes.append(f"{name}: {label} returns at once in {', '.join(sorted(done))}")
+            changed = True
+    return changed
+
+
+def patch_dex(dex: Dex) -> list[str]:
+    """Methods of Vivox's AudioChangeListener that now return at once; [] if nothing applies."""
+    return patch_class(dex, LISTENER)
 
 
 class VivoxAudioRoute(Patch):
@@ -52,18 +74,7 @@ class VivoxAudioRoute(Patch):
         return None
 
     def apply(self, ctx: ApkContext) -> bool:
-        changed = False
-        for name in sorted(n for n in ctx.ws.names() if n.startswith("classes") and n.endswith(".dex")):
-            data = ctx.ws.read(name)
-            if LISTENER.encode() not in data:
-                continue
-            dex = Dex(data)
-            done = patch_dex(dex)
-            if done:
-                ctx.ws.put(name, dex.finish())
-                ctx.notes.append(f"{name}: Vivox AudioChangeListener returns at once in {', '.join(sorted(done))}")
-                changed = True
-        return changed
+        return patch_dexes(ctx, LISTENER, "Vivox AudioChangeListener")
 
 
 register(VivoxAudioRoute)

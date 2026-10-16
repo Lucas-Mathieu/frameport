@@ -84,6 +84,8 @@ SUMMARIES = {
                                  "(they'd abort with \"cannot create thread specific key\"), for example Wander.",
     "frame.vivox_audio_route": "Lets games with Vivox voice chat start on the Frame (they'd crash on an Android 12 "
                                "audio call).",
+    "frame.photon_voice_audio_route": "Stops games with Photon Voice chat from crashing on the Frame when voice chat "
+                                      "starts (an Android 12 audio call).",
     "frame.unity_oculus_check": "Lets older Unity games start VR without Meta's system apps (they'd stay on a 2D "
                                 "screen).",
     "frame.unity_multipass": "Draws each eye separately. Try it when one eye shows a gray or broken picture.",

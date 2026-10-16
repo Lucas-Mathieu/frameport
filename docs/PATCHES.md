@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 169 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 170 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -11,7 +11,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 ## Groups
 
 - [Patches from OVRPort](#group-overport) (25)
-- [Steam Frame patches](#group-frame) (55)
+- [Steam Frame patches](#group-frame) (56)
 - [Game settings](#group-adapter) (68)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
@@ -71,6 +71,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Platform compat (ovrMessageType_ToString)](#frame-ovrplatformcompat) | `frame.ovrplatformcompat` | Steam Frame patches | default |
 | [Stub missing Meta platform functions](#frame-ovrstubs) | `frame.ovrstubs` | Steam Frame patches | default |
 | [Unpaired pointer-authentication checks](#frame-pac_hints) | `frame.pac_hints` | Steam Frame patches | 1 |
+| [Photon Voice: skip Android 12 audio routing](#frame-photon_voice_audio_route) | `frame.photon_voice_audio_route` | Steam Frame patches |  |
 | [SDL apps: start without a clipboard service](#frame-sdl_clipboard) | `frame.sdl_clipboard` | Steam Frame patches | 5 |
 | [Stress Level Zero: let Unity start Vulkan itself](#frame-slz_vulkan_hooks) | `frame.slz_vulkan_hooks` | Steam Frame patches | 1 |
 | [Start straight in VR (skip the 2D launcher)](#frame-start_activity) | `frame.start_activity` | Steam Frame patches |  |
@@ -832,6 +833,19 @@ Stops a crash on the Frame's processor in games whose code the Quest runs more l
 - **Source:** [patches/frame/pac_hints.py](../src/frameport/patches/frame/pac_hints.py)
 
 > Some engines contain assembly (for example OpenSSL's) that checks a return-address signature it never made. The Quest's CPU ignores those checks, the Steam Frame's enforces them: the game crashes with SIGILL as soon as it uses that code, for example on its first network connection (Star Wars Pinball VR). In a library with unpaired checks, the signing and checking instructions become no-ops.
+
+### <a id="frame-photon_voice_audio_route"></a>Photon Voice: skip Android 12 audio routing
+
+Stops games with Photon Voice chat from crashing on the Frame when voice chat starts (an Android 12 audio call).
+
+- `frame.photon_voice_audio_route` · also for 2D apps
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested (on):** Photon Voice calls Android 12 audio methods, which Lepton (Android 11) lacks, and crashes when voice chat starts.
+- **Suggested by launch-test signatures:**
+  - `photon-voice-api31` (fatal): The game's Photon Voice microphone plugin calls Android 12 audio-routing methods (AudioManager communication devices) without checking the Android version; Lepton runs Android 11, so the app crashes when voice chat starts (for example Table Troopers at the tutorial).
+- **Source:** [patches/frame/photon_voice_audio_route.py](../src/frameport/patches/frame/photon_voice_audio_route.py)
+
+> Photon Voice's microphone plugin (for example Table Troopers) picks the audio device with Android 12 methods (AudioManager communication devices) without checking the Android version; Lepton runs Android 11, so the game crashes with a NoSuchMethodError when voice chat starts. That method returns at once instead (an in-place edit of classes.dex); the microphone keeps Android's default audio route.
 
 ### <a id="frame-sdl_clipboard"></a>SDL apps: start without a clipboard service
 

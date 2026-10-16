@@ -509,6 +509,11 @@
   "title": "Unpaired pointer-authentication checks",
   "group": "Steam Frame patches"
  },
+ "frame.photon_voice_audio_route": {
+  "anchor": "frame-photon_voice_audio_route",
+  "title": "Photon Voice: skip Android 12 audio routing",
+  "group": "Steam Frame patches"
+ },
  "frame.sdl_clipboard": {
   "anchor": "frame-sdl_clipboard",
   "title": "SDL apps: start without a clipboard service",

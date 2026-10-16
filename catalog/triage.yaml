@@ -388,10 +388,22 @@ signatures:
     suggest: [frame.slz_vulkan_hooks]
     supersedes: [java-crash, native-crash]
   - id: vivox-api31
-    pattern: 'NoSuchMethodError: No virtual method \w*CommunicationDevice\w*\(.*Landroid/media/AudioManager'
+    pattern: 'NoSuchMethodError: No virtual method \w*CommunicationDevice\w*\(.*Landroid/media/AudioManager[^\n]*(?:\n[^\n]*\sat [^\n]*){0,12}?\n[^\n]*\sat com\.vivox\.'
     severity: fatal
     diagnosis: The game's Vivox voice-chat SDK calls Android 12 audio-routing methods (AudioManager communication devices) without checking the Android version; Lepton runs Android 11, so the app crashes (for example Green Hell VR). The patch makes Vivox's audio-route check return early (voice chat keeps the default route).
     suggest: [frame.vivox_audio_route]
+    supersedes: [java-crash, audio-api31]
+  - id: photon-voice-api31
+    pattern: 'NoSuchMethodError: No virtual method \w*CommunicationDevice\w*\(.*Landroid/media/AudioManager[^\n]*(?:\n[^\n]*\sat [^\n]*){0,12}?\n[^\n]*\sat com\.exitgames\.photon\.'
+    severity: fatal
+    diagnosis: The game's Photon Voice microphone plugin calls Android 12 audio-routing methods (AudioManager communication devices) without checking the Android version; Lepton runs Android 11, so the app crashes when voice chat starts (for example Table Troopers at the tutorial). The patch makes Photon's audio-device pick return early (the microphone keeps the default route).
+    suggest: [frame.photon_voice_audio_route]
+    supersedes: [java-crash, audio-api31]
+  - id: audio-api31
+    pattern: 'NoSuchMethodError: No virtual method \w*CommunicationDevice\w*\(.*Landroid/media/AudioManager'
+    severity: fatal
+    diagnosis: Code in the game (often a voice-chat SDK) calls Android 12 audio-routing methods (AudioManager communication devices) without checking the Android version; Lepton runs Android 11, so the app crashes. FramePort has fixes for Vivox and Photon Voice; this one comes from another library, so please report it with the log.
+    report: true
     supersedes: [java-crash]
   - id: lepton-data-link-failed
     pattern: "ln: cannot create symbolic link from '[^']*' to '/data/data/|Couldn't create directory for SharedPreferences file /data/user/0/"

@@ -157,7 +157,9 @@ def test_detect_and_triage():
     log = ("10-08 21:00:01.000  900  950 E AndroidRuntime: FATAL EXCEPTION: main\n"
            "10-08 21:00:01.000  900  950 E AndroidRuntime: java.lang.NoSuchMethodError: No virtual method "
            "getAvailableCommunicationDevices()Ljava/util/List; in class Landroid/media/AudioManager; or its super "
-           "classes (declaration of 'android.media.AudioManager' appears in /system/framework/framework.jar)\n")
+           "classes (declaration of 'android.media.AudioManager' appears in /system/framework/framework.jar)\n"
+           "10-08 21:00:01.000  900  950 E AndroidRuntime: \tat com.vivox.sdk.AudioChangeListener."
+           "checkAudioRouteAndApplyChanges(AudioChangeListener.java:80)\n")
     r = triage(log, "EXITED", "com.Incuvo.GreenHellVR")
     assert [f.id for f in r.findings] == ["vivox-api31"]
     assert r.findings[0].suggest == ["frame.vivox_audio_route"]

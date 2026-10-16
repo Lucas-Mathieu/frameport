@@ -271,6 +271,9 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         godot_clipboard = any(b"Lorg/godotengine/godot/Godot;" in d and GODOT_CLIPBOARD_CAST in d for d in dexes)
         # Vivox voice chat calling Android 12 audio-routing methods: crashes in Lepton (Android 11)
         vivox_api31 = any(b"Lcom/vivox/sdk/AudioChangeListener;" in d and b"CommunicationDevice" in d for d in dexes)
+        # Photon Voice's microphone plugin does the same (frame.photon_voice_audio_route, GitHub #362)
+        photon_voice_api31 = any(b"Lcom/exitgames/photon/audioinaec/AudioInAEC;" in d and b"CommunicationDevice" in d
+                                 for d in dexes)
         # Epic Online Services' keychain (it can retry without end when it can't write: frame.eos_keychain_loop)
         eos_keychain = any(b"Lcom/epicgames/mobile/eossdk/EOSSDK;" in d and b"resetKeychain" in d for d in dexes)
         # bHaptics asks for an Android 12 permission; the prompt interrupts the game (frame.bhaptics_permission)
@@ -414,6 +417,7 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             "sdl_java": sdl_java,
             "godot_clipboard": godot_clipboard,
             "vivox_api31": vivox_api31,
+            "photon_voice_api31": photon_voice_api31,
             "eos_keychain": eos_keychain,
             "bhaptics_permission": bhaptics_permission,
             "media_codec": media_codec,

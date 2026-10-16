@@ -532,6 +532,12 @@ Android 11. `frame.vivox_audio_route` (analysis `vivox_api31`, ANALYSIS_VERSION 
 once (`Dex.return_early`: return-void / `const/4 v0,0; return v0`; nopping the invoke would leave a move-result the
 verifier rejects). Older Vivox (Eleven Table Tennis, BattleSisters) lacks that code and isn't matched. Verified
 headless: Vivox initialises, 150 s at ~65-70 fps.
+Photon Voice does the same (GitHub #362 Table Troopers, #325): `com.exitgames.photon.audioinaec.AudioInAEC.
+updateAudioDevice` (void; only caller of getAvailableCommunicationDevices/setCommunicationDevice, reached from the mic
+thread `AudioInAEC$1.run` via access$000; no SDK_INT check left) → sibling patch `frame.photon_voice_audio_route`
+(analysis `photon_voice_api31`, ANALYSIS_VERSION 20; shares `vivox_audio_route.patch_class`; Vivox's id, title and
+output unchanged, no revision bump). Triage: `vivox-api31` / `photon-voice-api31` now need the SDK's class in the
+stack; any other `*CommunicationDevice*` NoSuchMethodError = `audio-api31` (report). Host-tested on the real dex only.
 
 ## Steam Input gamepad for 2D apps
 
