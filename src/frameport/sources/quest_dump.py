@@ -45,6 +45,16 @@ def _apk_ids(apk: Path) -> tuple[str | None, int | None]:
     return a.package, vc
 
 
+def version_name(apk: Path) -> str | None:
+    """The APK's versionName (None if it can't be read)."""
+    try:
+        from pyaxmlparser import APK
+
+        return APK(str(apk)).version_name or None
+    except Exception:
+        return None
+
+
 def _package_of(apk: Path) -> str | None:
     return _apk_ids(apk)[0]
 

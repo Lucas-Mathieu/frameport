@@ -26,6 +26,25 @@ Games/                                  ← scan this folder (Add games → Scan
 Not sure of the package name? It's in the OBB file names (`main.<version>.<package name>.obb`), and the game's page
 shows it under **Details**.
 
+## I moved my games to another folder or drive. How do I update the library?
+
+Scan the new folder (**Add games → Scan a folder…**, or **Settings → Library folders → Add folder…**). A game whose
+files are gone from their old place and that FramePort finds again in the new folder keeps its library entry: only
+where its files are changes. Its name, tags, artwork, your own recipe and what's installed on the Frame stay; you don't
+have to remove it from the library first. **Rescan folders** in the Library does the same for every library folder.
+
+- **Removing a folder:** **Settings → Library folders** lists every folder FramePort scans, with how many library games
+  come from it and whether it's there now (a folder on an unplugged drive shows as not found). The bin icon stops
+  scanning a folder; its games stay in the library. `frameport folders [--add DIR] [--remove DIR]` does the same on the
+  command line, `frameport rescan` rescans.
+- **Another version in the new folder** (a different APK or game build): **Scan a folder…** on that folder takes it, as
+  **Update with a newer APK…** would (name, tags, art and your own recipe stay). **Rescan folders** leaves such games
+  alone and says so; use the game's **Update with a newer APK…** / **…version…** to switch.
+- **Two copies** (the old folder is still there): the library keeps the copy it has. To use the other one, delete or
+  rename the old copy and rescan.
+- PC VR games are recognised by their folder name, or a renamed folder by its program file. Linux apps aren't part of
+  folder scans: add the moved app again with **Add a Linux app…** (it keeps its name, art and switches).
+
 ## Can I scan SideQuest backups or AXRB downloads directly?
 
 Yes. Scan the folder as it is; FramePort finds the APK and its OBB files in both layouts:

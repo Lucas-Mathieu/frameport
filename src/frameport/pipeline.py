@@ -28,15 +28,115 @@ from .sources import quest_dump, rift_dump
 from .targets.base import PC_LABEL, Target
 
 
+@dataclasses.dataclass
+class ScanReport:
+    """What a scan did with games already in the library that it found at another place (GitHub discussion #351).
+    Each item: {"package", "title", "path": the copy found, "old": where the library had it}.
+    moved: the library's copy is gone and the found one is the same build: the entry now points at it (title, tags,
+    art, recipe, builds and installs stay). updated: the library's copy is gone and the found one is another version:
+    taken like "Update with a newer APK…" (only by Scan a folder…, which the user pointed at that folder).
+    other_version: the same on Rescan folders: left alone, the user decides. other_copy: the library's copy is still
+    there: it stays."""
+    moved: list[dict] = dataclasses.field(default_factory=list)
+    updated: list[dict] = dataclasses.field(default_factory=list)
+    other_version: list[dict] = dataclasses.field(default_factory=list)
+    other_copy: list[dict] = dataclasses.field(default_factory=list)
+
+    def handled(self) -> set[str]:
+        return {i["package"] for i in self.moved + self.updated + self.other_version + self.other_copy}
+
+    def note(self, kind: str, entry: dict, path, reporter: Reporter | None = None) -> None:
+        item = {"package": entry["package"], "title": entry.get("title") or entry["package"], "path": str(path),
+                "old": entry.get("apk") or entry.get("game_dir")}
+        getattr(self, kind).append(item)
+        if reporter:
+            reporter.log({
+                "moved": "{title}: moved, now uses {path}",
+                "updated": "{title}: another version found at {path}; the library now uses it (title, tags, art and "
+                           "your own recipe stay)",
+                "other_version": "{title}: another version found at {path}; left alone (to switch to it: \"Update "
+                                 "with a newer APK…\" or \"…version…\" on the game's page, or Scan a folder… on "
+                                 "that folder)",
+                "other_copy": "{title}: another copy at {path} is left out (the library keeps {old})",
+            }[kind].format(**item))
+
+
+def _same_path(a, b) -> bool:
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except OSError:
+        return str(a) == str(b)
+
+
+def source_present(entry: dict) -> bool:
+    """The game's own files are where the library says (Quest/Android: APK + data; PC VR: the game folder)."""
+    try:
+        if is_rift(entry) or is_linux(entry):
+            return bool(entry.get("game_dir")) and Path(entry["game_dir"]).is_dir()
+        check_source(entry)
+        return True
+    except Exception:  # noqa: BLE001 - missing, or on a drive that isn't connected
+        return False
+
+
+def _missing_note(entry: dict, reporter: Reporter | None) -> None:
+    if reporter:
+        reporter.log(f"{entry.get('title') or entry['package']}: its files aren't at "
+                     f"{entry.get('apk') or entry.get('game_dir')} any more (moved, deleted, or on a drive that "
+                     "isn't connected)")
+
+
+def same_quest_build(entry: dict, apk: Path) -> bool:
+    """The APK is the build the library entry was made from: the same SHA-256 (recorded when it was added), else the
+    same versionName."""
+    if entry.get("source_sha256"):
+        try:
+            return builder.sha256(Path(apk)) == entry["source_sha256"]
+        except OSError:
+            return False
+    ver = (entry.get("analysis") or {}).get("version")
+    return bool(ver) and quest_dump.version_name(Path(apk)) == ver
+
+
+def relink_quest(package: str, src: SourceGame) -> dict | None:
+    """Point a Quest/Android entry at the same build in another place: only where its files are changes."""
+    from .core.models import data_manifest
+
+    manifest = data_manifest(src.data_dir, src.data_files)
+    fields = dict(name=src.name, apk=str(src.apk), data_dir=str(src.data_dir) if src.data_dir else None,
+                  data_files=src.data_files, data_bytes=sum(manifest.values()), data_manifest=manifest,
+                  origin=str(src.origin) if src.origin else None)
+    return library.update_game(package, lambda g: g.update(fields))
+
+
+def _known_quest(src: SourceGame, old: dict, reporter: Reporter | None, allow_update: bool,
+                 report: ScanReport) -> None:
+    """A Quest/Android game of the library found at another place than the library's copy (see ScanReport)."""
+    if source_present(old):
+        report.note("other_copy", old, src.apk, reporter)
+        return
+    _missing_note(old, reporter)
+    if same_quest_build(old, src.apk):
+        relink_quest(old["package"], src)
+        report.note("moved", old, src.apk, reporter)
+    elif allow_update:
+        replace_apk(old["package"], src.apk, reporter, found=src)
+        report.note("updated", old, src.apk, reporter)
+    else:
+        report.note("other_version", old, src.apk, reporter)
+
+
 def add_path(path: Path, reporter: Reporter | None = None, on_added=None, force_rift: bool = False,
-             art: bool = False, only_new: bool = False) -> list[dict]:
+             art: bool = False, only_new: bool = False, report: ScanReport | None = None) -> list[dict]:
     """Scan a file/folder (recursively), analyze every game found (Quest APKs and Rift game folders) and store it with
     a suggested recipe. on_added(entry) is called as each game lands in the library (the GUI streams cards in).
     force_rift: `path` is one Rift game folder (added even if no VR runtime is detected). art: fetch artwork too.
     only_new: skip Quest APKs already in the library (a rescan for games added since; Rift folders already skip
-    unchanged games)."""
+    unchanged games). A game of the library found at another place (moved, a second copy, another version) is put in
+    `report` (ScanReport), not in the returned list."""
     path = Path(path)
     added = []
+    report = report if report is not None else ScanReport()
     known_apks = {str(Path(g["apk"]).resolve()) for g in library.games() if g.get("apk")} if only_new else set()
     # entries made from AXRB's PC-patched copies (no OBBs; older FramePort scanned them) get the original download
     known_packages = {g["package"] for g in library.games()
@@ -44,6 +144,8 @@ def add_path(path: Path, reporter: Reporter | None = None, on_added=None, force_
 
     def done(entry):
         if only_new and entry["package"] in known_packages:  # already in the library (e.g. an unchanged Rift folder)
+            return
+        if entry["package"] in report.handled():  # moved, another copy or version: reported, not "added"
             return
         added.append(entry)
         if on_added:
@@ -54,12 +156,21 @@ def add_path(path: Path, reporter: Reporter | None = None, on_added=None, force_
                 reporter.check_cancel()
             if only_new and str(Path(src.apk).resolve()) in known_apks:
                 continue
-            if only_new:  # another copy of a game already in the library (e.g. a patched build): leave it alone
+            try:
+                pkg = quest_dump._package_of(src.apk)
+            except Exception:  # noqa: BLE001
+                pkg = None
+            old = library.game(pkg) if pkg else None
+            if old and old.get("apk") and not is_rift(old) and not is_linux(old) \
+                    and not _same_path(old["apk"], src.apk) and not quest_dump._axrb_patched(Path(old["apk"])):
                 try:
-                    if quest_dump._package_of(src.apk) in known_packages:
-                        continue
-                except Exception:  # noqa: BLE001
-                    pass
+                    _known_quest(src, old, reporter, not only_new, report)
+                except Exception as exc:  # noqa: BLE001 - keep scanning
+                    if reporter:
+                        reporter.log(f"skipped {src.apk.name}: {exc}")
+                continue
+            if only_new and pkg in known_packages:  # (e.g. an entry without an APK)
+                continue
             try:
                 entry = add_game(src, reporter)
                 if art:
@@ -87,7 +198,8 @@ def add_path(path: Path, reporter: Reporter | None = None, on_added=None, force_
                 reporter.check_cancel()
                 reporter.progress(i / max(len(folders), 1), f"{i + 1} / {len(folders)} · {folder.name}")
             try:
-                entry = add_rift_game(folder, reporter, tree=trees.get(folder), force=force_rift, art=art)
+                entry = add_rift_game(folder, reporter, tree=trees.get(folder), force=force_rift, art=art,
+                                      report=report, allow_update=not only_new)
                 if entry and art and not entry.get("details"):
                     fetch_details(entry["package"], reporter)
                     entry = library.game(entry["package"])
@@ -96,6 +208,8 @@ def add_path(path: Path, reporter: Reporter | None = None, on_added=None, force_
             except Exception as exc:
                 if reporter:
                     reporter.log(f"skipped {folder.name}: {exc}")
+    if reporter and report.moved:
+        reporter.log(f"Updated the location of {len(report.moved)} game(s)")
     return added
 
 
@@ -136,12 +250,70 @@ def _existing_rift(folder: Path) -> dict | None:
     return None
 
 
+def _rift_program(entry: dict) -> tuple[str, int] | None:
+    """(program path in the game folder, its size) from a PC VR entry's fingerprint."""
+    fp = (((entry.get("analysis") or {}).get("extra") or {}).get("fingerprint")) or ""
+    parts = fp.rsplit(":", 3)
+    if len(parts) == 4 and parts[0] and parts[1].isdigit():
+        return parts[0], int(parts[1])
+    return None
+
+
+def _file_size(path: Path) -> int | None:
+    try:
+        return path.stat().st_size if path.is_file() else None
+    except OSError:
+        return None
+
+
+def _same_rift_build(entry: dict, folder: Path) -> bool:
+    """The folder holds the build the entry was made from: its program at the same place with the same size."""
+    prog = _rift_program(entry)
+    if prog:
+        return _file_size(folder / prog[0]) == prog[1]
+    return bool(entry.get("exe")) and _file_size(folder / entry["exe"]) is not None
+
+
+def _moved_rift(folder: Path, tree) -> dict | None:
+    """The library's PC VR entry this folder is another copy of (it was found elsewhere before): the same game id,
+    else an entry whose folder is gone and whose program (path and size) is in this folder."""
+    from .analysis import rift
+
+    rifts = [g for g in library.games() if g.get("kind") == "rift" and g.get("game_dir")
+             and not _same_path(g["game_dir"], folder)]
+    same = library.game(rift.game_id(folder, getattr(tree, "manifest", None)))
+    if same is not None and any(g["package"] == same["package"] for g in rifts):
+        return same
+    gone = [g for g in rifts if (p := _rift_program(g)) and _file_size(folder / p[0]) == p[1]
+            and not source_present(g)]
+    return gone[0] if len(gone) == 1 else None
+
+
+def _relink_rift(entry: dict, folder: Path) -> dict | None:
+    """Point a PC VR entry at the same build in another folder: only where its files are changes."""
+    from .analysis import rift
+
+    new_fp = rift.fingerprint(folder, entry.get("exe") or "")
+
+    def change(g: dict) -> None:
+        g.update(game_dir=str(folder), origin=str(folder.parent), name=folder.name)
+        extra = (g.get("analysis") or {}).setdefault("extra", {}) if isinstance(g.get("analysis"), dict) else {}
+        extra["folder"] = str(folder)
+        old_fp = extra.get("fingerprint") or ""
+        # (copies may get a new date; a fingerprint of an older analysis stays so the next scan analyzes it again)
+        if new_fp and old_fp.rsplit(":", 1)[-1] == new_fp.rsplit(":", 1)[-1]:
+            extra["fingerprint"] = new_fp
+    return library.update_game(entry["package"], change)
+
+
 def add_rift_game(folder: Path, reporter: Reporter | None = None, tree=None, exe: str | None = None,
-                  force: bool = False, art: bool = False, replace: dict | None = None) -> dict | None:
+                  force: bool = False, art: bool = False, replace: dict | None = None,
+                  report: ScanReport | None = None, allow_update: bool = True) -> dict | None:
     """Analyze one Rift game folder and store it. Unchanged folders (same program, size, date) are not analyzed again;
     the user's exe choice, recipe and tags survive rescans. Returns None for folders without a VR runtime (unless
     force). replace: the library entry this folder is a newer version of (replace_rift_game): it keeps its package and
-    name."""
+    name. A game of the library whose folder moved here gets this folder (report: ScanReport; allow_update: another
+    version of it may replace it, see ScanReport)."""
     from .analysis import rift
     from .recommend import catalog
 
@@ -152,6 +324,27 @@ def add_rift_game(folder: Path, reporter: Reporter | None = None, tree=None, exe
             reporter.log(f"skipped {folder.name}: an older version of a game that was updated from another folder")
         return None
     old = replace or _existing_rift(folder)
+    if old is None and exe is None:  # (set_exe passes the entry's own folder)
+        tree = tree or rift.walk(folder)
+        other = _moved_rift(folder, tree)
+        if other is not None:
+            report = report if report is not None else ScanReport()
+            if source_present(other):
+                report.note("other_copy", other, folder, reporter)
+                return None
+            _missing_note(other, reporter)
+            if not _same_rift_build(other, folder):
+                if not allow_update:
+                    report.note("other_version", other, folder, reporter)
+                    return None
+                replace_rift_game(other["package"], folder, reporter)
+                report.note("updated", other, folder, reporter)
+                return library.game(other["package"])
+            _relink_rift(other, folder)
+            report.note("moved", other, folder, reporter)
+            if art and not _has_art(other["package"]):
+                _rift_art(library.game(other["package"]), reporter)
+            return library.game(other["package"])
     old_extra = ((old or {}).get("analysis") or {}).get("extra") or {}
     forced = exe is not None or replace is not None  # set_exe / a newer version: always analyze
     if replace is None:
@@ -638,13 +831,16 @@ def add_game(src: SourceGame, reporter: Reporter | None = None) -> dict:
     old = library.game(a.package) or {}
     # a name the user chose (Rename…, an install link) stays when the game is scanned again
     names = {"auto_title": recipe.title or a.label} if old.get("title_locked") else {"title": recipe.title or a.label}
+    # a recipe the user edited stays when the game is scanned again (only the suggestion is refreshed, like Analyze
+    # again); a derived one follows the new analysis
+    own = {} if (old.get("recipe") or {}).get("source") == "user" else \
+        {"recipe": library.recipe_to_dict(recipe), "status": recipe.status}
     return library.upsert_game(
         a.package, **names, name=src.name, apk=str(src.apk),
         data_dir=str(src.data_dir) if src.data_dir else None, data_files=src.data_files,
         data_bytes=sum(manifest.values()), data_manifest=manifest, source_sha256=builder.sha256(src.apk),
         origin=str(src.origin),
-        analysis=a.to_dict(), recipe=library.recipe_to_dict(recipe), suggested=library.recipe_to_dict(recipe),
-        status=recipe.status,
+        analysis=a.to_dict(), suggested=library.recipe_to_dict(recipe), **own,
     )
 
 
@@ -661,16 +857,17 @@ class WrongPackage(ValueError):
     """The picked APK is another app than the game it should update."""
 
 
-def replace_apk(package: str, apk: Path, reporter: Reporter | None = None) -> dict:
+def replace_apk(package: str, apk: Path, reporter: Reporter | None = None, found: SourceGame | None = None) -> dict:
     """A newer APK for a Quest/Android game already in the library (GitHub #161): the entry points at it from now on.
     Its title, art, tags and the user's own recipe stay (a suggested recipe follows the new analysis, like Analyze
-    again). The game data stays where it was unless the new APK's folder brings its own. Returns {"entry", "older":
-    the new versionCode is lower than the old one's, "old_version", "new_version"}."""
+    again). The game data stays where it was unless the new APK's folder brings its own. found: the game as a scan
+    found it (its data folder). Returns {"entry", "older": the new versionCode is lower than the old one's,
+    "old_version", "new_version"}."""
     entry = library.game(package)
     if entry is None or is_rift(entry) or is_linux(entry):
         raise ValueError("only Quest/Android games can get a newer APK")
     apk = Path(apk)
-    src = quest_dump.from_path(apk)
+    src = found or quest_dump.from_path(apk)
     new_pkg, new_vc = quest_dump._apk_ids(apk)
     if src is None or new_pkg is None:
         raise ValueError(f"{apk.name} isn't a readable APK")
@@ -685,8 +882,14 @@ def replace_apk(package: str, apk: Path, reporter: Reporter | None = None) -> di
     a = analyze(apk, data_bytes=src.data_bytes())
     a.extra["lang_packs"] = langpacks.find_tags(_data_folder(src))
     a.extra["asset_files"] = langpacks.find_content_files(_data_folder(src))
-    library.upsert_game(package, apk=str(apk), data_dir=str(src.data_dir) if src.data_dir else None,
-                        data_files=src.data_files, data_bytes=src.data_bytes())
+    fields = dict(apk=str(apk), data_dir=str(src.data_dir) if src.data_dir else None, data_files=src.data_files,
+                  data_bytes=src.data_bytes(), source_sha256=builder.sha256(apk))
+    if found is not None:  # found by a scan: where it was found
+        from .core.models import data_manifest
+
+        fields.update(name=src.name, origin=str(src.origin) if src.origin else entry.get("origin"),
+                      data_manifest=data_manifest(src.data_dir, src.data_files))
+    library.upsert_game(package, **fields)
     stored = _store_analysis(package, a)
     return {"entry": stored, "older": bool(old_vc and new_vc and new_vc < old_vc), "old_version": old_vc,
             "new_version": new_vc}

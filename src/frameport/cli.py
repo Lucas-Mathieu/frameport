@@ -227,13 +227,78 @@ def tools_import_keys(dirs: list[Path] = typer.Argument(..., help="folders with 
 # ------------------------------------------------------------------------------------------ library
 @app.command()
 def scan(path: Path = typer.Argument(..., help="a folder with game backups (APKs or PC VR game folders), or an APK")):
-    """Find games under PATH, analyze them and suggest patches."""
+    """Find games under PATH, analyze them and suggest patches. A folder is remembered for `frameport rescan`
+    (`frameport folders` lists them). Games of the library found here after a move get their new place."""
+    from .core import folders
+
+    if path.is_dir():
+        folders.remember(path)
+    _scan(path, only_new=False)
+
+
+def _scan(path: Path, only_new: bool) -> None:
     rep = printing_reporter(verbose=False)
-    for g in pipeline.add_path(path, rep):
+    report = pipeline.ScanReport()
+    for g in pipeline.add_path(path, rep, only_new=only_new, report=report):
         r = g["recipe"]
         typer.echo(f"{g['package']:40} {g.get('title', '')[:34]:34} {r['status']:11} {r['source']}")
         for warning in pipeline.analysis_warnings(g):
             typer.echo(f"  ! {warning}")
+    labels = {"moved": "moved here (location updated)", "updated": "another version here: now used",
+              "other_version": "another version here: left alone (frameport new-version <package> <path>)",
+              "other_copy": "another copy here: the library keeps its own"}
+    for kind, label in labels.items():
+        for item in getattr(report, kind):
+            typer.echo(f"{item['package']:40} {item['title'][:34]:34} {label}: {item['path']}")
+    if report.moved:
+        typer.echo(f"Updated the location of {len(report.moved)} game(s)")
+
+
+@app.command()
+def rescan():
+    """Scan the library folders again (`frameport folders`) for new games and for games that moved there."""
+    from .core import folders
+
+    roots = folders.rescan_roots()
+    if not roots:
+        typer.echo("no folders to rescan yet: frameport scan <folder> or frameport folders --add <folder>")
+        return
+    for root in roots:
+        typer.echo(f"== {root}")
+        _scan(Path(root), only_new=True)
+
+
+@app.command()
+def folders(add: list[Path] = typer.Option([], "--add", help="a folder to scan from now on (repeatable)"),
+            remove: list[Path] = typer.Option([], "--remove", help="stop scanning this folder; its games stay in "
+                                                                  "the library (repeatable)"),
+            as_json: bool = typer.Option(False, "--json", help=JSON_HELP)):
+    """The library folders `frameport rescan` (and the GUI's Rescan folders) look in: status, add, remove."""
+    import dataclasses
+    import json
+
+    from .core import folders as lib_folders
+
+    for p in add:
+        try:
+            lib_folders.add(p)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from None
+        typer.echo(f"added {p}")
+    for p in remove:
+        if lib_folders.remove(p):
+            typer.echo(f"removed {p} (its games stay in the library)")
+        else:
+            typer.echo(f"{p} isn't a library folder", err=True)
+            raise typer.Exit(1)
+    status = lib_folders.status()
+    if as_json:
+        typer.echo(json.dumps([dataclasses.asdict(s) for s in status], indent=1))
+        return
+    if not status:
+        typer.echo("no library folders yet (frameport scan <folder> or frameport folders --add <folder>)")
+    for s in status:
+        typer.echo(f"{'ok' if s.exists else 'MISSING':8} {s.games:4} game(s)  {s.path}")
 
 
 @app.command("catalog-update")

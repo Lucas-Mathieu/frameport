@@ -96,6 +96,24 @@ def reduce_motion_setting() -> bool:
     return bool(library.setting(REDUCE_MOTION, False))
 
 
+def scan_report_lines(report: pipeline.ScanReport) -> list[str]:
+    """A scan's summary of games already in the library that it found elsewhere (pipeline.ScanReport)."""
+    out = []
+    if report.moved:
+        out.append(tr_n("Updated the location of {n} game", "Updated the location of {n} games", len(report.moved)))
+    if report.updated:
+        out.append(tr_n("{n} game now uses the other version found there",
+                        "{n} games now use the other versions found there", len(report.updated)))
+    if report.other_version:
+        out.append(tr_n("{n} game has another version there (left alone: Update with a newer version… on its page)",
+                        "{n} games have another version there (left alone: Update with a newer version… on their "
+                        "pages)", len(report.other_version)))
+    if report.other_copy:
+        out.append(tr_n("{n} game is already in the library from another folder",
+                        "{n} games are already in the library from other folders", len(report.other_copy)))
+    return out
+
+
 SIDEBAR_WIDTH = 236  # logical px before the UI scale (content_insets)
 
 
@@ -2235,36 +2253,29 @@ class FramePortApp:
         return self.submit(tr("Add {name}").format(name=name), run, None, "task")
 
     def scan_roots(self) -> list[str]:
-        """Folders to rescan: the ones scanned before (remembered from now on), else the folders the library's games
-        came from (one level up from each game folder)."""
-        roots = [r for r in library.setting("scan.roots", []) if Path(r).exists()]
-        if not roots:
-            found = set()
-            for g in library.load().get("games", {}).values():
-                if g.get("kind") == "linux":  # added one by one (its origin may be e.g. Downloads)
-                    continue
-                origin = g.get("origin") or (str(Path(g["apk"]).parent) if g.get("apk") else None)
-                if origin and Path(origin).parent.exists():
-                    found.add(str(Path(origin).parent))
-            roots = sorted(found)
-        # a folder inside another one is scanned with it (scanning it again would only repeat work)
-        return [r for r in roots if not any(o != r and Path(r).is_relative_to(o) for o in roots)]
+        """Folders "Rescan folders" scans (core/folders.py; Settings → Library folders lists and edits them)."""
+        from ..core import folders
+
+        return folders.rescan_roots()
 
     def rescan(self, e=None) -> None:
-        """Scan the library's folders again for games added since (unchanged games aren't analyzed again)."""
+        """Scan the library's folders again for games added since (unchanged games aren't analyzed again) and for games
+        whose files moved there (their entries are pointed at the new place)."""
         roots = self.scan_roots()
         if not roots:
             self.toast(tr("No folders to rescan yet — add games with Scan a folder…"))
             return
         for r in roots:
             self.scan(r, only_new=True)
-        self.toast(tr_n("Rescanning {n} folder for new games", "Rescanning {n} folders for new games", len(roots)))
+        self.toast(tr_n("Rescanning {n} folder for new and moved games",
+                        "Rescanning {n} folders for new and moved games", len(roots)))
 
     def scan(self, path: str, single: bool = False, only_new: bool = False) -> Job:
         last = {"t": 0.0}
-        if not single:  # remembered for "Rescan folders"
-            roots = [r for r in library.setting("scan.roots", []) if r != str(path)]
-            library.set_setting("scan.roots", roots + [str(path)])
+        if not single and Path(path).is_dir():  # remembered for "Rescan folders" (Settings → Library folders)
+            from ..core import folders
+
+            folders.remember(path)
 
         def added_one(entry: dict):
             from ..artwork import thumbs
@@ -2282,17 +2293,23 @@ class FramePortApp:
         def run(job: Job):
             rep = job.reporter
             rep.stage(tr("Looking for games"))
+            report = pipeline.ScanReport()
             added = pipeline.add_path(Path(path), rep, on_added=added_one, force_rift=single, art=True,
-                                      only_new=only_new)
+                                      only_new=only_new, report=report)
             if self.route[0] == "welcome" and added:
                 library.set_setting("ui.welcome_done", True)
                 self.route = ("library",)
             n = len(added)
+            if report.handled():
+                self.refresh_view()  # moved games: their pages show the new place
             if only_new:
-                return tr_n("{n} new game in {name}", "{n} new games in {name}", n,
+                text = tr_n("{n} new game in {name}", "{n} new games in {name}", n,
                             name=Path(path).name) if added else \
                     tr("No new games in {name}").format(name=Path(path).name)
-            return tr_n("Added {n} game", "Added {n} games", n) if added else tr("No games found in that folder")
+            else:
+                text = tr_n("Added {n} game", "Added {n} games", n) if added else \
+                    (tr("No new games in that folder") if report.handled() else tr("No games found in that folder"))
+            return " · ".join([text] + scan_report_lines(report))
         return self.submit(tr("Scan {name}").format(name=Path(path).name), run, None, "scan")
 
     # ------------------------------------------------------------------ executable choice / artwork

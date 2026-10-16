@@ -111,8 +111,14 @@ HELP: dict[str, str] = _Translated({
     "app_updates": "FramePort checks GitHub for a new version every few hours. Update now downloads and checks it, "
                    "then restarts FramePort; your games and settings stay.",
     "update_all": "Updates every game marked \"Update ready\", one after another.",
-    "rescan": "Scans your game folders again and adds new games. Games already in the library keep their recipe, "
-              "tags and art.",
+    "rescan": "Scans your game folders again and adds new games. A game you moved into one of them gets its new "
+              "place; games already in the library keep their name, recipe, tags and art. Settings → Library "
+              "folders lists the folders.",
+    "library_folders": "Every Scan a folder… adds its folder here. Rescan folders looks in them for new games, and "
+                       "for games you moved: a game whose files are gone from their old place is pointed at the same "
+                       "copy in its new place. Another version found there is only taken by Scan a folder…; Rescan "
+                       "leaves it for you to choose (Update with a newer version… on the game's page). Removing a "
+                       "folder only stops it being scanned: its games stay in the library.",
     "files": "Upload, download, rename and delete files on the Frame. Videos, Downloads and Documents are shared by "
              "every Quest game; each game also has its own storage.",
     "live_view": "Shows the headset's view with sound, whatever is running. It plays here where possible, else in "

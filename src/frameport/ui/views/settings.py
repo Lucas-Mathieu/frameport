@@ -23,12 +23,14 @@ TOOL_WHY = {"java": tr("Runs OVRPort and apksigner"), "overport": tr("Converts Q
             "apksigner": tr("Signs rebuilt games"), "revive": tr("Runs Oculus PC games on SteamVR")}
 # the page's sections in order (the index on the left lists them): Appearance near the top (it's the most used),
 # "Uninstall FramePort" last
-SECTIONS = ("appearance", "updates", "links", "installing", "tools", "pc", "data", "feedback", "about", "remove")
+SECTIONS = ("appearance", "updates", "links", "folders", "installing", "tools", "pc", "data", "feedback", "about",
+            "remove")
 
 
 def section_titles() -> dict[str, str]:
     """Index labels of SECTIONS (the sections' own headings may be longer)."""
     return {"appearance": tr("Appearance"), "updates": tr("Updates"), "links": tr("Install links"),
+            "folders": tr("Library folders"),
             "installing": tr("Installing"), "tools": tr("Tools"), "pc": tr("This PC"), "data": tr("Data"),
             "feedback": tr("Problems and feedback"), "about": tr("About"), "remove": tr("Uninstall FramePort")}
 
@@ -134,6 +136,72 @@ class SettingsView:
                                   tooltip=tr("Your own game files aren't touched.")),
                           ft.Container(height=T.S2), self.ssh_keys()],
                          spacing=T.S2, horizontal_alignment=ft.CrossAxisAlignment.START)
+
+    def library_folders(self) -> ft.Control:
+        """Settings → Library folders: the folders "Rescan folders" scans (core/folders.py, GitHub discussion #351).
+        Status (is it there, how many games come from it) is read off the UI thread."""
+        from ...core import folders
+
+        app = self.app
+        rows = ft.Column(spacing=T.S2)
+
+        def row(st: folders.FolderStatus) -> ft.Control:
+            games = tr_n("{n} game in the library", "{n} games in the library", st.games)
+            if st.exists:
+                icon, color, state = ft.Icons.FOLDER_OUTLINED, T.TEXT_2, games
+            else:
+                icon, color = ft.Icons.FOLDER_OFF_OUTLINED, T.WARN
+                state = tr("Not found (moved, deleted or on a drive that isn't connected)") + " · " + games
+            return ft.Row([
+                C.as_icon(icon, T.px(18), color),
+                ft.Column([C.body(Path(st.path).name or st.path, T.TEXT, max_lines=1,
+                                  overflow=ft.TextOverflow.ELLIPSIS),
+                           C.meta(st.path, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS, tooltip=st.path),
+                           C.meta(state, T.WARN if not st.exists else None)],
+                          spacing=0, expand=True),
+                C.icon_btn(ft.Icons.DELETE_OUTLINE_ROUNDED, tr("Stop scanning this folder"),
+                           on_click=lambda e, s=st: remove(s)),
+            ], spacing=T.S2, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
+        def fill():  # (run_bg: a folder on a sleeping network drive can take a while to answer)
+            items = folders.status()
+            rows.controls = [row(s) for s in items] or \
+                [C.meta(tr("No folders yet. Add one here, or use Scan a folder… in the Library."))]
+            C.update(rows)
+
+        def remove(st: folders.FolderStatus):
+            def ok():
+                folders.remove(st.path)
+                app.run_bg(fill)
+            C.confirm(app.page, tr("Stop scanning this folder?"),
+                      tr_n("Rescan folders won't look in {path} any more. The {n} game from it stays in your library "
+                           "(nothing is deleted).",
+                           "Rescan folders won't look in {path} any more. The {n} games from it stay in your library "
+                           "(nothing is deleted).", st.games, path=st.path),
+                      tr("Remove folder"), ok)
+
+        async def add(e):
+            path = await C.pick_dir(app.page, dialog_title=tr("Folder with games (APKs or PC VR games)"))
+            if not path:
+                return
+            try:
+                folders.add(path)
+            except ValueError as exc:
+                app.toast(str(exc), error=True)
+                return
+            app.run_bg(fill)
+            app.scan(path, only_new=True)  # its games (new ones, and ones that moved there) come in now
+
+        rows.controls = [C.meta(tr("Checking folders…"))]
+        app.run_bg(fill)
+        return ft.Column([
+            C.meta(tr("Rescan folders in the Library looks in these folders for new games and for games that "
+                      "moved there.")),
+            rows,
+            ft.Row([C.secondary(tr("Add folder…"), ft.Icons.CREATE_NEW_FOLDER_OUTLINED, add),
+                    C.ghost(tr("Rescan folders"), ft.Icons.REFRESH_ROUNDED, app.rescan)],
+                   spacing=T.S2, run_spacing=T.S2, wrap=True),
+        ], spacing=T.S3, horizontal_alignment=ft.CrossAxisAlignment.START)
 
     def ssh_keys(self) -> ft.Control:
         """Settings → Installing: private key files FramePort logs in with besides its own (frame.connection
@@ -496,6 +564,8 @@ class SettingsView:
             "appearance": C.section(tr("Appearance"), C.card(self.appearance(), padding=T.S4), help="ui_scale"),
             "updates": C.section(tr("Updates"), C.card(self.updates_card(), padding=T.S4), help="app_updates"),
             "links": C.section(tr("Install links"), C.card(self.links_card(), padding=T.S4), help="install_links"),
+            "folders": C.section(tr("Library folders"), C.card(self.library_folders(), padding=T.S4),
+                                 help="library_folders"),
             "installing": C.section(tr("Installing"), C.card(self.installing(), padding=T.S4), help="launch_test"),
             "tools": C.section(tr("Tools"), C.card(self.tools, padding=ft.Padding(T.S4, T.S2, T.S4, T.S2)),
                                subtitle=tr("FramePort keeps its own copies; nothing is installed system-wide"),

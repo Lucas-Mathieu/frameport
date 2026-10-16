@@ -101,6 +101,7 @@
  "Add a tag": "",
  "Add a Windows program…": "",
  "Add an APK…": "",
+ "Add folder…": "",
  "Add from a link…": "",
  "Add games": "",
  "Add this tag": "",
@@ -237,6 +238,7 @@
  "Check now": "",
  "Check program": "",
  "Check that the Frame and this PC are on the same network.": "",
+ "Checking folders…": "",
  "Checking for updates": "",
  "Checking this PC…": "",
  "Checking tools…": "",
@@ -451,6 +453,7 @@
  "Every 5 s, logs per located space how far the requested times are from the frame's predicted display time, and the runtime clock's offset from the monotonic clock. No effect on the game.": "",
  "Every key goes through": "",
  "Every N seconds, saves the left-eye image the game submits (a quarter of its size) as fb_snap_0-7.ppm in the game's files folder on the Frame. Launch tests run without anyone wearing the headset, so the headset view stays black; this shows what the game itself draws. OpenGL ES games only.": "",
+ "Every Scan a folder… adds its folder here. Rescan folders looks in them for new games, and for games you moved: a game whose files are gone from their old place is pointed at the same copy in its new place. Another version found there is only taken by Scan a folder…; Rescan leaves it for you to choose (Update with a newer version… on the game's page). Removing a folder only stops it being scanned: its games stay in the library.": "",
  "Every shot you take in the headset": "",
  "Every uploaded file is present with the right size.": "",
  "Every {n}": "",
@@ -851,6 +854,7 @@
  "Lets you type into this app's text fields on the Frame (they'd close at once).": "",
  "Letters, Enter, Backspace, arrows, Esc and shortcuts reach the headset.": "",
  "Library": "",
+ "Library folders": "",
  "Link": "",
  "Linux": "",
  "Linux app": "",
@@ -957,6 +961,7 @@
  "No file at that path": "",
  "No folder at that path": "",
  "No folders to rescan yet — add games with Scan a folder…": "",
+ "No folders yet. Add one here, or use Scan a folder… in the Library.": "",
  "No Frame connected: the game goes to your library now and installs when the Frame connects.": "",
  "No FramePort game is running. Start one, or switch the filter to see everything.": "",
  "No Frames found. New Frame? Use Start setup above. Otherwise turn on Developer Mode and keep the Frame on this network.": "",
@@ -964,6 +969,7 @@
  "No keyboard? Open {page} in Chromium on the Frame, copy the line and paste it into Konsole. This PC shows there as \"{words}\".": "",
  "No limit": "",
  "No matching files": "",
+ "No new games in that folder": "",
  "No new games in {name}": "",
  "No other Frames remembered yet.": "",
  "No process matches.": "",
@@ -979,6 +985,7 @@
  "Not connected: {error}": "",
  "Not enough space on the Frame": "",
  "Not enough space on the Frame ({detail}). Uninstall games you don't play or free up space on the Steam Frame page.": "",
+ "Not found (moved, deleted or on a drive that isn't connected)": "",
  "Not from a FramePort game": "",
  "Not installed": "",
  "Not installed yet (needs Developer Mode)": "",
@@ -1212,6 +1219,7 @@
  "Remembered": "",
  "Remove": "",
  "Remove converted copies now": "",
+ "Remove folder": "",
  "Remove from library…": "",
  "Remove localized app names": "",
  "Remove tag": "",
@@ -1260,7 +1268,12 @@
  "Report a problem…": "",
  "Reports Frame controllers as Oculus Touch and hides synthetic hand tracking. Set 0 for games that require hand tracking (for example Silhouette).": "",
  "Rescan folders": "",
- "Rescanning {n} folder for new games": [
+ "Rescan folders in the Library looks in these folders for new games and for games that moved there.": "",
+ "Rescan folders won't look in {path} any more. The {n} game from it stays in your library (nothing is deleted).": [
+  "",
+  ""
+ ],
+ "Rescanning {n} folder for new and moved games": [
   "",
   ""
  ],
@@ -1322,7 +1335,7 @@
  "Scales every controller vibration the game asks for (0-1): plain vibrations, Meta's amplitude envelopes and PCM buffers. For games whose vibrations feel much stronger than on a Quest.": "",
  "Scan a folder…": "",
  "Scan {name}": "",
- "Scans your game folders again and adds new games. Games already in the library keep their recipe, tags and art.": "",
+ "Scans your game folders again and adds new games. A game you moved into one of them gets its new place; games already in the library keep their name, recipe, tags and art. Settings → Library folders lists the folders.": "",
  "Screenshot copied. Paste it anywhere.": "",
  "Screenshot taken": "",
  "Screenshots": "",
@@ -1472,6 +1485,8 @@
  "Stereo (3D) 360° layers: 0 = as the game sends them, 2 = flat (the left image to both eyes).": "",
  "Stop": "",
  "Stop objects popping in and out": "",
+ "Stop scanning this folder": "",
+ "Stop scanning this folder?": "",
  "Stop using this key (the file stays)": "",
  "Stopped: {why}": "",
  "Stops a black picture in Minecraft launchers (for example QuestCraft).": "",
@@ -1724,6 +1739,10 @@
  "Update tools": "",
  "Update with a newer APK…": "",
  "Update with a newer version…": "",
+ "Updated the location of {n} game": [
+  "",
+  ""
+ ],
  "Updates": "",
  "Updates every game marked \"Update ready\", one after another.": "",
  "Updates the game, frame rate and battery every 5 seconds. Turn off to save the Frame's power.": "",
@@ -1916,6 +1935,22 @@
   ""
  ],
  "{n} game": [
+  "",
+  ""
+ ],
+ "{n} game has another version there (left alone: Update with a newer version… on its page)": [
+  "",
+  ""
+ ],
+ "{n} game in the library": [
+  "",
+  ""
+ ],
+ "{n} game is already in the library from another folder": [
+  "",
+  ""
+ ],
+ "{n} game now uses the other version found there": [
   "",
   ""
  ],

@@ -140,6 +140,7 @@ def main() -> int:
              ("tools", lambda a: a.go("settings")),
              # the index on the left: "This PC" scrolls the page there
              ("settings-index", lambda a: a.page.run_task(a.settings_view.show_section, "pc")),
+             ("settings-folders", lambda a: a.page.run_task(a.settings_view.show_section, "folders")),
              ("settings-installing", lambda a: a.page.run_task(a.settings_view.show_section, "installing"))]
     if game:
         steps.insert(1, ("game", lambda a: a.open_game(game)))
