@@ -55,12 +55,19 @@ def test_rewriter_on_doom3quest_shaders(tmp_path):
         assert text.lstrip().startswith("#version 300 es")
     vp = (out / "diffuseMapShaderVP.glsl").read_text()
     assert "u_viewMatrices[(0u)         ]" in vp and "#extension GL_OVR_multiview2 : enable" in vp
-    # optional: a real GLSL ES front end (glslangValidator: OpenGL ES 3.00 without SPIR-V)
+    # optional: a real GLSL ES front end (glslangValidator: OpenGL ES 3.00 without SPIR-V). Doom3Quest's sources start
+    # with a newline before #version (raw string literals); GL drivers accept that, glslang's ES profile doesn't, so the
+    # copy it checks starts at #version
     validator = shutil.which("glslangValidator")
     if validator:
+        checked = tmp_path / "checked"
+        checked.mkdir()
         for f in rewritten:
             stage = "vert" if f.stem.endswith("VP") else "frag"
-            subprocess.run([validator, "-S", stage, str(f)], check=True, capture_output=True)
+            copy = checked / f.name
+            copy.write_text(f.read_text().lstrip())
+            r = subprocess.run([validator, "-S", stage, str(copy)], capture_output=True, text=True)
+            assert r.returncode == 0, f"{f.name}: {r.stdout}{r.stderr}"
 
 
 def _khronos_headers(dest: Path) -> Path | None:
