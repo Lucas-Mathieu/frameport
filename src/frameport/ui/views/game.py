@@ -412,8 +412,17 @@ class GameView:
                           "have. If nothing opens, visit the website in a browser."), T.TEXT)]
                 + ([C.meta(web["url"], T.TEXT_2, selectable=True)] if web.get("url") else []), spacing=T.px(4)),
                 "warn", ft.Icons.LANGUAGE_ROUNDED))
+        # a Google Daydream / Cardboard build (no Oculus support in it): its VR has no way to the headset (#335)
+        gvr = (extra.get("google_vr") if not self.rift and not self.linux and extra.get("vr_kind") != "quest"
+               else "")
+        if gvr:
+            out.append(C.callout(tr("This is a Google {platform} VR build. Its VR can't reach the Frame's headset, so "
+                                    "it runs as a flat window at best, usually without working controls. An Oculus "
+                                    "build of the game (Meta Quest, Oculus Go or Gear VR) works the normal way.")
+                                 .format(platform="Daydream" if gvr == "daydream" else "Cardboard"),
+                                 "warn", ft.Icons.VIEW_IN_AR_ROUNDED))
         static = " ".join(engine.blocker_notes(library.analysis_from_dict(g["analysis"]))) \
-            if (too_new or web) else ""
+            if (too_new or web or gvr) else ""
         if static and recipe.notes.strip() == static:
             pass  # the recipe's note says the same (shown above)
         elif recipe.status == "unsupported":

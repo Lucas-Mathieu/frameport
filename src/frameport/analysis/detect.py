@@ -43,7 +43,10 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 # 17: headset (the Meta headset a VR app was made for: Gear VR / Go games run through frame.a32_bridge) (2026-10)
 # 18: headset "quest" also for 32-bit apps that require 6DoF head tracking (Santa Cruz builds, e.g. Sports
 #     Scramble: Touch controllers on the a32 bridge) (2026-10)
-ANALYSIS_VERSION = 19
+# 19: unreal_obb_delivery also for obfuscated DownloaderActivity predicates (GitHub #159) (2026-10)
+# 20: google_vr (Google Daydream / Cardboard builds: GVR or Cardboard SDK, no path to the Frame's headset,
+#     GitHub #335) (2026-10)
+ANALYSIS_VERSION = 20
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -197,6 +200,32 @@ def vr_kind(libs: set[str], manifest_strings: list[str]) -> str:
     return "none"
 
 
+# Google VR (Daydream / Cardboard): the manifest categories of a Daydream / Cardboard app, Daydream's VR service
+# (android:enableVrMode="com.google.vr.vrcore/..."), the GVR SDK's library and the Cardboard SDK's
+# (github.com/googlevr/cardboard), and the GVR SDK's Java classes. Not libgvraudio.so / Unity's
+# libaudioplugingvrunity.so: Google's spatial audio, which Quest games ship too (e.g. Shadow Point).
+DAYDREAM_CATEGORY = "com.google.intent.category.DAYDREAM"
+CARDBOARD_CATEGORY = "com.google.intent.category.CARDBOARD"
+GOOGLE_VR_LIBS = {"libgvr.so", "libcardboard_api.so", "libGfxPluginCardboard.so"}
+GVR_DEX_MARKERS = (b"Lcom/google/vr/ndk/base/GvrLayout;", b"Lcom/google/vr/sdk/base/GvrView;",
+                   b"Lcom/google/vr/sdk/base/GvrActivity;", b"Lcom/google/cardboard/sdk/")
+
+
+def google_vr(libs: set[str], cats: set[str], manifest_strings: list[str], gvr_java: bool = False,
+              boot: str = "") -> str:
+    """A Google VR app: "daydream" (Daydream: needs Google's VR services, VrCore), "cardboard" (Cardboard: draws
+    both eyes side by side with lens distortion onto a phone screen) or "" (neither). Neither has a path to the
+    Frame's headset: a Lepton app only reaches it through OpenXR (VrApi / OVRPlugin games are translated to it).
+    `boot` = Unity's boot.config (vr-device-list=, where Unity builds list their VR devices)."""
+    devices = next((ln.split("=", 1)[1].lower() for ln in boot.splitlines() if ln.startswith("vr-device-list=")), "")
+    if (DAYDREAM_CATEGORY in cats or any(s.startswith("com.google.vr.vrcore") for s in manifest_strings)
+            or "daydream" in devices):
+        return "daydream"
+    if CARDBOARD_CATEGORY in cats or "cardboard" in devices or libs & GOOGLE_VR_LIBS or gvr_java:
+        return "cardboard"
+    return ""
+
+
 # Kotlin's message for a failed non-null cast to ClipboardManager (Godot 4.2-4.4; 4.1 is Java, 4.5+ uses `as?`)
 GODOT_CLIPBOARD_CAST = b"null cannot be cast to non-null type android.content.ClipboardManager"
 
@@ -249,6 +278,8 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
                                   for d in dexes)
         # video through Android's decoders (frame.hw_video_decode): Java MediaCodec, ExoPlayer/Media3, or libVLC
         media_codec = any(m in d for d in dexes for m in MEDIA_CODEC_MARKERS) or "libvlc.so" in libs
+        # Google VR's Java side (GvrLayout / GvrView, the Cardboard SDK): a Daydream / Cardboard app (google_vr)
+        gvr_java = any(m in d for d in dexes for m in GVR_DEX_MARKERS)
         from ..patches.frame.unreal_obb_check import has_delivery_check
 
         # Includes obfuscated DownloaderActivity predicates; CRC verification is a separate manifest switch.
@@ -372,6 +403,8 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             "xr_layer_exts": sorted(layer_exts),  # composition-layer extensions the game's own libraries request
             "vr_kind": vr_kind(libset, manifest_strings),
             "headset": headset(meta, abis, vr_kind(libset, manifest_strings), requires_6dof(manifest)),
+            # a Google Daydream / Cardboard build (GVR / Cardboard SDK): no path to the Frame's headset (GitHub #335)
+            "google_vr": google_vr(libset, cats, manifest_strings, gvr_java, boot),
             # the base of a split APK set (Play "app bundle" installs): the code/libraries live in split APKs
             "split_apk": bool({"isSplitRequired", "requiredSplitTypes"} & set(manifest_strings)),
             # Unity (IL2CPP) text fields: they close at once on the Frame (frame.unity_text_input)

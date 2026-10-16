@@ -246,10 +246,23 @@ def web_wrapper_note(analysis: Analysis) -> str | None:
             f"Meta's browser, which the Frame doesn't have. If nothing opens, {where}.")
 
 
+def google_vr_note(analysis: Analysis) -> str | None:
+    """A Google Daydream / Cardboard build (analysis.detect.google_vr) that isn't also a Meta build: its VR can't
+    reach the Frame's headset (GitHub #335)."""
+    kind = (analysis.extra or {}).get("google_vr")
+    if not kind or analysis.vr_kind == "quest":  # a build with Oculus support too goes the normal way
+        return None
+    name = "Google Daydream" if kind == "daydream" else "Google Cardboard"
+    return (f"This is a {name} VR build (Google VR SDK). Its VR can't reach the Steam Frame's headset: Daydream "
+            "needs Google's VR services and Cardboard draws for a phone in a viewer, and FramePort has no "
+            "translation for either, so it runs as a flat window at best, usually without working controls. An "
+            "Oculus build of the same game (Meta Quest, Oculus Go or Gear VR) goes through FramePort's normal path.")
+
+
 def blocker_notes(analysis: Analysis) -> list[str]:
     """Warnings read from the APK's manifest that it may not run on the Frame (whatever the recipe says). Only
     warnings: the manifest alone never marks a game unsupported (owner's rule); a launch test's triage decides."""
-    return [n for n in (android_version_note(analysis), web_wrapper_note(analysis)) if n]
+    return [n for n in (android_version_note(analysis), web_wrapper_note(analysis), google_vr_note(analysis)) if n]
 
 
 def _static_blockers(analysis: Analysis, recipe: Recipe) -> None:
@@ -274,7 +287,8 @@ def _non_quest(analysis: Analysis, recipe: Recipe) -> None:
         recipe.reasons = {pid: v for pid, v in recipe.reasons.items() if pid in recipe.patches}
         recipe.alt_patches = []
         recipe.as_is = not any(base.get(pid).stage == "apk" for pid in recipe.patches)  # the APK stays unchanged
-        recipe.notes = _add(recipe.notes, "Android app without VR: installed without FramePort's VR translation.")
+        if not (analysis.extra or {}).get("google_vr"):  # a Google VR build says so in its own note (blocker_notes)
+            recipe.notes = _add(recipe.notes, "Android app without VR: installed without FramePort's VR translation.")
     elif kind in ("pico_sdk", "wave"):
         recipe.status = "unsupported"
         recipe.notes = _add(recipe.notes, f"Uses {'Pico' if kind == 'pico_sdk' else 'HTC Vive Wave'}'s own VR SDK "

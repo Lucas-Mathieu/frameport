@@ -1652,6 +1652,7 @@
  "This Frame's SSH key changed since FramePort last connected (SteamOS was reset, or another device now has its address). If it's your Frame, choose Trust the new key on the Steam Frame page.": "",
  "This game can't run on the Steam Frame.": "",
  "This game is marked \"Can't run\" on the Steam Frame:": "",
+ "This is a Google {platform} VR build. Its VR can't reach the Frame's headset, so it runs as a flat window at best, usually without working controls. An Oculus build of the game (Meta Quest, Oculus Go or Gear VR) works the normal way.": "",
  "This is a website in an app: it opens in Meta's browser, which the Frame doesn't have. If nothing opens, visit the website in a browser.": "",
  "This is the example button from frameport.app. Real buttons install real games.": "",
  "this PC": "",

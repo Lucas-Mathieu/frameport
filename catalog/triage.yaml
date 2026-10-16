@@ -71,6 +71,13 @@ signatures:
     severity: fatal
     diagnosis: This app is a website, not a game, and it can't open on the Frame. It is a Trusted Web Activity that opens Meta's browser (com.oculus.browser), which the Frame doesn't have; open the website (TWALauncherActivity's "Using URL" line) in a browser instead.
     suggest: []
+  - id: gvr-not-supported
+    # GitHub #335 (Blade Runner: Revelations, Daydream, Unity 2017.4): Unity's "Google VR Error [Daydream]", the GVR
+    # library's Java side missing on the 32-bit bridge, or a bind to Daydream's VrCore service
+    pattern: 'Google VR Error \[(Daydream|Cardboard)\]|Google VR had a fatal issue while loading|class com/google/vr/sdk/base/CardboardViewNativeImpl not found|act=com\.google\.vr\.vrcore\.\S+ pkg=com\.google\.vr\.vrcore'
+    severity: fatal
+    diagnosis: This is a Google Daydream / Cardboard VR build (Google VR SDK), and its VR can't reach the Frame's headset. Daydream needs Google's VR services (VrCore) and Cardboard draws for a phone in a viewer; FramePort has no translation for either, so the game runs as a flat window at best, usually without working controls. An Oculus build of the same game (Meta Quest, Oculus Go or Gear VR) goes through FramePort's normal path.
+    suggest: []
   - id: unity-render-crash
     pattern: 'CRASH\s*:.*#\d+\s+pc [0-9a-f]+\s+\S*libgallium_dri\.so'
     severity: fatal
