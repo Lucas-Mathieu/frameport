@@ -296,6 +296,7 @@ static const char *const TOUCH_LEFT[] = {"input/x/click", "input/x/touch", "inpu
 static const char *const TOUCH_RIGHT[] = {"input/a/click", "input/a/touch", "input/b/click", "input/b/touch",
     "input/system/click"};
 static int app_suggested_touch;
+#include "profile_report.c"  // remapped_profile, current_profile_fix (xrGetCurrentInteractionProfile)
 
 static int in_list(const char *s, const char *const *list, size_t n) {
     for (size_t i = 0; i < n; ++i)
@@ -456,6 +457,7 @@ static XRAPI_ATTR XrResult XRAPI_CALL hook_xrSuggestInteractionProfileBindings(X
     }
     if (r != XR_ERROR_PATH_UNSUPPORTED || app_suggested_touch || !IN(profile, NEWER_TOUCH)) return r;
     XrResult remapped = remap_to_touch(instance, fn, to_string, suggested, profile);
+    if (XR_SUCCEEDED(remapped)) snprintf(remapped_profile, sizeof(remapped_profile), "%s", profile);
     return XR_SUCCEEDED(remapped) ? XR_SUCCESS : r;
 }
 

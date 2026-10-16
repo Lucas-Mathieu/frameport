@@ -2054,16 +2054,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetCurrentInteractionProfile(XrSession session,
         static int logged;
         if (logged++ < 40) LOG("layer_debug: interaction profile of %s: %s (result %d)", who, what, result);
     }
-    if (!controller_fix || XR_FAILED(result) || !state || !state->interactionProfile || !active_instance)
-        return result;
-    PFN_xrPathToString to_string = (PFN_xrPathToString)lookup(active_instance, "xrPathToString");
-    PFN_xrStringToPath to_path = (PFN_xrStringToPath)lookup(active_instance, "xrStringToPath");
-    char name[XR_MAX_PATH_LENGTH];
-    uint32_t size = 0;
-    if (to_string && to_path &&
-        XR_SUCCEEDED(to_string(active_instance, state->interactionProfile, sizeof(name), &size, name)) &&
-        (strstr(name, "/valve/") || strstr(name, "/khr/generic_controller")))
-        to_path(active_instance, "/interaction_profiles/oculus/touch_controller", &state->interactionProfile);
+    if (XR_SUCCEEDED(result) && state) current_profile_fix(user, state);
     return result;
 }
 
