@@ -52,6 +52,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Skip Meta avatars](#frame-avatar_stub) | `frame.avatar_stub` | Steam Frame patches | 1 |
 | [bHaptics: skip the Bluetooth permission request](#frame-bhaptics_permission) | `frame.bhaptics_permission` | Steam Frame patches | 6 |
 | [BlazeRush: controllers without Meta avatars, own shader cache](#frame-blazerush) | `frame.blazerush` | Steam Frame patches | 1 |
+| [Cortopia games: don't wait for Meta's org-scoped id](#frame-cortopia_org_id) | `frame.cortopia_org_id` | Steam Frame patches |  |
 | [Epic Online Services: stop the keychain retry loop](#frame-eos_keychain_loop) | `frame.eos_keychain_loop` | Steam Frame patches |  |
 | [OpenGL ES: multiview shaders on flat panels (HUD, menus)](#frame-gl_multiview_fbo) | `frame.gl_multiview_fbo` | Steam Frame patches | 1 |
 | [GL shim (Mesa GLSL compatibility)](#frame-gl_shim) | `frame.gl_shim` | Steam Frame patches | 2 |
@@ -585,6 +586,19 @@ Makes BlazeRush's menus and controllers work without Meta's avatars, and lets it
 - **Source:** [patches/frame/blazerush.py](../src/frameport/patches/frame/blazerush.py)
 
 > BlazeRush 1.0.349 only (Klownicle's guide, GitHub #57). Its menus wait for Meta's avatar, which never comes on the Frame, before they create the game's own controllers: the second menu ignored all input. Two instructions in libtargemapp.so skip that wait and the avatar mesh drawing; the game's shader cache gets a new folder name (cache/br_shader_v1), so programs compiled before the GL shim's shader fixes aren't reused. Only this exact build is changed (code fingerprint and every instruction checked); anything else is left as it is.
+
+### <a id="frame-cortopia_org_id"></a>Cortopia games: don't wait for Meta's org-scoped id
+
+Gets Cortopia games (for example Escaping Wonderland) past their loading screen.
+
+- `frame.cortopia_org_id`
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested (on):** Cortopia's Meta platform start-up waits for an org-scoped user id that OVRPort's platform library never answers (stuck loading screen).
+- **Suggested by launch-test signatures:**
+  - `cortopia-org-id-wait` (error): The game waits forever on its loading screen for an answer from Meta's platform (an org-scoped user id, used as its analytics id) that OVRPort's platform library doesn't give.
+- **Source:** [patches/frame/cortopia_org_id.py](../src/frameport/patches/frame/cortopia_org_id.py)
+
+> Cortopia Studios' games (e.g. Escaping Wonderland) ask Meta's platform for an org-scoped user id at start when on Wi-Fi, only to use it as their analytics id. OVRPort's platform library doesn't answer that request ("An unknown error occurred. Request failed."), so the game waits forever on its loading screen. Makes the game take its own offline path for that one request (the analytics id stays empty); the licence check and the logged-in user before it are unchanged. Found with Cpp2IL in libil2cpp.so.
 
 ### <a id="frame-eos_keychain_loop"></a>Epic Online Services: stop the keychain retry loop
 

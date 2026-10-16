@@ -414,6 +414,11 @@
   "title": "BlazeRush: controllers without Meta avatars, own shader cache",
   "group": "Steam Frame patches"
  },
+ "frame.cortopia_org_id": {
+  "anchor": "frame-cortopia_org_id",
+  "title": "Cortopia games: don't wait for Meta's org-scoped id",
+  "group": "Steam Frame patches"
+ },
  "frame.eos_keychain_loop": {
   "anchor": "frame-eos_keychain_loop",
   "title": "Epic Online Services: stop the keychain retry loop",

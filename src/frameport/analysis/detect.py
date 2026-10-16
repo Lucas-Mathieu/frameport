@@ -414,6 +414,10 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             "text_fields": unity_text_fields(il2cpp_meta) if il2cpp_meta else [],
             # Meta's OVRManager raises MSAA at runtime (frame.unity_runtime_msaa_off); Oculus XR Plugin (multiview)
             "ovr_runtime_msaa": bool(il2cpp_meta) and b"\0useRecommendedMSAALevel\0" in il2cpp_meta,
+            # Cortopia's Meta platform start-up awaits an org-scoped user id OVRPort never answers
+            # (frame.cortopia_org_id, GitHub #360)
+            "cortopia_org_id": bool(il2cpp_meta) and b"\0Cortopia.Scripts.Platform.Meta\0" in il2cpp_meta
+            and b"\0GetOrgScopedID\0" in il2cpp_meta,
             "sdl_java": sdl_java,
             "godot_clipboard": godot_clipboard,
             "vivox_api31": vivox_api31,

@@ -375,6 +375,13 @@ signatures:
     diagnosis: The game crashed creating a very large image (over 4096 px, for example in video players). OVRPort's OpenXR dispatcher aborts on such swapchains.
     suggest: [frame.swapchain_limit]
     supersedes: [native-crash]
+  - id: cortopia-org-id-wait
+    # Meta's C# wrapper logs this when the native call returned request id 0 (no callback ever follows); Cortopia's
+    # start-up awaits it forever (GitHub #360)
+    pattern: 'An unknown error occurred\. Request failed\.[\s\S]{0,600}?Cortopia\.Scripts\.Platform\.Meta'
+    severity: error
+    diagnosis: The game waits forever on its loading screen for an answer from Meta's platform (an org-scoped user id, used as its analytics id) that OVRPort's platform library doesn't give. The patch makes the game skip that one request, as it does without Wi-Fi.
+    suggest: [frame.cortopia_org_id]
   - id: ovr-microphone-crash
     pattern: 'ovr_Microphone_GetOutputBufferMaxSize\+'
     severity: fatal
