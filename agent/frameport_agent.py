@@ -8,6 +8,7 @@ Commands: info, prepare, finalize, shortcuts, shortcut_status, launch_test, stop
           install_lepton, list_installed, proton_status, install_proton, prepare_pcvr, finalize_pcvr,
           controller_models, list_screenshots, delete_screenshots (and more: see the cmd_* functions).
 Streaming: python3 frameport_agent.py _keyboard   (a virtual keyboard: JSON lines on stdin, see keyboard_session)
+           python3 frameport_agent.py _backup_saves|_restore_saves '<json>'  (save backups: tar.gz on stdout/stdin)
 
 Install layout (one Lepton container per game; same as the manual installs from 2026-09):
     ~/Applications/quest-frame/<pkg>/            anchor: launch.sh, deployment.json, artwork/ (always internal storage)
@@ -44,7 +45,7 @@ try:
 except ImportError:  # Windows: pc_revive loads this file for its VDF code only (GitHub #131)
     fcntl = None
 
-AGENT_VERSION = 91
+AGENT_VERSION = 94
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -7906,6 +7907,583 @@ def monitor_session(stdin, stdout, monitor=None, sleep=time.sleep, max_ticks=Non
     return 0
 
 
+# ------------------------------------------------------------------------------------------ save backups (#352)
+# Steam doesn't sync Quest games' saves: the PC app backs them up and restores them. The game's two storage roots (its
+# internal /data/data/<pkg> folder and its /sdcard/Android/data/<pkg> folder) go into one tar.gz streamed over the SSH
+# exec channel: `_backup_saves '<json>'` = archive on stdout, one result JSON line on stderr; `_restore_saves '<json>'`
+# = archive on stdin, one result JSON line on stdout. Both refuse while the game runs and hold its launch lock. Files
+# Lepton's containers own are read and written in podman's user namespace (`podman unshare`, where the steamos user
+# owns every mapped id). Caches, shader/program binaries, IL2CPP copies, FrameBridge's own files, videos/OBBs and
+# anything over SAVES_MAX_FILE stay out; the manifest (last member) lists files, sizes, sha256 and what was left out.
+SAVES_MANIFEST = "frameport-saves.json"
+SAVES_ROLLBACK = "saves-before-restore.tar.gz"
+SAVES_FORMAT = 1
+SAVES_MAX_FILE = 64 << 20          # larger files are left out of a backup (the manifest's "skipped", reason "size")
+SAVES_MAX_TOTAL = 4 << 30          # a bigger backup is refused (that's game content, not saves)
+SAVES_RESTORE_MAX_FILE = 1 << 30   # restore (untrusted input): one member at most this big ...
+SAVES_RESTORE_MAX_TOTAL = 8 << 30  # ... all of them together at most this big
+SAVES_RESTORE_MAX_MEMBERS = 200000
+SAVES_MANIFEST_MAX = 32 << 20
+# folder names (any depth, case-insensitive) that only hold what a game rebuilds by itself (Android's own backup
+# leaves out cache/code_cache/no_backup too)
+SAVES_SKIP_DIRS = {"cache", "code_cache", "code cache", "no_backup", "il2cpp", "unityshadercache", "gpucache",
+                   "shadercache", "grshadercache", "dawncache", "dawngraphitecache", "dawnwebgpucache",
+                   "programbinarycache", "vulkanprogrambinarycache", "pipelinecaches", "fp_vk_shaders", "fp_spirv",
+                   "cachestorage", "scriptcache"}
+SAVES_SKIP_UNDER_SAVED = {"logs", "crashes"}  # Unreal's Saved/Logs and Saved/Crashes
+SAVES_SKIP_EXT = (".obb", ".apk", ".foz", ".mp4", ".m4v", ".mkv", ".webm", ".mov")
+SAVES_SKIP_PREFIX = ("fb_snap_", "framebridge")  # FrameBridge's snapshots, config and state (FramePort writes them)
+
+
+def saves_roots(base, pkg):
+    """{"internal": .../internal/<pkg> (= /data/data/<pkg>), "external": .../external/Android/data/<pkg>}."""
+    data = os.path.join(base, "lepton-data")
+    return {"internal": os.path.join(data, "internal", pkg),
+            "external": os.path.join(data, "external", "Android", "data", pkg)}
+
+
+def _saves_skip_dir(rel_parts, name):
+    low = name.lower()
+    if low in SAVES_SKIP_DIRS:
+        return True
+    return low in SAVES_SKIP_UNDER_SAVED and bool(rel_parts) and rel_parts[-1].lower() == "saved"
+
+
+def _saves_skip_file(name):
+    low = name.lower()
+    return low.endswith(SAVES_SKIP_EXT) or low.startswith(SAVES_SKIP_PREFIX)
+
+
+def collect_saves(roots, max_file=SAVES_MAX_FILE):
+    """What a backup holds: {"dirs": [(arc, path, stat)], "files": [(arc, path, stat)], "skipped": [{path, size,
+    reason}]}, sorted. Symlinks (Lepton's links), devices and pipes are never followed or included."""
+    import stat as st_
+
+    out = {"dirs": [], "files": [], "skipped": []}
+    for key in sorted(roots):
+        root = roots[key]
+        try:
+            rst = os.lstat(root)
+        except OSError:
+            continue
+        if not st_.S_ISDIR(rst.st_mode):
+            out["skipped"].append({"path": key, "size": 0, "reason": "not a folder"})
+            continue
+        out["dirs"].append((key, root, rst))
+        for cur, dirs, files in os.walk(root, topdown=True, followlinks=False):
+            rel = os.path.relpath(cur, root)
+            parts = [] if rel == "." else rel.split(os.sep)
+            keep = []
+            for d in sorted(dirs):
+                p = os.path.join(cur, d)
+                arc = "/".join([key, *parts, d])
+                try:
+                    s = os.lstat(p)
+                except OSError:
+                    continue
+                if st_.S_ISLNK(s.st_mode):
+                    out["skipped"].append({"path": arc, "size": 0, "reason": "link"})
+                elif _saves_skip_dir(parts, d):
+                    out["skipped"].append({"path": arc + "/", "size": 0, "reason": "cache"})
+                else:
+                    keep.append(d)
+                    out["dirs"].append((arc, p, s))
+            dirs[:] = keep
+            for f in sorted(files):
+                p = os.path.join(cur, f)
+                arc = "/".join([key, *parts, f])
+                try:
+                    s = os.lstat(p)
+                except OSError:
+                    continue
+                if not st_.S_ISREG(s.st_mode):
+                    out["skipped"].append({"path": arc, "size": 0,
+                                           "reason": "link" if st_.S_ISLNK(s.st_mode) else "special"})
+                elif _saves_skip_file(f):
+                    out["skipped"].append({"path": arc, "size": s.st_size, "reason": "not a save"})
+                elif s.st_size > max_file:
+                    out["skipped"].append({"path": arc, "size": s.st_size, "reason": "size"})
+                elif not os.access(p, os.R_OK):
+                    out["skipped"].append({"path": arc, "size": s.st_size, "reason": "unreadable"})
+                else:
+                    out["files"].append((arc, p, s))
+    return out
+
+
+class _HashingReader:
+    """A file read for the archive, hashed on the way (tarfile reads exactly the member's size)."""
+
+    def __init__(self, f):
+        self.f, self.h = f, hashlib.sha256()
+
+    def read(self, n=-1):
+        data = self.f.read(n)
+        self.h.update(data)
+        return data
+
+
+def _saves_tarinfo(arc, s, is_dir):
+    import tarfile
+
+    ti = tarfile.TarInfo(arc)
+    ti.type = tarfile.DIRTYPE if is_dir else tarfile.REGTYPE
+    ti.mode = s.st_mode & 0o7777
+    ti.uid, ti.gid = s.st_uid, s.st_gid
+    ti.uname = ti.gname = ""
+    ti.mtime = int(s.st_mtime)
+    ti.size = 0 if is_dir else s.st_size
+    return ti
+
+
+def write_saves_tar(out, pkg, roots, dep=None, max_file=SAVES_MAX_FILE, max_total=SAVES_MAX_TOTAL):
+    """Stream the game's saves as tar.gz to `out` (a binary file object). Returns the manifest (also the archive's
+    last member, frameport-saves.json)."""
+    import gzip
+    import io
+    import tarfile
+
+    found = collect_saves(roots, max_file)
+    total = sum(s.st_size for _a, _p, s in found["files"])
+    if total > max_total:
+        raise AgentError(f"{pkg}'s saves are {total / 2**30:.1f} GiB, more than the {max_total / 2**30:.0f} GiB a "
+                         f"save backup takes (that's game content, not saves)")
+    manifest = {"format": SAVES_FORMAT, "package": pkg, "title": (dep or {}).get("title") or pkg,
+                "version": (dep or {}).get("version") or "", "created": time.time(), "agent": AGENT_VERSION,
+                "roots": sorted(roots), "max_file": max_file, "files": [], "dirs": [], "skipped": found["skipped"]}
+    gz = gzip.GzipFile(fileobj=out, mode="wb", compresslevel=6)
+    with tarfile.open(fileobj=gz, mode="w|", format=tarfile.PAX_FORMAT) as tar:
+        for arc, _p, s in found["dirs"]:
+            tar.addfile(_saves_tarinfo(arc, s, True))
+            manifest["dirs"].append({"path": arc, "mode": s.st_mode & 0o7777, "uid": s.st_uid, "gid": s.st_gid})
+        for arc, p, s in found["files"]:
+            with open(p, "rb") as f:
+                reader = _HashingReader(f)
+                tar.addfile(_saves_tarinfo(arc, s, False), reader)
+            manifest["files"].append({"path": arc, "size": s.st_size, "sha256": reader.h.hexdigest(),
+                                      "mode": s.st_mode & 0o7777, "uid": s.st_uid, "gid": s.st_gid,
+                                      "mtime": int(s.st_mtime)})
+        raw = json.dumps(manifest, indent=1).encode()
+        ti = tarfile.TarInfo(SAVES_MANIFEST)
+        ti.size, ti.mtime, ti.mode = len(raw), int(manifest["created"]), 0o644
+        tar.addfile(ti, io.BytesIO(raw))
+    gz.close()
+    return manifest
+
+
+def saves_summary(manifest):
+    return {"package": manifest.get("package"), "files": len(manifest.get("files") or []),
+            "bytes": sum(int(f.get("size") or 0) for f in manifest.get("files") or []),
+            "skipped": [s for s in manifest.get("skipped") or [] if s.get("reason") in ("size", "unreadable")],
+            "created": manifest.get("created"), "version": manifest.get("version")}
+
+
+def _saves_member_name(name):
+    """A member's path as parts, or None when it isn't confined to internal/ or external/ (absolute, '..', NUL,
+    backslashes, overlong)."""
+    if not isinstance(name, str) or not name or "\0" in name or "\\" in name or name.startswith("/"):
+        return None
+    parts = [p for p in name.split("/") if p not in ("", ".")]
+    if not parts or parts[0] not in ("internal", "external") or ".." in parts:
+        return None
+    if len(name) > 4096 or any(len(p) > 255 for p in parts):
+        return None
+    return parts
+
+
+def stage_saves_archive(inp, staging, max_file=SAVES_RESTORE_MAX_FILE, max_total=SAVES_RESTORE_MAX_TOTAL,
+                        max_members=SAVES_RESTORE_MAX_MEMBERS):
+    """Read an untrusted save archive from `inp` into `staging` (flat numbered files, never the members' names).
+    Returns (entries {parts tuple: {kind, mode, mtime, staged, size, sha256}}, manifest). Refuses links, devices, paths
+    outside the two roots, duplicates, oversize members and files that don't match the manifest."""
+    import tarfile
+
+    entries, manifest, total, count = {}, None, 0, 0
+    try:
+        tar = tarfile.open(fileobj=inp, mode="r|gz")
+    except (tarfile.TarError, OSError, EOFError) as exc:
+        raise AgentError(f"not a save backup (unreadable archive: {exc})") from None
+    try:
+        for m in tar:
+            count += 1
+            if count > max_members:
+                raise AgentError("the backup has too many files")
+            if m.name == SAVES_MANIFEST:
+                if not m.isreg() or m.size > SAVES_MANIFEST_MAX or manifest is not None:
+                    raise AgentError("the backup's manifest is invalid")
+                try:
+                    manifest = json.loads(tar.extractfile(m).read().decode("utf-8"))
+                except ValueError:
+                    raise AgentError("the backup's manifest is invalid") from None
+                continue
+            parts = _saves_member_name(m.name)
+            if parts is None:
+                raise AgentError(f"the backup has a file outside the game's save folders: {m.name[:200]!r}")
+            key = tuple(parts)
+            if key in entries:
+                raise AgentError(f"the backup has {m.name[:200]!r} twice")
+            if m.isdir():
+                entries[key] = {"kind": "dir", "mode": m.mode & 0o7777, "mtime": int(m.mtime or 0)}
+                continue
+            if not m.isreg():
+                raise AgentError(f"the backup has a link or special file: {m.name[:200]!r}")
+            if len(parts) < 2:
+                raise AgentError(f"the backup has a file in place of a save folder: {m.name[:200]!r}")
+            if m.size > max_file:
+                raise AgentError(f"{m.name[:200]!r} in the backup is too big ({m.size} bytes)")
+            total += m.size
+            if total > max_total:
+                raise AgentError("the backup is too big to restore")
+            staged = os.path.join(staging, f"{len(entries):08d}")
+            src = tar.extractfile(m)
+            h = hashlib.sha256()
+            with open(staged, "wb") as f:
+                left = m.size
+                while left:
+                    chunk = src.read(min(left, 1 << 20))
+                    if not chunk:
+                        raise AgentError("the backup is cut off")
+                    h.update(chunk)
+                    f.write(chunk)
+                    left -= len(chunk)
+            entries[key] = {"kind": "file", "mode": m.mode & 0o7777, "mtime": int(m.mtime or 0), "staged": staged,
+                            "size": m.size, "sha256": h.hexdigest()}
+    except (tarfile.TarError, EOFError, zlib.error, OSError) as exc:
+        raise AgentError(f"the backup is damaged or cut off ({exc})") from None
+    finally:
+        try:
+            tar.close()
+        except Exception:  # noqa: BLE001
+            pass
+    if not isinstance(manifest, dict) or manifest.get("format") != SAVES_FORMAT:
+        raise AgentError("not a FramePort save backup (no manifest)")
+    listed = {}
+    for f in manifest.get("files") or []:
+        parts = _saves_member_name(str((f or {}).get("path", "")))
+        if parts is not None:
+            listed[tuple(parts)] = f
+    for key, e in entries.items():
+        if e["kind"] != "file":
+            continue
+        f = listed.get(key)
+        if not f or f.get("sha256") != e["sha256"] or f.get("size") != e["size"]:
+            raise AgentError(f"the backup is damaged: {'/'.join(key)[:200]} doesn't match its manifest")
+    return entries, manifest
+
+
+def _saves_dest(roots, parts):
+    return os.path.join(roots[parts[0]], *parts[1:])
+
+
+def check_saves_destinations(roots, entries):
+    """No restored path may pass through or replace a link, or swap a file for a folder (Lepton keeps links in a
+    game's storage: writing through one would land outside it)."""
+    import stat as st_
+
+    for key, e in entries.items():
+        for i in range(1, len(key) + 1):
+            sub = key[:i]
+            path = _saves_dest(roots, sub)
+            try:
+                s = os.lstat(path)
+            except FileNotFoundError:
+                break  # the rest gets created
+            if st_.S_ISLNK(s.st_mode):
+                raise AgentError(f"won't restore through the link {'/'.join(sub)}")
+            want_dir = i < len(key) or e["kind"] == "dir"
+            if want_dir and not st_.S_ISDIR(s.st_mode):
+                raise AgentError(f"{'/'.join(sub)} is a file on the Frame but a folder in the backup")
+            if not want_dir and not st_.S_ISREG(s.st_mode):
+                raise AgentError(f"{'/'.join(sub)} is a folder on the Frame but a file in the backup")
+
+
+def _saves_parent_stat(path):
+    """stat of path's nearest existing folder."""
+    p = path
+    while True:
+        try:
+            return os.stat(p)
+        except OSError:
+            parent = os.path.dirname(p)
+            if parent == p:
+                raise
+            p = parent
+
+
+def _saves_chown(path, uid, gid):
+    try:
+        s = os.lstat(path)
+        if (s.st_uid, s.st_gid) != (uid, gid):
+            os.chown(path, uid, gid)
+    except OSError:
+        pass  # (outside podman's namespace only our own ids can be set)
+
+
+def _saves_mkdir(path, mode=None):
+    """Create a missing folder (and its parents) owned like its parent folder; mode None = the parent's mode."""
+    if os.path.isdir(path):
+        return
+    parent = os.path.dirname(path)
+    _saves_mkdir(parent)
+    ps = os.stat(parent)
+    os.mkdir(path)
+    os.chmod(path, ((ps.st_mode if mode is None else mode) & 0o2777) | 0o700)
+    _saves_chown(path, ps.st_uid, ps.st_gid)
+
+
+def apply_staged_saves(roots, entries, manifest):
+    """Put staged files in place: existing files keep their owner and mode, new ones get their folder's owner and the
+    backup's mode (at least u+rw); each file is swapped in with one rename. Save files the backup doesn't have go
+    (the same rules as a backup decide what's a save; files too big for the backup stay). Returns counts."""
+    import stat as st_
+
+    restored = removed = 0
+    for key in sorted((k for k, e in entries.items() if e["kind"] == "dir"), key=len):
+        _saves_mkdir(_saves_dest(roots, key), entries[key]["mode"])
+    for root in roots.values():
+        _saves_mkdir(root)
+    for key, e in sorted(entries.items()):
+        if e["kind"] != "file":
+            continue
+        dest = _saves_dest(roots, key)
+        _saves_mkdir(os.path.dirname(dest))
+        try:
+            s = os.lstat(dest)
+            uid, gid, mode = s.st_uid, s.st_gid, st_.S_IMODE(s.st_mode)
+        except FileNotFoundError:
+            ps = _saves_parent_stat(os.path.dirname(dest))
+            uid, gid, mode = ps.st_uid, ps.st_gid, (e["mode"] & 0o777) | 0o600
+        staged = e["staged"]
+        os.chmod(staged, mode)
+        _saves_chown(staged, uid, gid)
+        if e.get("mtime"):
+            os.utime(staged, (e["mtime"], e["mtime"]))
+        os.replace(staged, dest)
+        restored += 1
+    keep = {"/".join(k) for k, e in entries.items() if e["kind"] == "file"}
+    max_file = manifest.get("max_file")
+    current = collect_saves(roots, max_file if isinstance(max_file, int) and max_file > 0 else SAVES_MAX_FILE)
+    for arc, path, _s in current["files"]:
+        if arc not in keep:
+            try:
+                os.remove(path)
+                removed += 1
+            except OSError:
+                pass
+    return {"restored": restored, "removed": removed}
+
+
+def saves_context(args):
+    """(pkg, dep, roots) of an installed Quest game (its roots are real folders, or missing)."""
+    pkg = check_pkg(args.get("package"))
+    dep = deployment(pkg)
+    if not dep:
+        raise AgentError(f"{pkg} is not installed")
+    if dep.get("kind") in ("pcvr", "linux"):
+        raise AgentError("save backups are for Quest (Android) games only")
+    base = dep["base"]
+    if not os.path.isdir(os.path.join(base, "lepton-app")) and not os.path.isdir(os.path.join(base, "lepton-data")):
+        raise AgentError(f"{pkg}'s files are missing at {base} (storage not mounted?)")
+    roots = saves_roots(base, pkg)
+    data = os.path.realpath(os.path.join(base, "lepton-data"))
+    for r in roots.values():
+        if os.path.islink(r) or (os.path.lexists(r) and not _inside(os.path.realpath(r), data)):
+            raise AgentError(f"{r} is a link: refusing")
+    return pkg, dep, roots
+
+
+class _SavesLock:
+    """The game's launch lock (launch.sh holds it while the game runs): a backup or restore never overlaps a play
+    session, and a Play meanwhile is ignored like a double launch."""
+
+    def __init__(self, dep):
+        self.path, self.fd = os.path.join(dep["base"], ".launch.lock"), None
+
+    def __enter__(self):
+        if fcntl is None:
+            return self
+        self.fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(self.fd)
+            self.fd = None
+            raise AgentError("the game is running") from None
+        return self
+
+    def __exit__(self, *exc):
+        if self.fd is not None:
+            os.close(self.fd)
+            self.fd = None
+
+
+def saves_running(dep):
+    return bool(dep.get("appid")) and container_running(dep["appid"])
+
+
+def _saves_in_namespace(op, args):
+    """Run op again inside podman's user namespace (stdio inherited); None = run it in this process."""
+    owner = as_owner()
+    if not owner or os.environ.get("FRAMEPORT_SAVES_NS") == "1":
+        return None
+    env = dict(os.environ, FRAMEPORT_SAVES_NS="1")
+    return subprocess.run(owner + [sys.executable or "python3", os.path.abspath(__file__), "_saves_ns", op,
+                                   json.dumps(args)], env=env).returncode
+
+
+def saves_backup_session(args, out, err):
+    """`_backup_saves`: the archive on `out`, one JSON line (ok + summary, or error) on `err`; exit 0 = complete."""
+    def emit(obj):
+        err.write(json.dumps(obj) + "\n")
+        err.flush()
+
+    def here():
+        pkg, dep, roots = saves_context(args)
+        manifest = write_saves_tar(out, pkg, roots, dep, int(args.get("max_file") or SAVES_MAX_FILE),
+                                   int(args.get("max_total") or SAVES_MAX_TOTAL))
+        out.flush()
+        emit({"ok": True, "result": saves_summary(manifest)})
+        return 0
+    try:
+        return _saves_run("backup", args, here)
+    except AgentError as exc:
+        emit({"ok": False, "error": str(exc)})
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        emit({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+        return 1
+
+
+def saves_restore_session(args, inp, out):
+    """`_restore_saves`: the archive on `inp` (or the rollback copy with args.rollback), one JSON line on `out`."""
+    def emit(obj):
+        out.write(json.dumps(obj) + "\n")
+        out.flush()
+
+    def here():
+        emit({"ok": True, "result": restore_saves(args, inp)})
+        return 0
+    try:
+        return _saves_run("restore", args, here)
+    except AgentError as exc:
+        emit({"ok": False, "error": str(exc)})
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        emit({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+        return 1
+
+
+def _saves_run(op, args, here):
+    """Outside podman's namespace: check the game, take its launch lock, then run `op` in the namespace (stdio
+    inherited). Inside it (FRAMEPORT_SAVES_NS=1), or without podman (tests): run `here` in this process."""
+    if os.environ.get("FRAMEPORT_SAVES_NS") == "1":
+        return here()
+    _pkg, dep, _roots = saves_context(args)
+    if saves_running(dep):
+        raise AgentError("the game is running")
+    with _SavesLock(dep):
+        code = _saves_in_namespace(op, args)
+        return here() if code is None else code
+
+
+def restore_saves(args, inp):
+    """Stage (and check) the whole archive first, keep the current saves as <base>/saves-before-restore.tar.gz (one
+    copy), then swap the files in. A failure while swapping puts the rollback copy back. args.rollback restores that
+    copy instead of `inp` (the current saves become the new rollback copy: undo of the undo)."""
+    pkg, dep, roots = saves_context(args)
+    base = dep["base"]
+    rollback = os.path.join(base, SAVES_ROLLBACK)
+    staging = tempfile.mkdtemp(prefix=".saves-restore-", dir=base)
+    limits = (SAVES_RESTORE_MAX_FILE, SAVES_RESTORE_MAX_TOTAL, SAVES_RESTORE_MAX_MEMBERS)
+    try:
+        if args.get("rollback"):
+            if not os.path.isfile(rollback):
+                raise AgentError("there's no copy of the saves from before the last restore")
+            with open(rollback, "rb") as f:
+                entries, manifest = stage_saves_archive(f, staging, *limits)
+        else:
+            entries, manifest = stage_saves_archive(inp, staging, *limits)
+        if manifest.get("package") != pkg:
+            raise AgentError(f"this backup is of {manifest.get('package')}, not {pkg}")
+        check_saves_destinations(roots, entries)
+        tmp = rollback + ".tmp"
+        with open(tmp, "wb") as f:
+            write_saves_tar(f, pkg, roots, dep, SAVES_MAX_FILE, 1 << 62)
+        os.replace(tmp, rollback)
+        try:
+            counts = apply_staged_saves(roots, entries, manifest)
+        except Exception as exc:  # noqa: BLE001
+            undo = os.path.join(staging, "undo")
+            os.mkdir(undo)
+            try:
+                with open(rollback, "rb") as f:
+                    back, back_manifest = stage_saves_archive(f, undo)
+                apply_staged_saves(roots, back, back_manifest)
+                state = "the saves from before were put back"
+            except Exception as again:  # noqa: BLE001
+                state = f"putting the saves from before back failed too ({again}); they're in {rollback}"
+            raise AgentError(f"restoring failed ({exc}); {state}") from exc
+        return {**counts, "package": pkg, "rollback": rollback, "rollback_size": os.path.getsize(rollback),
+                "backup_created": manifest.get("created"), "backup_version": manifest.get("version")}
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def _saves_info(found):
+    return {"files": len(found["files"]), "bytes": sum(s.st_size for _a, _p, s in found["files"]),
+            "skipped": [s for s in found["skipped"] if s["reason"] in ("size", "unreadable")]}
+
+
+def cmd_saves_info(args):
+    """What a save backup of the game would hold now (files, bytes, large files left out), whether the game runs, and
+    the rollback copy of the last restore."""
+    pkg, dep, roots = saves_context(args)
+    max_file = int(args.get("max_file") or SAVES_MAX_FILE)
+    owner = as_owner()
+    if owner:  # the app's files may belong to mapped ids: count them in podman's namespace
+        p = run(owner + [sys.executable or "python3", os.path.abspath(__file__), "_saves_ns", "info",
+                         json.dumps(args)], env=dict(os.environ, FRAMEPORT_SAVES_NS="1"))
+        try:
+            info = json.loads(p.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            raise AgentError(f"couldn't read {pkg}'s saves: {p.stderr.strip()[-300:]}") from None
+    else:
+        info = _saves_info(collect_saves(roots, max_file))
+    rollback = os.path.join(dep["base"], SAVES_ROLLBACK)
+    info.update(package=pkg, running=saves_running(dep), version=dep.get("version") or "",
+                rollback={"size": os.path.getsize(rollback), "time": os.path.getmtime(rollback)}
+                if os.path.isfile(rollback) else None)
+    return info
+
+
+def cmd_saves_rollback_delete(args):
+    """Remove the copy of the saves from before the last restore."""
+    _pkg, dep, _roots = saves_context(args)
+    path = os.path.join(dep["base"], SAVES_ROLLBACK)
+    if os.path.isfile(path):
+        os.remove(path)
+        return {"removed": True}
+    return {"removed": False}
+
+
+def saves_ns_main(op, raw):
+    """`_saves_ns <op> '<json>'`: the part of a save command that runs inside `podman unshare`."""
+    os.environ["FRAMEPORT_SAVES_NS"] = "1"
+    args = json.loads(raw)
+    if op == "backup":
+        return saves_backup_session(args, sys.stdout.buffer, sys.stderr)
+    if op == "restore":
+        return saves_restore_session(args, sys.stdin.buffer, sys.stdout)
+    if op == "info":
+        try:
+            _pkg, _dep, roots = saves_context(args)
+            print(json.dumps(_saves_info(collect_saves(roots, int(args.get("max_file") or SAVES_MAX_FILE)))))
+            return 0
+        except AgentError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+    return 2
+
+
 COMMANDS = {n[4:]: f for n, f in globals().items() if n.startswith("cmd_")}
 
 
@@ -7918,6 +8496,12 @@ def main():
     if len(sys.argv) >= 2 and sys.argv[1] == "_vr_overlay_round":
         print(json.dumps(overlay_autostart_round()), flush=True)
         return
+    if len(sys.argv) >= 3 and sys.argv[1] == "_backup_saves":
+        return saves_backup_session(json.loads(sys.argv[2]), sys.stdout.buffer, sys.stderr)
+    if len(sys.argv) >= 3 and sys.argv[1] == "_restore_saves":
+        return saves_restore_session(json.loads(sys.argv[2]), sys.stdin.buffer, sys.stdout)
+    if len(sys.argv) >= 4 and sys.argv[1] == "_saves_ns":
+        return saves_ns_main(sys.argv[2], sys.argv[3])
     if len(sys.argv) >= 2 and sys.argv[1] == "_monitor":
         return monitor_session(sys.stdin, sys.stdout)
     if len(sys.argv) >= 3 and sys.argv[1] == "_shortcuts_worker":

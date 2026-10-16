@@ -126,6 +126,8 @@ HELP: dict[str, str] = _Translated({
     "type_on_frame": "This PC's keyboard types on the Frame while this tab is open. In the headset, select a text "
                      "field, then type here.",
     "free_space": "Deletes copies kept from earlier installs and unfinished uploads. Games and saves stay.",
+    "save_backups": "Steam doesn't sync Quest games' saves. This copies each installed Quest game's saves to this PC "
+                    "(caches and big downloaded content stay out). Restore one from the game's menu → Restore saves….",
     "install_drive": "Where new games go on the Frame, such as a microSD card. Installed games stay put; right-click → "
                      "Move to… moves one. Cards formatted as FAT, exFAT or NTFS can't hold games.",
     "move_game": "Copies the game and its saves to the other drive, checks the copy, then removes the old one. The "

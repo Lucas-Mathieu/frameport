@@ -36,6 +36,7 @@ class MenuState:
     movable: bool = False          # the Frame knows which drive it's on (agent v63+, microSD): Move to…
     android: bool = False          # a Quest/Android game (not PC VR, not a Linux app): it can get a newer APK
     new_version: bool = False      # a Linux app or PC VR game: it can get a newer version (file or folder)
+    saves: bool = False            # a Quest/Android game installed on the connected Frame: back up / restore saves
 
 
 def menu_sections(g: dict, st: MenuState, act: Callable[[str], Callable]) -> list:
@@ -62,6 +63,13 @@ def menu_sections(g: dict, st: MenuState, act: Callable[[str], Callable]) -> lis
         # the new build only; the Frame's game data stays (e.g. changed OBBs a normal update would replace)
         top.append((tr("Update app only…"), ft.Icons.SYSTEM_UPDATE_ALT_ROUNDED, act("update_app")))
 
+    saves: list = []  # GitHub discussion #352: Steam doesn't sync Quest games' saves
+    if st.saves and not job:
+        saves += [(tr("Back up saves"), ft.Icons.BACKUP_ROUNDED, act("backup_saves")),
+                  (tr("Restore saves…"), ft.Icons.RESTORE_ROUNDED, act("restore_saves"))]
+    if st.android:
+        saves.append((tr("Open backups folder"), ft.Icons.FOLDER_OPEN_ROUNDED, act("saves_folder")))
+
     artwork = [(tr("Rename…"), ft.Icons.DRIVE_FILE_RENAME_OUTLINE_OUTLINED, act("rename")),
                (tr("Find artwork…"), ft.Icons.IMAGE_SEARCH_ROUNDED, act("find_art")),
                (tr("Use your own artwork…"), ft.Icons.UPLOAD_FILE_OUTLINED, act("custom_art"))]
@@ -87,7 +95,8 @@ def menu_sections(g: dict, st: MenuState, act: Callable[[str], Callable]) -> lis
     danger = [(tr("Remove from library…"), ft.Icons.REMOVE_CIRCLE_OUTLINE_ROUNDED, act("remove"))]
 
     out: list = list(top)
-    for head, items in ((tr("Name and artwork"), artwork), (tr("Recipe"), recipe), (tr("Troubleshoot"), trouble)):
+    for head, items in ((tr("Saves"), saves), (tr("Name and artwork"), artwork), (tr("Recipe"), recipe),
+                        (tr("Troubleshoot"), trouble)):
         if items:
             out += [None, Header(head), *items]
     return out + [None, *danger]

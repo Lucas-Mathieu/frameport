@@ -1186,13 +1186,17 @@ class FramePortApp:
             "uninstall_frame": lambda e: self.uninstall(pkg, "frame"),
             "uninstall_pc": lambda e: self.uninstall(pkg, "pc"),
             "remove": lambda e: self.remove_from_library(pkg),
+            "backup_saves": lambda e: self.backup_saves(pkg),
+            "restore_saves": lambda e: self.restore_saves(pkg),
+            "saves_folder": lambda e: self.open_saves_folder(pkg),
         }
         enabled = (lambda opts: [(label, icon, handler) for label, icon, handler, disabled, _ in opts
                                  if handler and not disabled])
         busy = bool(job)
+        on_frame = connected and C.install_state(g, self.frame_info) in ("installed", "outdated")
         st = MenuState(
-            quick=quick, connected=connected, job=busy,
-            on_frame=connected and C.install_state(g, self.frame_info) in ("installed", "outdated"),
+            quick=quick, connected=connected, job=busy, on_frame=on_frame,
+            saves=on_frame and not rift and not linux,
             on_pc=rift and pkg in self.pc_installs(),
             plays=[] if busy or not quick else enabled(self.play_options(g)),
             installs=[] if busy or not quick else enabled(self.install_options(g)),
@@ -1783,6 +1787,30 @@ class FramePortApp:
             return tr("{title}: Steam artwork updated on the Frame").format(title=self._title(pkg))
         return self.submit(tr("Update Steam art: {title}").format(title=self._title(pkg)), run, pkg, "art")
 
+    # Save backups (discussion #352): views/saves_dialog.py, install/saves.py
+    def backup_saves(self, pkg: str) -> Job:
+        from .views import saves_dialog
+
+        return saves_dialog.backup_saves(self, pkg)
+
+    def restore_saves(self, pkg: str) -> None:
+        from .views import saves_dialog
+
+        saves_dialog.restore_dialog(self, pkg)
+
+    def open_saves_folder(self, pkg: str) -> None:
+        from .views import saves_dialog
+
+        saves_dialog.open_folder(pkg)
+
+    def backup_all_saves(self) -> Job | None:
+        """Frame page: one job backing up every installed Quest game's saves."""
+        from .views import saves_dialog
+
+        pkgs = [d.get("package") for d in (self.frame_info or {}).get("installed", [])
+                if d.get("package") and d.get("kind") not in ("pcvr", "linux") and not d.get("overlay")]
+        return saves_dialog.backup_all(self, pkgs)
+
     def move_game(self, pkg: str) -> None:
         """Move to…: pick another drive of the Frame (microSD card, internal storage) for an installed game; the copy
         runs as a Frame job (GitHub #90)."""
@@ -1860,13 +1888,28 @@ class FramePortApp:
                "The game folder stays.").format(title=title)
 
         delete_local, extra = self._delete_local_option(pkg)
-        delete_data = None
+        delete_data = backup_first = None
         if to == "frame":  # GitHub #130: what the game stored (saves, mods, downloads) used to survive every uninstall
             delete_data, row = C.checkbox(tr("Also delete its saves and everything it stored on the Frame (mods, "
                                              "downloaded content)"), value=False, active_color=T.ERROR)
-            extra = row if extra is None else ft.Column([row, extra], spacing=T.px(8), tight=True)
+            rows = [row]
+            if (library.game(pkg) or {}).get("kind") not in ("rift", "linux"):  # discussion #352
+                backup_first, backup_row = C.checkbox(tr("Back up its saves to this PC before deleting them"),
+                                                      value=True, active_color=T.ACCENT, disabled=True)
+
+                def follow(e):
+                    backup_first.disabled = not delete_data.value
+                    C.update(backup_first)
+                delete_data.on_change = follow
+                rows.append(ft.Container(backup_row, padding=ft.Padding(T.S5, 0, 0, 0)))
+            rows += [extra] if extra is not None else []
+            extra = ft.Column(rows, spacing=T.px(8), tight=True) if len(rows) > 1 else row
 
         def run(job: Job):
+            if delete_data and delete_data.value and backup_first and backup_first.value:
+                from ..install import saves
+
+                saves.backup(self._target_for(to).frame, pkg, job.reporter)  # fails = nothing deleted
             self._target_for(to).uninstall(pkg, keep_data=not (delete_data and delete_data.value))
             self._pc_cache = None
             if delete_local and delete_local.value:

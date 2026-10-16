@@ -27,6 +27,7 @@ from showcase.fakes import (  # noqa: E402,F401
     add_fake_linux_apps,
     attach_fake_frame,
     fake_live_stream,
+    fake_save_backups,
     install_fakes,
     open_monitor_details,
     open_type_tab,
@@ -154,6 +155,9 @@ def main() -> int:
         if args.fake_frame:  # GitHub #90: the Move to… dialog (drives load in the background)
             steps.append(("move-dialog", lambda a: (a.page.pop_dialog(), a.move_game(game))))
             steps.append(("uninstall-dialog", lambda a: (a.page.pop_dialog(), a.uninstall(game))))
+            # discussion #352: pick a save backup (two pretend ones) to restore, "Undo last restore" from the Frame
+            steps.append(("restore-saves-dialog", lambda a: (a.page.pop_dialog(), fake_save_backups(game),
+                                                             a.restore_saves(game))))
         # last: the menus stay open over whatever comes next (the page's "…" menu, then the right-click menu)
         steps.append(("game-menu", lambda a: (a.show_activity(False), a.open_game_menu(game))))
         steps.append(("library-menu", lambda a: (a.show_activity(False), a.navigate(0), time.sleep(3),

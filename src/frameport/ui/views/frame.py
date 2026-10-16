@@ -192,11 +192,13 @@ class FrameView:
                    padding=T.S5)
         send = C.ghost(tr("Files"), ft.Icons.FOLDER_OPEN_ROUNDED, lambda e: self.app.go("files"),
                        tooltip=C.tip(HELP["files"]))
+        quest = any(d.get("kind") not in ("pcvr", "linux") and not d.get("overlay") for d in items)
+        backup = [C.ghost(tr("Back up all saves"), ft.Icons.BACKUP_ROUNDED, lambda e: self.app.backup_all_saves(),
+                          tooltip=C.tip(HELP["save_backups"]))] if quest else []
+        free = C.ghost(tr("Free up space…"), ft.Icons.CLEANING_SERVICES_OUTLINED, lambda e: self.app.cleanup_frame(),
+                       tooltip=C.tip(HELP["free_space"]))
         return C.section(tr("Installed games ({len})").format(len=len(items)), body,
-                         action=ft.Row([send, C.ghost(tr("Free up space…"), ft.Icons.CLEANING_SERVICES_OUTLINED,
-                                                      lambda e: self.app.cleanup_frame(),
-                                                      tooltip=C.tip(HELP["free_space"]))], spacing=T.S2, tight=True)
-                         if items else send)
+                         action=ft.Row([send, *backup, free], spacing=T.S2, tight=True) if items else send)
 
     def _fill_installed(self, items: list[dict], col: ft.Column) -> None:
         def settings_slot() -> ft.Control:

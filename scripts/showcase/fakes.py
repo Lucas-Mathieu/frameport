@@ -135,6 +135,9 @@ class FakeFS:
             return {"shots": shots, "total": len(shots), "games": list(games.values())}
         if command == "take_screenshot":  # the Screenshots tab's button: a new shot of the running game
             return self.take_screenshot()
+        if command == "saves_info":  # Restore saves…: what the Frame has now, and the copy from the last restore
+            return {"package": args.get("package"), "files": 14, "bytes": 2_310_000, "skipped": [],
+                    "running": False, "version": "1.0", "rollback": {"size": 812_000, "time": time.time() - 86400}}
         raise RuntimeError(f"fake Frame: {command} not available")
 
     @property
@@ -596,6 +599,28 @@ def scan_job(app, folder: str, entries: list[dict], pace: float = 1.0):
             library.set_setting("ui.welcome_done", True)
         return f"{len(entries)} games found in {folder}"
     return app.submit(f"Scan {folder.rstrip('/').rsplit('/', 1)[-1]}", run, None, "scan")
+
+
+def fake_save_backups(pkg: str) -> None:
+    """Two pretend save backups of `pkg` on this PC (yesterday's and last week's), for the Restore saves… dialog."""
+    import io
+    import json
+    import tarfile
+
+    from frameport.install import saves
+
+    d = saves.backups_dir(pkg)
+    d.mkdir(parents=True, exist_ok=True)
+    for days, n, size in ((1, 14, 2_300_000), (7, 11, 1_900_000)):
+        created = time.time() - days * 86400
+        path = d / time.strftime("%Y%m%d-%H%M%S.tar.gz", time.localtime(created))
+        manifest = {"format": 1, "package": pkg, "created": created, "version": "1.0",
+                    "files": [{"path": f"external/files/save{i}.dat", "size": size // n} for i in range(n)]}
+        raw = json.dumps(manifest).encode()
+        with tarfile.open(path, "w:gz") as tar:
+            ti = tarfile.TarInfo(saves.MANIFEST)
+            ti.size = len(raw)
+            tar.addfile(ti, io.BytesIO(raw))
 
 
 def attach_fake_frame(app: FramePortApp, monitor_session=None) -> None:

@@ -22,6 +22,7 @@ Errors are one line on stderr; FRAMEPORT_DEBUG=1 shows the traceback.
     frameport diag report <pkg>                  # zip + prefilled GitHub problem report
     frameport share-recipe <pkg> --status works  # prefilled GitHub issue submitting a working recipe
     frameport open-link "<install link>"         # FrameDrop button / frameport:// link: download, add, install
+    frameport saves backup <pkg>|--all           # Quest games' saves from the Frame to this PC (list, restore, undo)
 """
 from __future__ import annotations
 
@@ -50,7 +51,9 @@ tools_app = typer.Typer(help="Manage the portable toolchain.")
 frame_app = typer.Typer(help="Find and connect to a Steam Frame.")
 pc_app = typer.Typer(help="This PC as a target for PC VR games (Steam and SteamVR; Revive for Oculus games).")
 diag_app = typer.Typer(help="Diagnostics bundles and problem reports.")
+saves_app = typer.Typer(help="Back up Quest games' saves from the Frame to this PC and restore them.")
 app.add_typer(tools_app, name="tools")
+app.add_typer(saves_app, name="saves")
 app.add_typer(frame_app, name="frame")
 app.add_typer(pc_app, name="pc")
 app.add_typer(diag_app, name="diag")
@@ -772,6 +775,110 @@ def frame_move(package: str = typer.Argument(..., help="an installed game"),
     pkg = _pkgs(package, False)[0]
     st = _target(frame).move(pkg, to_, printing_reporter())
     typer.echo(f"moved to {st.get('base') or st.get('to')}")
+
+
+# ------------------------------------------------------------------------------------------ save backups (#352)
+def _save_pkg(package: str) -> str:
+    """A library game (package or part of its title), else a package name as it is (installed from another PC)."""
+    import re
+
+    try:
+        return _pkgs(package, False)[0]
+    except typer.BadParameter:
+        if re.match(r"^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$", package):
+            return package
+        raise
+
+
+@saves_app.command("backup")
+def saves_backup(package: Optional[str] = typer.Argument(None, help="the game (package or part of its title)"),
+                 all_: bool = typer.Option(False, "--all", help="every Quest game installed on the Frame"),
+                 frame: Optional[str] = typer.Option(None, help=FRAME_HELP)):
+    """Copy a Quest game's saves from the Frame to this PC (caches and big downloaded content stay out). The newest
+    backups are kept (10 per game, setting saves.keep). The game must be closed."""
+    from .install import saves
+
+    target = _target(frame)
+    if all_:
+        pkgs = [g["package"] for g in target.installed() if g.get("kind") not in ("pcvr", "linux")
+                and not g.get("overlay")]
+    elif package:
+        pkgs = [_save_pkg(package)]
+    else:
+        raise typer.BadParameter("give a package or --all")
+    failed = 0
+    for pkg in pkgs:
+        try:
+            b = saves.backup(target.frame, pkg, printing_reporter(verbose=False))
+        except saves.SavesError as exc:
+            failed += 1
+            typer.echo(f"{pkg}: not backed up: {exc}", err=True)
+            continue
+        typer.echo(f"{pkg}: {b.files} file(s), {b.bytes / 2**20:.1f} MiB of saves -> {b.path}"
+                   + (f" ({b.skipped} large file(s) left out)" if b.skipped else ""))
+    if failed:
+        raise typer.Exit(1)
+
+
+@saves_app.command("list")
+def saves_list(package: str = typer.Argument(..., help="the game (package or part of its title)"),
+               as_json: bool = typer.Option(False, "--json", help=JSON_HELP)):
+    """This PC's backups of a game, newest first (the number is what `saves restore` takes)."""
+    from .install import saves
+
+    pkg = _save_pkg(package)
+    found = saves.list_backups(pkg)
+    if as_json:
+        typer.echo(json.dumps([{"path": str(b.path), "created": b.created, "size": b.size, "files": b.files,
+                                "bytes": b.bytes, "version": b.version, "skipped": b.skipped} for b in found],
+                              indent=1))
+        return
+    if not found:
+        typer.echo(f"{pkg}: no backups yet (frameport saves backup {pkg}); folder: {saves.backups_dir(pkg)}")
+        return
+    for i, b in enumerate(found, 1):
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(b.created))
+        typer.echo(f"{i:3}  {when}  {b.files:5} file(s)  {b.bytes / 2**20:8.1f} MiB"
+                   + (f"  v{b.version}" if b.version else "") + f"  {b.path.name}")
+
+
+@saves_app.command("restore")
+def saves_restore(package: str = typer.Argument(..., help="the game (package or part of its title)"),
+                  backup: Optional[str] = typer.Argument(None, help="a number from `saves list` (default 1 = the "
+                                                                    "newest) or a backup file"),
+                  yes: bool = typer.Option(False, "--yes", "-y", help="don't ask"),
+                  frame: Optional[str] = typer.Option(None, help=FRAME_HELP)):
+    """Put a backup's saves back on the Frame. The game's current saves there are replaced; the Frame keeps a copy of
+    them (`saves undo` puts them back). The game must be closed."""
+    from .install import saves
+
+    pkg = _save_pkg(package)
+    if backup and not backup.isdigit():
+        path = Path(backup)
+        if not path.is_file():
+            raise typer.BadParameter(f"no such file: {backup}")
+    else:
+        found = saves.list_backups(pkg)
+        n = int(backup or 1)
+        if not 1 <= n <= len(found):
+            raise typer.BadParameter(f"{pkg} has {len(found)} backup(s) (frameport saves list {pkg})")
+        path = found[n - 1].path
+    if not yes:
+        typer.confirm(f"Replace {pkg}'s saves on the Frame with {path.name}?", abort=True)
+    r = saves.restore(_target(frame).frame, pkg, path, printing_reporter(verbose=False))
+    typer.echo(f"{pkg}: restored {r.get('restored', 0)} file(s), removed {r.get('removed', 0)}; the saves from "
+               f"before are kept on the Frame (frameport saves undo {pkg})")
+
+
+@saves_app.command("undo")
+def saves_undo(package: str = typer.Argument(..., help="the game (package or part of its title)"),
+               frame: Optional[str] = typer.Option(None, help=FRAME_HELP)):
+    """Put back the saves the last `saves restore` replaced (they're kept on the Frame)."""
+    from .install import saves
+
+    pkg = _save_pkg(package)
+    r = saves.undo_restore(_target(frame).frame, pkg)
+    typer.echo(f"{pkg}: the saves from before the last restore are back ({r.get('restored', 0)} file(s))")
 
 
 @frame_app.command("info")

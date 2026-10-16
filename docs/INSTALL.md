@@ -221,6 +221,14 @@ The **Files** tab copies files between your PC and the Frame: videos, documents,
   `/sdcard/Download`, `/sdcard/Documents`).
 - **Game storage** holds each game's own files. A game's menu → **Add videos and files…** opens it.
 
+## Backing up saves
+
+Steam doesn't sync Quest games' saves. A game's menu (**…** on its page) → **Saves** → **Back up saves** copies them
+to your PC (close the game first); **Back up all saves** on the Steam Frame page does every installed Quest game.
+**Restore saves…** puts a backup back on the Frame and keeps a copy of the replaced saves there (**Undo last
+restore**). Backups live in FramePort's data folder under `save-backups/`; the 10 newest per game are kept (Settings →
+Data). Caches and large downloaded content stay out. More in the [FAQ](FAQ.md#can-i-back-up-a-games-saves).
+
 ## Share a recipe or report a problem
 
 - **Share working recipe…** (in the game's menu) opens a GitHub issue with the game's recipe filled in. Accepted
@@ -267,6 +275,7 @@ option. The main ones:
 | `frame discover` / `frame connect` / `frame info` | find, connect to and describe the Frame |
 | `frame send <files> --dest videos` / `frame storage` / `frame cleanup` | copy files to the Frame, list where they can go, free space |
 | `frame drives` / `frame move <game> --to <drive>` / `install --dest <drive>` | list the Frame's drives, move a game, install to a drive |
+| `saves backup <game>\|--all` / `saves list <game>` / `saves restore <game> [n]` / `saves undo <game>` | back up Quest games' saves to this PC, restore one, undo the last restore |
 | `tools status` / `tools install` | the tools FramePort downloads |
 | `open-link "<link>"` | install from an install button's address or a download link (`--yes`, `--no-install`) |
 | `diag report <game>` / `share-recipe <game>` | report a problem / share a working recipe |

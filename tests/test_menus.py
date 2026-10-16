@@ -27,7 +27,7 @@ def _states():
     """(name, game, state) for the cases the menus have to handle."""
     return [
         ("quest on Frame", QUEST, MenuState(connected=True, on_frame=True, plays=[_play()], installs=[_install()],
-                                            settings=True, selectable=True, android=True)),
+                                            settings=True, selectable=True, android=True, saves=True)),
         ("quest not installed", QUEST, MenuState(connected=True, installs=[_install("Install on Frame")],
                                                  settings=True, selectable=True, android=True)),
         ("rift on PC", RIFT, MenuState(on_pc=True, plays=[_play("this PC")], programs=True, selectable=True,
@@ -110,7 +110,7 @@ def test_sections_and_conditions():
     st.quick = False
     entries = menu_sections(g, st, _key)
     heads = [e.label for e in entries if isinstance(e, Header)]
-    assert heads == ["Name and artwork", "Recipe", "Troubleshoot"]
+    assert heads == ["Saves", "Name and artwork", "Recipe", "Troubleshoot"]
     assert _section_of(entries, "Analyze again") == "Troubleshoot"
     assert _section_of(entries, "Update art on Frame") == "Name and artwork"
     assert _section_of(entries, "Rename…") == "Name and artwork"
@@ -188,3 +188,20 @@ def test_newer_version_for_linux_apps_and_pc_vr_games():
         assert ("Update with a newer version…" in full) == want, name
         if g is not QUEST:
             assert "Update with a newer APK…" not in quick + full, name
+
+
+def test_save_backups_in_the_full_menu_of_quest_games():
+    """Discussion #352: back up / restore a Quest game's saves (installed on the Frame, no job running); the backups
+    folder for every Quest game; nothing for PC VR games and Linux apps; never in the short right-click menu."""
+    for name, g, st in _states():
+        quick = [e[0] for e in _items(menu_sections(g, st, _key))]
+        assert not {"Back up saves", "Restore saves…", "Open backups folder"} & set(quick), name
+        st.quick = False
+        entries = menu_sections(g, st, _key)
+        full = [e[0] for e in _items(entries)]
+        live = g is QUEST and st.saves and not st.job
+        assert ("Back up saves" in full) == live, name
+        assert ("Restore saves…" in full) == live, name
+        assert ("Open backups folder" in full) == (g is QUEST), name
+        if g is QUEST:
+            assert _section_of(entries, "Open backups folder") == "Saves"

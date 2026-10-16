@@ -242,6 +242,14 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
     flask icon (SCIENCE_OUTLINED) so they aren't confused with Play.
   - `uninstall.py` + `frameport uninstall-app` + Settings: removes the data dir (after an optional key backup zip),
     PC Steam shortcuts, the WSL Revive copy, and via agent `purge` FramePort's games/files on the Frame.
+  - Save backups (discussion #352, agent v94; docs/FRAME_RUNTIME.md "Save backups"): agent `_backup_saves`/
+    `_restore_saves '<json>'` stream a tar.gz of `lepton-data/internal/<pkg>` + `external/Android/data/<pkg>` (caches,
+    IL2CPP/shader caches, FrameBridge files, videos/OBBs, files >64 MiB left out; manifest `frameport-saves.json` last)
+    over the exec channel, file work in `podman unshare` (`_saves_ns`), launch lock held, refused while running;
+    restore = untrusted input (staged + checked first), rollback copy `<base>/saves-before-restore.tar.gz` (undo =
+    `rollback: true`). PC `install/saves.py` (`<data>/save-backups/<pkg>/<ts>.tar.gz` + `.json`, keep `saves.keep`
+    = 10), GUI `ui/views/saves_dialog.py` (game menu section "Saves", Frame page "Back up all saves", uninstall's
+    "back up before deleting"), CLI `frameport saves backup|list|restore|undo`.
   - `patches/` — **the unit of modularity**. `base.py` (Patch interface, registry), `overport.py` (overport CLI patch ids,
     discovered dynamically via `overport patches`), `frame/*.py` (one module per Frame fix), `settings.py` (FrameBridge
     adapter keys + device files as patches). Add a patch = add a module that calls `register(...)`.

@@ -197,6 +197,19 @@ draw more than the battery delivers, especially at lower charge, and the Frame t
 
 Saves stay on the Frame when you update or reinstall a game.
 
+## Can I back up a game's saves?
+
+Yes. Steam doesn't sync Quest games' saves, so FramePort copies them to your PC: the game's menu (**…** on its page) →
+**Saves** → **Back up saves**, or **Back up all saves** on the Steam Frame page (Installed games). Close the game
+first. A backup holds the game's own storage (`/data/data/<package>` and `/sdcard/Android/data/<package>`), without
+caches, shader caches and large downloaded content (videos, OBBs, files over 64 MB); the job says when something was
+left out. FramePort keeps the 10 newest backups per game (Settings → Data). They're in FramePort's data folder under
+`save-backups/<package>/` (**Open backups folder** in the game's menu).
+
+**Restore saves…** puts one back: it replaces the game's saves on the Frame. The Frame keeps a copy of the saves it
+had, so **Undo last restore** in the same window takes you back. When you uninstall a game and tick *Also delete its
+saves*, FramePort backs them up first. Command line: `frameport saves backup|list|restore|undo <game>`.
+
 ## A game with mods crashes
 
 How to tell: play once without mods and custom content. If it then works, a mod is the cause; the diagnostics zip

@@ -60,6 +60,32 @@
   `launch.sh` at the new folder and only then deletes the old copy; on the same filesystem it renames instead.
   Moving a game whose Lepton data holds absolute paths, or a PC VR prefix, is not yet verified on the device.
 
+## Save backups (Quest games, agent v94, discussion #352)
+- A Lepton game's saves are two folders of `<base>/lepton-data`: `internal/<pkg>` (= `/data/data/<pkg>`:
+  `shared_prefs/`, `files/`, `databases/`; Unreal's `files/UE4Game|UnrealGame/.../Saved` often lives here) and
+  `external/Android/data/<pkg>` (= `/sdcard/Android/data/<pkg>`: Unity's `files/`, Unreal's external `Saved`). On the
+  dev Frame (2026-10-16) every file in them belongs to `steamos` (Lepton's `keep-id:uid=0`: the container's root and
+  app = steamos), mostly mode 600/660 in 700/771/775/2771 folders; Lepton's links (`Android/obb/<pkg>`, `Movies`,
+  `Download`, `Documents`) sit outside these two folders.
+- Agent `_backup_saves '<json>'` streams a tar.gz of both (members `internal/…`, `external/…`, PAX, numeric owners and
+  modes; last member `frameport-saves.json` = manifest with size + sha256 per file and what was left out) on the SSH
+  exec channel's stdout, the result JSON on stderr. Left out: folders named cache/code_cache/no_backup/il2cpp/
+  UnityShaderCache/(Vulkan)ProgramBinaryCache/GPUCache/… at any depth, Unreal `Saved/Logs|Crashes`, FrameBridge's
+  `fb_snap_*`/`framebridge*` files, `.obb/.apk/.foz/.mp4/.mkv/.webm/.mov`, symlinks and special files, and files over
+  64 MiB (big downloaded content; e.g. BattleTalent's `files/Video`). More than 4 GiB of saves is refused.
+- `_restore_saves '<json>'` reads the archive from stdin and treats it as untrusted: only regular files and folders
+  under `internal/`/`external/` (no `..`, absolute paths, links, devices, duplicates), ≤1 GiB per file / 8 GiB in all,
+  each file's sha256 must match the manifest, the manifest's package must be the game. Everything is staged in
+  `<base>/.saves-restore-*` first, a path that would pass through a link on the Frame is refused, then the current
+  saves are written to `<base>/saves-before-restore.tar.gz` (one copy; `rollback: true` restores it and keeps the
+  replaced saves as the new copy) and each file is renamed into place. Existing files keep their owner and mode, new
+  ones get their folder's owner and the backup's mode (at least u+rw); save files the backup doesn't have are removed
+  (left-out files stay). A failure while swapping puts the rollback copy back.
+- Both run their file work in `podman unshare` (the agent re-runs itself as `_saves_ns <op>` with stdio inherited) so
+  files owned by mapped ids are readable and keep their ids, take the game's launch lock (`<base>/.launch.lock`, a
+  Play meanwhile is ignored as a double launch) and refuse while its container runs. `saves_info` sizes a backup and
+  reports the rollback copy, `saves_rollback_delete` removes it.
+
 ## OpenXR runtime (as seen by games through overport's loader)
 - Instance extensions present include KHR_android_create_instance (must be enabled; the adapter adds it),
   KHR_vulkan_enable(2), KHR_opengl_es_enable, KHR_composition_layer_depth, FB_display_refresh_rate, EXT_hand_tracking

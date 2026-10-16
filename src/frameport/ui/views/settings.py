@@ -203,6 +203,25 @@ class SettingsView:
                    spacing=T.S2, run_spacing=T.S2, wrap=True),
         ], spacing=T.S3, horizontal_alignment=ft.CrossAxisAlignment.START)
 
+    def save_backups(self) -> ft.Control:
+        """Settings → Data: how many save backups to keep per game (install/saves.py, setting saves.keep)."""
+        from ...core import library, winhost
+        from ...install import saves
+
+        def changed(e):
+            library.set_setting("saves.keep", int(e.control.value))
+
+        def open_root(e):
+            saves.root_dir().mkdir(parents=True, exist_ok=True)
+            winhost.open_folder(saves.root_dir())
+        keep = C.dropdown(label=tr("Save backups to keep per game"), value=str(saves.keep_count()), width=T.px(260),
+                          options=[ft.DropdownOption(str(n), str(n))
+                                   for n in sorted({*saves.KEEP_CHOICES, saves.keep_count()})],
+                          on_select=changed)
+        return ft.Row([keep, C.help_icon("save_backups"),
+                       C.ghost(tr("Open save backups"), ft.Icons.FOLDER_OPEN_ROUNDED, open_root)],
+                      spacing=T.S2, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
     def ssh_keys(self) -> ft.Control:
         """Settings → Installing: private key files FramePort logs in with besides its own (frame.connection
         EXTRA_KEYS_SETTING; the Frame connection and OpenSSH uploads both use them, GitHub #242)."""
@@ -582,6 +601,7 @@ class SettingsView:
                 C.kv(tr("Catalog"), tr("{len} tested recipes (built in, online and yours)")
                      .format(len=len(catalog.load())), "catalog"),
                 self.catalog_updates(),
+                self.save_backups(),
             ], spacing=T.S2))),
             # text above, buttons below (side by side, the buttons squeezed the text in a narrow window)
             "feedback": C.section(tr("Problems and feedback"), C.card(ft.Column([
