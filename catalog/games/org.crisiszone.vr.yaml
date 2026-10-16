@@ -1,0 +1,18 @@
+package: org.crisiszone.vr
+title: Crisis Zone VR
+status: works
+notes: Played the beginning of the first mission without issues.
+tested_version: 0.1.4
+engine: Other
+xr: OpenXR
+frame:
+- frame.sdl_clipboard
+verified:
+  date: '2026-10-15'
+  known_good_sha256: 747d1e6613ae443ef03e509b509e4ec89039eec1aecf3689643db4057e53266a
+  app: 1.2.1.dev433
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 91
+  issue: 331
+source_hint: CrisisZoneVR-v0.1.4-quest3

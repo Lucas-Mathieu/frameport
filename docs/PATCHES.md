@@ -71,7 +71,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Platform compat (ovrMessageType_ToString)](#frame-ovrplatformcompat) | `frame.ovrplatformcompat` | Steam Frame patches | default |
 | [Stub missing Meta platform functions](#frame-ovrstubs) | `frame.ovrstubs` | Steam Frame patches | default |
 | [Unpaired pointer-authentication checks](#frame-pac_hints) | `frame.pac_hints` | Steam Frame patches | 1 |
-| [SDL apps: start without a clipboard service](#frame-sdl_clipboard) | `frame.sdl_clipboard` | Steam Frame patches | 4 |
+| [SDL apps: start without a clipboard service](#frame-sdl_clipboard) | `frame.sdl_clipboard` | Steam Frame patches | 5 |
 | [Stress Level Zero: let Unity start Vulkan itself](#frame-slz_vulkan_hooks) | `frame.slz_vulkan_hooks` | Steam Frame patches | 1 |
 | [Start straight in VR (skip the 2D launcher)](#frame-start_activity) | `frame.start_activity` | Steam Frame patches |  |
 | [Allow swapchains larger than 4096 px](#frame-swapchain_limit) | `frame.swapchain_limit` | Steam Frame patches | default |
@@ -838,7 +838,7 @@ Lets SDL and LÖVE games start on the Frame (they'd crash looking for a clipboar
 - `frame.sdl_clipboard` · also for 2D apps
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** SDL app: it crashes at start in Lepton, which has no clipboard service.
-- **Catalog games (4):** Majora's Mask VR, Time Crisis II VR (Test), Time Crisis VR (Experimental), WiiCompiled VR.
+- **Catalog games (5):** Crisis Zone VR, Majora's Mask VR, Time Crisis II VR (Test), Time Crisis VR (Experimental), WiiCompiled VR.
 - **Suggested by launch-test signatures:**
   - `sdl-no-clipboard` (fatal): The app crashed at start because the Frame's Android has no clipboard.
 - **Source:** [patches/frame/sdl_clipboard.py](../src/frameport/patches/frame/sdl_clipboard.py)

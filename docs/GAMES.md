@@ -35,6 +35,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Cook-Out | Quest | ✅ Works |  |
 | Cosmodread | Quest | ✅ Works |  |
 | Creed | Quest | ✅ Works |  |
+| Crisis Zone VR | Quest | ✅ Works |  |
 | cubism | Quest | ✅ Works |  |
 | Dance Central | Quest | ✅ Works |  |
 | Deep Cuts | Quest | ✅ Works |  |
