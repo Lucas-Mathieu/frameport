@@ -51,7 +51,7 @@ def _x0_address(data: bytes, segs, at: int, back: int = 8) -> int | None:
 
 
 def _function(data: bytes, name: str) -> tuple[int, int] | None:
-    sec = elf._elf(data).get_section_by_name(".dynsym")
+    sec = elf.dynsym_section(elf._elf(data))
     for sym in (sec.get_symbol_by_name(name) or []) if sec else []:
         if sym["st_value"] and sym["st_size"]:
             return sym["st_value"], sym["st_size"]

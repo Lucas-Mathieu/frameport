@@ -619,6 +619,11 @@
   "title": "Unreal: match multiview depth to the eye size",
   "group": "Steam Frame patches"
  },
+ "frame.unreal_noreserve": {
+  "anchor": "frame-unreal_noreserve",
+  "title": "Unreal: reserve memory like on Quest",
+  "group": "Steam Frame patches"
+ },
  "frame.unreal_ovrp_entrypoints": {
   "anchor": "frame-unreal_ovrp_entrypoints",
   "title": "Unreal: stand-ins for OVRPlugin functions OVRPort lacks",

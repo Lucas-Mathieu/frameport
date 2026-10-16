@@ -127,6 +127,8 @@ SUMMARIES = {
                                  "empty Gear VR controls on the Frame, for example Vader Immortal).",
     "frame.unreal_splash_bypass": "Lets the game finish loading when its separate loading splash stalls the "
                                   "render thread.",
+    "frame.unreal_noreserve": "Lets the game load: it reserves more memory at start than the Frame grants in one "
+                              "piece and crashed before its first frame (for example Transformers Beyond Reality).",
     "frame.unreal_multiview_depth": "Shows the full environment when its upper part is clipped but menu panels "
                                     "look correct.",
     "frame.unreal_thumb_touch": "Makes the hands' thumbs follow what your thumb touches (they always pointed up: the "

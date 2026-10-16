@@ -47,3 +47,26 @@ def test_add_needed(variant):
     assert all(off % 16384 == va % 16384 for va, off, _ in loads)
     # idempotent
     assert elf.add_needed(out, "libglshim.so") == out
+
+
+def _scramble_section_names(lib: bytes) -> bytes:
+    """Rotate every section's sh_name by one, like a shipped libOVRPlugin.so whose names are shifted (GitHub #349:
+    .dynamic named "dding", .dynsym "text"); types and links stay right."""
+    buf = bytearray(lib)
+    shoff = struct.unpack_from("<Q", buf, 40)[0]
+    shentsize, shnum = struct.unpack_from("<H", buf, 58)[0], struct.unpack_from("<H", buf, 60)[0]
+    names = [struct.unpack_from("<I", buf, shoff + i * shentsize)[0] for i in range(1, shnum)]
+    for i, name in enumerate(names[1:] + names[:1], start=1):
+        struct.pack_into("<I", buf, shoff + i * shentsize, name)
+    return bytes(buf)
+
+
+def test_scrambled_section_names():
+    base = elf.add_needed(build_stub_library(["ovr_X", "ovr_Y"], soname="libgame.so"), "liblog.so")
+    lib = _scramble_section_names(base)
+    assert elf.dynsym_section(elf._elf(lib)) is not None
+    assert elf.dyn_symbols(lib, True) == {"ovr_X", "ovr_Y"}
+    assert elf.find_symbols(lib, ["ovr_Y"]).keys() == {"ovr_Y"}
+    out = elf.add_needed(lib, "libfp_x.so")  # raised "produced NEEDED=[...]" when sections were found by name
+    assert elf.needed(out) == ["libfp_x.so", "liblog.so"]
+    assert elf.dyn_symbols(out, True) == {"ovr_X", "ovr_Y"}

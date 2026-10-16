@@ -38,7 +38,7 @@ def _words(data: bytes | bytearray, off: int, n: int) -> list[int]:
 def _function_offset(data: bytes, size: int) -> int | None:
     """File offset of FUNC in the loader (None: not an ELF, no such export, or shorter than `size` bytes)."""
     try:
-        dynsym = elf._elf(data).get_section_by_name(".dynsym")
+        dynsym = elf.dynsym_section(elf._elf(data))
     except Exception:  # noqa: BLE001
         return None
     found = dynsym.get_symbol_by_name(FUNC) if dynsym is not None else None

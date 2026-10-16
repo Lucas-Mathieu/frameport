@@ -20,6 +20,23 @@ def _elf(data: bytes) -> ELFFile:
     return ELFFile(io.BytesIO(data))
 
 
+def dynsym_section(elf: ELFFile):
+    """The dynamic symbol table, found by section type: some shipped libraries have a scrambled section name table
+    (GitHub #349: Transformers Beyond Reality's libOVRPlugin.so calls .dynsym "text"), types and links are intact."""
+    sec = elf.get_section_by_name(".dynsym")
+    if isinstance(sec, SymbolTableSection) and sec["sh_type"] == "SHT_DYNSYM":
+        return sec
+    return next((s for s in elf.iter_sections() if s["sh_type"] == "SHT_DYNSYM"), None)
+
+
+def dynstr_section(elf: ELFFile, dynsym=None):
+    """The string table of the dynamic symbols (dynsym's sh_link; by name as a fallback)."""
+    dynsym = dynsym if dynsym is not None else dynsym_section(elf)
+    if dynsym is not None and 0 < dynsym["sh_link"] < elf.num_sections():
+        return elf.get_section(dynsym["sh_link"])
+    return elf.get_section_by_name(".dynstr")
+
+
 def needed(data: bytes) -> list[str]:
     elf = _elf(data)
     for sec in elf.iter_sections():
@@ -48,7 +65,7 @@ def dyn_symbols(data: bytes, defined: bool) -> set[str]:
 @lru_cache(maxsize=256)
 def _dyn_symbols_cached(data: bytes, defined: bool) -> frozenset[str]:
     elf = _elf(data)
-    sec = elf.get_section_by_name(".dynsym")
+    sec = dynsym_section(elf)
     out = set()
     if isinstance(sec, SymbolTableSection):
         for sym in sec.iter_symbols():
@@ -69,7 +86,8 @@ def find_symbols(data: bytes, names) -> dict[str, tuple[int, int]]:
     if not is_elf(data) or data[4] != 2 or data[5] != 1:
         return {}
     elf = _elf(data)
-    dynsym, dynstr = elf.get_section_by_name(".dynsym"), elf.get_section_by_name(".dynstr")
+    dynsym = dynsym_section(elf)
+    dynstr = dynstr_section(elf, dynsym)
     if dynsym is None or dynstr is None:
         return {}
     sym_off, sym_size = dynsym["sh_offset"], dynsym["sh_size"]
@@ -147,7 +165,7 @@ def hide_exports(data: bytes, names) -> tuple[bytes, list[str]]:
     (native/langpack) still finds the original address. Returns (data, names actually hidden); ELF64 only."""
     if not is_elf(data) or not is_64bit(data) or data[5] != 1:
         return data, []
-    sec = _elf(data).get_section_by_name(".dynsym")
+    sec = dynsym_section(_elf(data))
     if not isinstance(sec, SymbolTableSection):
         return data, []
     wanted = set(names)
@@ -171,7 +189,7 @@ def redirect_exports(data: bytes, names) -> tuple[bytes, list[str]]:
     """
     if not is_elf(data) or not is_64bit(data) or data[5] != 1:
         return data, []
-    sec = _elf(data).get_section_by_name(".dynsym")
+    sec = dynsym_section(_elf(data))
     if not isinstance(sec, SymbolTableSection):
         return data, []
     wanted = set(names)
@@ -201,10 +219,11 @@ def rename_imports(data: bytes, renames: dict[str, str]) -> tuple[bytes, list[st
         if len(new) > len(old):
             raise ValueError(f"{new} is longer than {old}")
     elf = _elf(data)
-    dynsym, dynstr = elf.get_section_by_name(".dynsym"), elf.get_section_by_name(".dynstr")
+    dynsym = dynsym_section(elf)
+    dynstr = dynstr_section(elf, dynsym)
     if not isinstance(dynsym, SymbolTableSection) or dynstr is None:
         return data, []
-    versym = elf.get_section_by_name(".gnu.version")
+    versym = next((s for s in elf.iter_sections() if s["sh_type"] == "SHT_GNU_versym"), None)
     str_off = dynstr["sh_offset"]
     targets, refs = {}, {}  # dynsym index -> st_name of an import to rename; st_name -> referencing dynsym indices
     for i, sym in enumerate(dynsym.iter_symbols()):
@@ -376,24 +395,23 @@ def add_needed(data: bytes, library: str) -> bytes:
         write_ph(i, p)
 
     # section headers: point .dynamic / .dynstr at the new copies (for tools; the loader uses program headers)
+    # Found by type and link, not by name: some shipped libraries have a scrambled section name table (GitHub #349,
+    # Transformers Beyond Reality's libOVRPlugin.so names .dynamic "dding"), whose types and links are still right.
     if shoff and shnum:
-        shstrndx = eh[13]
+        SHT_DYNAMIC = 6
         def sh(i):
             return list(struct.unpack_from(sh_fmt, buf, shoff + i * shentsize))
-        names_hdr = sh(shstrndx)
-        names_off = names_hdr[4]
-        def sec_name(h):
-            end = buf.index(b"\0", names_off + h[0])
-            return bytes(buf[names_off + h[0]:end]).decode()
-        for i in range(shnum):
-            h = sh(i)
-            n = sec_name(h)
-            if n == ".dynstr":
-                h[3], h[4], h[5] = va_start + str_off, file_end + str_off, len(new_str)
-            elif n == ".dynamic":
-                h[3], h[4], h[5] = va_start + dyn_off, file_end + dyn_off, len(dyn_bytes)
-            else:
-                continue
+        headers = [sh(i) for i in range(shnum)]  # sh_name, sh_type, sh_flags, sh_addr, sh_offset, sh_size, sh_link
+        dyn_secs = [i for i, h in enumerate(headers) if h[1] == SHT_DYNAMIC]
+        str_secs = {headers[i][6] for i in dyn_secs if 0 < headers[i][6] < shnum}
+        str_secs |= {i for i, h in enumerate(headers) if h[3] == strtab_va and h[3]}  # .dynstr by address
+        for i in dyn_secs:
+            h = headers[i]
+            h[3], h[4], h[5] = va_start + dyn_off, file_end + dyn_off, len(dyn_bytes)
+            struct.pack_into(sh_fmt, buf, shoff + i * shentsize, *h)
+        for i in str_secs - set(dyn_secs):
+            h = headers[i]
+            h[3], h[4], h[5] = va_start + str_off, file_end + str_off, len(new_str)
             struct.pack_into(sh_fmt, buf, shoff + i * shentsize, *h)
     result = bytes(buf)
     got = needed(result)

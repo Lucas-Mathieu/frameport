@@ -291,6 +291,16 @@ signatures:
     severity: error
     diagnosis: The screen stays black because the game submits a layer the VrApi bridge can't show. Whole frames with that VrApi layer type are dropped.
     suggest: []
+  - id: unreal-reserve-refused
+    # GitHub #349: Unreal's out-of-memory handler dereferences its not yet created log while libUnreal.so's static
+    # constructors run (System.loadLibrary), after the Binned3 allocator's up-front reservation failed
+    pattern: '(?s)fault addr 0x10\b(?:(?!Fatal signal).){0,8000}?#00 pc [0-9a-f]+\s+\S*lib(?:Unreal|UE4)\.so(?:(?!Fatal signal).){0,8000}?soinfo17call_constructors'
+    severity: fatal
+    diagnosis: The game crashed while Unreal was still loading, before its first frame. Its memory allocator (Binned3)
+      reserves tens of gigabytes of address space at once, which Quest allows and the Frame's kernel refuses in one
+      piece (for example Transformers Beyond Reality). Rebuild with the reservation marked as not committed.
+    suggest: [frame.unreal_noreserve]
+    supersedes: [native-crash]
   - id: graphics-requirements-missing
     pattern: '(XR_ERROR_GRAPHICS_REQUIREMENTS_CALL_MISSING|Failed to create XR session: -50\b|xrCreateSession[^\n]*-50\b)'
     severity: fatal

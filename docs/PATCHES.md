@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 176 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 177 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -11,7 +11,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 ## Groups
 
 - [Patches from OVRPort](#group-overport) (25)
-- [Steam Frame patches](#group-frame) (60)
+- [Steam Frame patches](#group-frame) (61)
 - [Game settings](#group-adapter) (70)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
@@ -91,6 +91,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Unity: headset always counts as worn](#frame-unity_user_presence) | `frame.unity_user_presence` | Steam Frame patches | 1 |
 | [GL shim for Unreal (no multisampled render-to-texture)](#frame-unreal_gl_shim) | `frame.unreal_gl_shim` | Steam Frame patches | 1 |
 | [Unreal: match multiview depth to the eye size](#frame-unreal_multiview_depth) | `frame.unreal_multiview_depth` | Steam Frame patches | 1 |
+| [Unreal: reserve memory like on Quest](#frame-unreal_noreserve) | `frame.unreal_noreserve` | Steam Frame patches |  |
 | [Unreal: stand-ins for OVRPlugin functions OVRPort lacks](#frame-unreal_ovrp_entrypoints) | `frame.unreal_ovrp_entrypoints` | Steam Frame patches | 3 |
 | [Unreal: Quest controller bindings (RPOC key map)](#frame-unreal_quest_keymap) | `frame.unreal_quest_keymap` | Steam Frame patches | 3 |
 | [Unreal: don't wait for the Quest shader precompile](#frame-unreal_quest_precompile) | `frame.unreal_quest_precompile` | Steam Frame patches | 3 |
@@ -1110,6 +1111,19 @@ Shows the full environment when its upper part is clipped but menu panels look c
 - **Source:** [patches/frame/unreal_multiview_depth.py](../src/frameport/patches/frame/unreal_multiview_depth.py)
 
 > Some UE4 games keep the initial Android window size for their stereo depth buffer, clipping the upper part of the environment while menu panels look correct. Refreshes the cached depth dimensions from the current eye render target before allocation. Preserves multiview and multisampling. Verified in Tales from the Galaxy's Edge 1.1.9; changes one branch only when the function size and surrounding code match.
+
+### <a id="frame-unreal_noreserve"></a>Unreal: reserve memory like on Quest
+
+Lets the game load: it reserves more memory at start than the Frame grants in one piece and crashed before its first frame (for example Transformers Beyond Reality).
+
+- `frame.unreal_noreserve` · also for 2D apps
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested (on):** Unreal's Binned3 allocator reserves more memory at start than the Frame's kernel allows in one piece; without this the game crashes while it loads.
+- **Suggested by launch-test signatures:**
+  - `unreal-reserve-refused` (fatal): The game crashed while Unreal was still loading, before its first frame.
+- **Source:** [patches/frame/unreal_noreserve.py](../src/frameport/patches/frame/unreal_noreserve.py)
+
+> Unreal reserves its memory ranges on Android with ordinary read/write mappings. Games built with Unreal's Binned3 allocator reserve tens of gigabytes at once while the engine loads (76 GiB in Transformers Beyond Reality); Quest allows that, the Frame's kernel refuses mappings larger than its memory, and the game crashes before its first frame (SIGSEGV at fault addr 0x10 in libUnreal.so, inside System.loadLibrary). This marks those mappings MAP_NORESERVE, as Quest effectively treats them: memory is still only used when the game touches it.
 
 ### <a id="frame-unreal_ovrp_entrypoints"></a>Unreal: stand-ins for OVRPlugin functions OVRPort lacks
 

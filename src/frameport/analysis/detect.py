@@ -52,7 +52,9 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 #     Android 12's VibratorManager: frame.unity_appui_vibrator, GitHub #297); gms_folded_sdk_checks (Play services'
 #     Android 12 checks folded to true by R8: frame.gms_platform_version, GitHub #310); usb_midi_watcher (kshoji's
 #     USB MIDI driver polls the missing USB service: frame.usb_midi_watcher, GitHub #297) (2026-10)
-ANALYSIS_VERSION = 21
+# 22: unreal_binned3 (Unreal built with FMallocBinned3 reserves tens of GiB at load: frame.unreal_noreserve,
+#     GitHub #349) (2026-10)
+ANALYSIS_VERSION = 22
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
@@ -94,6 +96,13 @@ def cryengine_project(data: bytes) -> bool:
 
 
 UE_VERIFY_OBB_KEY = ".GameActivity.bVerifyOBBOnStartUp"
+
+
+def unreal_binned3(engine: bytes) -> bool:
+    """Unreal built with FMallocBinned3 as its allocator (its own messages and source path are compiled in; other
+    builds only name its console variables). It reserves its whole range while the library loads (GitHub #349)."""
+    return (b"/HAL/MallocBinned3.cpp\0" in engine
+            or "FMallocBinned3 Attempt to free".encode("utf-16-le") in engine)
 
 
 def unreal_verify_obb(meta: dict) -> bool:
@@ -471,6 +480,10 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
             # Unreal CRC-checks the OBB before the game starts (frame.unreal_skip_obb_check, GitHub #159)
             "unreal_verify_obb": unreal_verify_obb(meta),
             "unreal_obb_delivery": unreal_obb_delivery,
+            # Unreal's Binned3 allocator reserves more address space than the Frame's kernel grants in one writable
+            # mapping (frame.unreal_noreserve, GitHub #349)
+            "unreal_binned3": (unreal_binned3(lib_bytes.get(engine_lib.rsplit("/", 1)[1], b""))
+                               if engine_lib else False),
             # Unreal's Oculus module needs every OVRPlugin function it looks up (frame.unreal_ovrp_entrypoints)
             "unreal_ovrp_lookups": (ovrp_lookups(lib_bytes.get(engine_lib.rsplit("/", 1)[1], b""))
                                     if engine_lib and "libOVRPlugin.so" in libset else []),

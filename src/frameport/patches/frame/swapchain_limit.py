@@ -15,7 +15,7 @@ VIDEO_LIBS = ("libavcodec", "libffmpeg", "libvlc", "libmpv", "libijkffmpeg")
 def raise_swapchain_limit(data: bytes) -> tuple[bytes | None, int]:
     """Rewrite the `cmp wN, #4096` size guards at the start of OVRPort's swapchain entry points."""
     try:
-        dynsym = elf._elf(data).get_section_by_name(".dynsym")
+        dynsym = elf.dynsym_section(elf._elf(data))
     except Exception:  # noqa: BLE001
         return None, 0
     if dynsym is None:

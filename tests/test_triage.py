@@ -17,6 +17,27 @@ LOG_BAD = ("""
 """)
 
 
+def test_unreal_reservation_refused_while_loading():
+    """GitHub #349: Unreal's out-of-memory handler crashes inside libUnreal.so's static constructors."""
+    lib = "/data/app/~~x==/com.Meta4.TFBeyondReality-y==/lib/arm64/libUnreal.so (BuildId: 57d064dc)"
+    crash = (
+        "10-16 14:41:01.814  1185  1185 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x10"
+        " in tid 1185 (TFBeyondReality), pid 1185 (TFBeyondReality)\n"
+        "10-16 14:41:01.858  1219  1219 F DEBUG   : Cause: null pointer dereference\n"
+        "10-16 14:41:01.955  1219  1219 F DEBUG   : backtrace:\n"
+        f"10-16 14:41:01.955  1219  1219 F DEBUG   :       #00 pc 00000000018bbe3c  {lib}\n"
+        f"10-16 14:41:01.955  1219  1219 F DEBUG   :       #01 pc 00000000017ceccc  {lib}\n"
+        "10-16 14:41:01.957  1219  1219 F DEBUG   :       #15 pc 000000000004b048  /apex/com.android.runtime/bin/"
+        "linker64 (__dl__ZN6soinfo17call_constructorsEv+380)\n")
+    r = triage("", "EXITED", crash=crash)
+    ids = {f.id for f in r.findings}
+    assert "unreal-reserve-refused" in ids and "native-crash" not in ids
+    assert next(f for f in r.findings if f.id == "unreal-reserve-refused").suggest == ["frame.unreal_noreserve"]
+    # the same fault address in a later render-thread crash isn't this
+    later = crash.replace("__dl__ZN6soinfo17call_constructorsEv+380", "__pthread_start(void*)+64")
+    assert "unreal-reserve-refused" not in {f.id for f in triage("", "EXITED", crash=later).findings}
+
+
 def test_lua_pointer_error_and_cleanup_stack_are_distinguished():
     pointer = triage("PANIC: bad light userdata pointer", "EXITED")
     finding = next(f for f in pointer.findings if f.id == "lua-lightuserdata-pointer")
