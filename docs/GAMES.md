@@ -180,6 +180,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Ragnarock | Quest | ⚠️ Works with issues |  |
 | Real VR Fishing | Quest | ⚠️ Works with issues | Seems to be almost 100% functional with meta permissions enabled. |
 | Silhouette | Quest | ⚠️ Works with issues | Hand-tracking game; the Frame synthesizes hands from controllers, so it is janky. |
+| SmartTube | Quest | ⚠️ Works with issues | Android's home screen shows for a few seconds while the app starts (normal for flat Android apps; longest on the first start after an install). |
 | Spunky Dungeon | Quest | ⚠️ Works with issues | Gear VR / Oculus Go game (32-bit only), runs through FramePort's 32-bit bridge (experimental). |
 | Swarm 2 | Quest | ⚠️ Works with issues | MSAA creates visible seams around edge geometry and also the skybox edge |
 | The Light Brigade | Quest | ⚠️ Works with issues | Judder in weapons |

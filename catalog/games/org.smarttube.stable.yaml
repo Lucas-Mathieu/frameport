@@ -1,0 +1,18 @@
+package: org.smarttube.stable
+title: SmartTube
+status: issues
+notes: Android's home screen shows for a few seconds while the app starts (normal for flat Android apps; longest on the
+  first start after an install). Froze once in the reporter's session.
+tested_version: '32.56'
+engine: Other
+xr: '?'
+as_is: true
+frame:
+- frame.hw_video_decode
+verified:
+  date: '2026-10-16'
+  known_good_sha256: cc53f1aedac52ea0d4e77803acd580e32e7e5179adc96b55db7267b63a16c864
+  app: 1.2.0
+  overport_cli: 1.2.5
+  issue: 350
+source_hint: SmartTube_stable_arm64-v8a
