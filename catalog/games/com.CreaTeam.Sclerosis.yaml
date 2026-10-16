@@ -1,0 +1,20 @@
+package: com.CreaTeam.Sclerosis
+title: Sclerosis
+status: works
+notes: Copy the "Amnesia The Dark Descent" folder from a Windows/Proton install to "FramePort/com.CreaTeam.Sclerosis/lepton-data/external".
+  Default hand positions are rather askew and should be amended via VR Controller Mappings in Steam itself. FOV
+  warping effects are EXTREMELY disorienting in VR, beware. Otherwise seems to work without issue.
+tested_version: 1.10.7
+engine: Unity
+xr: OpenXR
+frame:
+- frame.unity_text_input
+device:
+- device.text_input_window
+verified:
+  date: '2026-10-16'
+  known_good_sha256: e17421ad9894f5e57fb9b1b8110544715166756ef924b5a86831f6f20e70a6d5
+  app: 1.2.0
+  overport_cli: 1.2.5
+  issue: 339
+source_hint: Sclerosis_v1.10.7

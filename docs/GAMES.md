@@ -112,6 +112,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Riven | Quest | ✅ Works |  |
 | Robo Recall | Quest | ✅ Works |  |
 | RUINSMAGUS | Quest | ✅ Works |  |
+| Sclerosis | Quest | ✅ Works |  |
 | Shadow Point | Quest | ✅ Works |  |
 | Shoot The Zombirds VR | Quest | ✅ Works |  |
 | Shores of Loci | Quest | ✅ Works |  |
