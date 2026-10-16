@@ -15,6 +15,15 @@ int main(void) {
     assert(f != &fov && f->flags == 1 && m->additionalCreateFlags == 0x8000);
     assert(m->additionalUsageFlags == 0x123 && m->next == &tail);
     assert(meta.additionalCreateFlags == 0xc000 && fov.next == &meta);
+    // With foveation_fix too (device.foveation, GitHub #303): the leading foveation copies are skipped afterwards
+    // and the runtime still gets the META node without SUBSAMPLED.
+    ci.next = &fov;
+    assert(fb_foveation_storage(&ci, nodes) == 1);
+    const XrBaseInStructure *p = ci.next;
+    while (p && p->type == XR_TYPE_SWAPCHAIN_CREATE_INFO_FOVEATION_FB) p = p->next;
+    m = (const FbVulkanSwapchainCreateInfo *)p;
+    assert(m && m->type == XR_TYPE_VULKAN_SWAPCHAIN_CREATE_INFO_META && m != &meta);
+    assert(m->additionalCreateFlags == 0x8000 && m->next == &tail);
     ci.next = &meta;
     assert(fb_foveation_storage(&ci, nodes) == 1);
     meta.additionalCreateFlags = 0x8000; ci.next = &meta;

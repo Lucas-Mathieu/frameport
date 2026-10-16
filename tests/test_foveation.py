@@ -32,6 +32,16 @@ def test_default_profile_and_conflicting_native_path():
     assert adapter_settings({"adapter.foveation_fix": {"value": 0}})["foveation_fix"] == 0
 
 
+def test_injection_keeps_swapchains_ordinary():
+    # GitHub #303: a SUBSAMPLED eye image under Valve's FDM showed garbage around the sharp area
+    for mode in ("tracked", "fixed"):
+        assert adapter_settings({"device.foveation": {"mode": mode}})["foveation_storage_fix"] == 1
+    for mode in ("", "off"):
+        assert "foveation_storage_fix" not in adapter_settings({"device.foveation": {"mode": mode}})
+    src = (Path(__file__).resolve().parents[1] / "native/adapter/frame_adapter.c").read_text()
+    assert "if (foveation_storage_fix) {" in src  # not only when foveation_fix is off
+
+
 def test_custom_size_and_fixed_mode_and_reset():
     assert context({"mode": "tracked", "test": True}).env["LEPTON_ENV_FRAMEPORT_FOVEATION_TEST"] == "1"
     assert "LEPTON_ENV_FRAMEPORT_FOVEATION_TEST" not in context({"mode": "tracked"}).env

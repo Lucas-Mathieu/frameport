@@ -91,7 +91,7 @@ static void surf_on_destroy(XrSwapchain handle);
 
 static float scale = 1.0f;
 static int foveation_fix = 1;
-static int foveation_storage_fix; // opt-in ordinary shared storage for native Vulkan foveation
+static int foveation_storage_fix; // ordinary (not SUBSAMPLED) swapchain storage; on with device.foveation
 static int foveation_eye; // experimental profile upgrade; does not inject Vulkan gaze offsets
 static int foveation_eye_enabled, foveation_eye_supported;
 #include "foveation_storage.h"
@@ -638,7 +638,9 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
     if (!info) return XR_ERROR_VALIDATION_FAILURE;
     XrSwapchainCreateInfo fixed = *info;
     FbStorageNode storage_nodes[16];
-    if (!foveation_fix && foveation_storage_fix) {
+    // Also with foveation_fix: Valve's injected FDM (device.foveation) stores a SUBSAMPLED image's coarse bins
+    // unscaled, and the compositor reads them as garbage around the sharp area (GitHub #303, Medieval Dynasty).
+    if (foveation_storage_fix) {
         int changed = fb_foveation_storage(&fixed, storage_nodes);
         LOG("foveation_storage_fix: shared allocation %s", changed > 0 ? "SUBSAMPLED cleared" :
             changed < 0 ? "unchanged (unsupported chain prefix)" : "already ordinary or no META node");

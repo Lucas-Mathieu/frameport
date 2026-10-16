@@ -595,6 +595,9 @@ def adapter_settings(recipe_patches: dict) -> dict:
             out[key] = value
     if (recipe_patches.get("device.foveation") or {}).get("mode") in ("tracked", "fixed"):
         out["foveation_fix"] = 1  # shared injection must not compete with the game's native foveation
+        # ...and must render into ordinary images: Valve's FDM leaves a SUBSAMPLED swapchain image's coarse areas
+        # unscaled, which the compositor shows as garbage around the sharp area (GitHub #303, Medieval Dynasty)
+        out["foveation_storage_fix"] = 1
     return out
 
 
