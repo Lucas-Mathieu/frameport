@@ -167,6 +167,10 @@ FramePort downloads it, checks it, restarts and keeps your games and settings. *
 - Settings → **Updates** turns the check off or turns on **Install updates automatically**.
 - **Recipes** (the tested patches and settings for each game) update by themselves. A game whose recipe changed shows
   **Update on Frame**.
+- **A newer version of a game:** right-click it (or use **…** on its page) → **Update with a newer APK…** (Quest and
+  Android games) or **Update with a newer version…** (Linux apps: the new AppImage, archive or folder; PC VR games:
+  the new game folder). Its name, artwork, tags and your settings stay. Then click **Update on Frame** (or **on this
+  PC**).
 - **Dev builds:** if you're asked to test a change before its release, use Settings → Updates → **Install the latest
   dev build…**. The next release then arrives as a normal update.
 
@@ -255,6 +259,7 @@ option. The main ones:
 |---|---|
 | `scan <folder>` / `list` / `show <game>` | add games, list the library, show a game's patches |
 | `add-linux <path> [--exe <program>]` | add a Linux app (AppImage, folder or archive) |
+| `new-version <game> <path>` | point a game at its newer version (APK, Linux app file/folder, PC VR game folder) |
 | `recipe <game> --enable/--disable <patch>` | change a game's patches (`patches` lists them all) |
 | `build <game>` / `install <game>` / `test <game>` | build, install on the Frame (`--to pc` for this PC), launch test |
 | `frame discover` / `frame connect` / `frame info` | find, connect to and describe the Frame |

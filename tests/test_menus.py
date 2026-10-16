@@ -31,9 +31,11 @@ def _states():
         ("quest not installed", QUEST, MenuState(connected=True, installs=[_install("Install on Frame")],
                                                  settings=True, selectable=True, android=True)),
         ("rift on PC", RIFT, MenuState(on_pc=True, plays=[_play("this PC")], programs=True, selectable=True,
-                                       installs=[_install("Reinstall on this PC")])),
+                                       installs=[_install("Reinstall on this PC")], new_version=True)),
         ("linux on Frame", LINUX, MenuState(connected=True, on_frame=True, plays=[_play()], installs=[_install()],
-                                            selectable=True)),
+                                            selectable=True, new_version=True)),
+        ("linux job running", LINUX, MenuState(connected=True, on_frame=True, job=True, selectable=True,
+                                               new_version=True)),
         ("job running", QUEST, MenuState(connected=True, on_frame=True, job=True, settings=True, selectable=True,
                                          android=True)),
     ]
@@ -172,3 +174,17 @@ def test_newer_apk_for_quest_games_in_both_menus():
         want = g is QUEST and not st.job
         assert ("Update with a newer APK…" in quick) == want, name
         assert ("Update with a newer APK…" in full) == want, name
+
+
+def test_newer_version_for_linux_apps_and_pc_vr_games():
+    """GitHub #161: Linux apps and PC VR games get "Update with a newer version…" (a file or folder), not the APK
+    entry, in both menus; never while a job runs."""
+    for name, g, st in _states():
+        quick = [e[0] for e in _items(menu_sections(g, st, _key))]
+        st.quick = False
+        full = [e[0] for e in _items(menu_sections(g, st, _key))]
+        want = g is not QUEST and not st.job
+        assert ("Update with a newer version…" in quick) == want, name
+        assert ("Update with a newer version…" in full) == want, name
+        if g is not QUEST:
+            assert "Update with a newer APK…" not in quick + full, name

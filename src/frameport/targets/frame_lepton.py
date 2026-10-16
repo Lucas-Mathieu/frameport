@@ -86,14 +86,15 @@ class FrameLeptonTarget(Target):
     def install_pcvr(self, package, title, game_dir, exe, recipe, reporter, **extra):
         plan = installer.PcvrPlan(package, title, Path(game_dir), exe, recipe, extra.get("revive_dir"),
                                   extra.get("exe_sha256"), extra.get("revive_version"), extra.get("art_lookup"),
-                                  dest=self.install_dest(), overlay=extra.get("overlay"))
+                                  dest=self.install_dest(), overlay=extra.get("overlay"),
+                                  source_id=extra.get("source_id"), changed_since=extra.get("changed_since"))
         return installer.install_pcvr(self.connect().frame, plan, reporter)
 
     def install_linux(self, package, title, root, exe, files, appimage, openxr, reporter, x86_64=False,
-                      desktop_entry=True, overlay=None, desktop_icon=True):
+                      desktop_entry=True, overlay=None, desktop_icon=True, source_id=None, changed_since=None):
         plan = installer.LinuxPlan(package, title, Path(root), exe, files, appimage, openxr, x86_64,
                                    dest=self.install_dest(), desktop_entry=desktop_entry, overlay=overlay,
-                                   desktop_icon=desktop_icon)
+                                   desktop_icon=desktop_icon, source_id=source_id, changed_since=changed_since)
         return installer.install_linux(self.connect().frame, plan, reporter)
 
     def drives(self) -> list[dict]:

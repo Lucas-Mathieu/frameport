@@ -137,18 +137,25 @@ def _existing_rift(folder: Path) -> dict | None:
 
 
 def add_rift_game(folder: Path, reporter: Reporter | None = None, tree=None, exe: str | None = None,
-                  force: bool = False, art: bool = False) -> dict | None:
+                  force: bool = False, art: bool = False, replace: dict | None = None) -> dict | None:
     """Analyze one Rift game folder and store it. Unchanged folders (same program, size, date) are not analyzed again;
     the user's exe choice, recipe and tags survive rescans. Returns None for folders without a VR runtime (unless
-    force)."""
+    force). replace: the library entry this folder is a newer version of (replace_rift_game): it keeps its package and
+    name."""
     from .analysis import rift
     from .recommend import catalog
 
     folder = Path(folder)
-    old = _existing_rift(folder)
+    if replace is None and not force and any(str(folder) in (g.get("replaced_dirs") or []) for g in library.games()
+                                             if g.get("kind") == "rift"):
+        if reporter:  # the older copy of a game updated from another folder: a rescan must not bring it back
+            reporter.log(f"skipped {folder.name}: an older version of a game that was updated from another folder")
+        return None
+    old = replace or _existing_rift(folder)
     old_extra = ((old or {}).get("analysis") or {}).get("extra") or {}
-    forced = exe is not None  # set_exe: always analyze with the user's choice
-    exe = exe or (old.get("exe") if old and old.get("exe_confirmed") else None)
+    forced = exe is not None or replace is not None  # set_exe / a newer version: always analyze
+    if replace is None:
+        exe = exe or (old.get("exe") if old and old.get("exe_confirmed") else None)
     if old and not forced and old_extra.get("fingerprint") and \
             old_extra["fingerprint"] == rift.fingerprint(folder, old.get("exe") or ""):
         if reporter:
@@ -177,7 +184,9 @@ def add_rift_game(folder: Path, reporter: Reporter | None = None, tree=None, exe
                   suggested=library.recipe_to_dict(recipe))
     if not old or (old.get("recipe") or {}).get("source") != "user":
         fields.update(recipe=library.recipe_to_dict(recipe), status=recipe.status)
-    if not old or not (old.get("title_locked") or old.get("art_source") in ("oculusdb", "meta", "steam")):
+    if replace is not None:
+        pass  # a newer version of the game: its name stays
+    elif not old or not (old.get("title_locked") or old.get("art_source") in ("oculusdb", "meta", "steam")):
         fields["title"] = recipe.title or a.label  # (store-matched titles are kept)
     elif old.get("title_locked") and old.get("art_source") not in ("oculusdb", "meta", "steam"):
         fields["auto_title"] = recipe.title or a.label  # the user's name stays; a reset brings this one
@@ -400,14 +409,20 @@ def missing_obb(entry: dict) -> bool:
     return bool(extra.get("expects_obb")) and not (entry.get("data_dir") and entry.get("data_bytes") != 0)
 
 
-def add_linux_app(path: Path | str, reporter: Reporter | None = None, exe: str | None = None) -> dict:
+def add_linux_app(path: Path | str, reporter: Reporter | None = None, exe: str | None = None,
+                  replace: str | None = None) -> dict:
     """Add a Linux app to the library (no conversion: it's installed as it is): arm64, or x86_64 (run through FEX on
-    the Frame). `exe` overrides the program FramePort picked (relative to the app's folder)."""
+    the Frame). `exe` overrides the program FramePort picked (relative to the app's folder). replace: the package of
+    the library entry this is a newer version of (replace_linux_app): it keeps that package, its name and its art."""
     from .analysis import linux
     from .core.models import Recipe
 
     path = Path(path)
     info = linux.inspect(path)
+    if replace and not exe and not info["files"]:  # a folder: the program the app started before, if it's still there
+        before = (library.game(replace) or {}).get("exe")
+        if before and before != info["exe"] and (Path(info["root"]) / before).is_file():
+            exe = before
     if exe:
         info["exe"] = exe
     x86 = info["machine"] == linux.EM_X86_64
@@ -417,7 +432,7 @@ def add_linux_app(path: Path | str, reporter: Reporter | None = None, exe: str |
     if x86 and reporter:
         reporter.log(f"{path.name} is an x86_64 build: the Frame runs it through FEX (x86 translation; an arm64 "
                      "build runs faster if there is one)")
-    package = f"linux.{linux.slug(info['title'])}"
+    package = replace or f"linux.{linux.slug(info['title'])}"
     if reporter:
         reporter.log(f"{info['title']}: program {info['exe']}{' (AppImage)' if info['appimage'] else ''}"
                      f"{', OpenXR (VR)' if info['openxr'] else ''}")
@@ -439,6 +454,8 @@ def add_linux_app(path: Path | str, reporter: Reporter | None = None, exe: str |
     if not old:
         fields.update(title=info["title"], recipe=library.recipe_to_dict(recipe), status="unknown")
     library.upsert_game(package, **fields)
+    if replace:  # a newer version: the artwork stays as it is
+        return library.game(package)
     try:
         from .artwork import fetch
 
@@ -580,7 +597,7 @@ def install_linux(package: str, target: Target, reporter: Reporter, add_to_libra
                                   reporter, x86_64=bool(extra.get("x86_64")),
                                   desktop_entry=entry.get("desktop_entry", True) is not False,
                                   desktop_icon=entry.get("desktop_icon", True) is not False,
-                                  overlay=linux_overlay(entry))
+                                  overlay=linux_overlay(entry), **_source_args(entry, target.label))
     if extra.get("x86_64"):
         reporter.check("x86 translation", True, "runs through FEX on SteamOS's x86 system (its libraries come from "
                                                  "there; not checked ahead)")
@@ -591,8 +608,21 @@ def install_linux(package: str, target: Target, reporter: Reporter, add_to_libra
         reporter.check("Libraries on the Frame", True, "everything the app needs is there")
     if add_to_library:
         target.add_to_library([package], reporter)
-    _record_install(package, target.label, {"exe": entry["exe"], "result": result, "time": time.time()})
+    _record_install(package, target.label, {"exe": entry["exe"], "result": result, "time": time.time(),
+                                            "source_id": entry.get("source_id")})
     return result
+
+
+def _source_args(entry: dict, label: str) -> dict:
+    """source_id (recorded with the install) and changed_since for a Linux app / PC VR game install: after a newer
+    version was added (replace_linux_app/replace_rift_game), files changed since the last install there are sent
+    again even when the Frame has a file of the same size (0 = the last install is unknown: every file)."""
+    sid = entry.get("source_id")
+    if not sid:
+        return {}
+    rec = (entry.get("installs") or {}).get(label) or {}
+    return {"source_id": sid,
+            "changed_since": None if rec.get("source_id") == sid else float(rec.get("time") or 0)}
 
 
 def add_game(src: SourceGame, reporter: Reporter | None = None) -> dict:
@@ -660,6 +690,85 @@ def replace_apk(package: str, apk: Path, reporter: Reporter | None = None) -> di
     stored = _store_analysis(package, a)
     return {"entry": stored, "older": bool(old_vc and new_vc and new_vc < old_vc), "old_version": old_vc,
             "new_version": new_vc}
+
+
+def _looks_different(before: str | None, now: str | None) -> bool:
+    """A newer version whose name has little in common with the old one's (maybe another app): the caller warns."""
+    import difflib
+
+    a, b = _norm_title(before or ""), _norm_title(now or "")
+    if not a or not b or a in b or b in a:
+        return False
+    return difflib.SequenceMatcher(None, a, b).ratio() < 0.5
+
+
+def _mark_source_replaced(package: str, **fields) -> dict:
+    """A Linux app or PC VR game got a newer version: a new source id, which installs record (in the deployment's
+    recipe); an install without it shows the game as outdated (ui.components.source_replaced)."""
+    import uuid
+
+    return library.upsert_game(package, source_id=uuid.uuid4().hex[:12], source_updated=time.time(), **fields)
+
+
+def replace_linux_app(package: str, path: Path | str, reporter: Reporter | None = None) -> dict:
+    """A newer version of a Linux app already in the library (GitHub #161): an AppImage/archive or a folder, analysed
+    like "Add a Linux app…" (program, arm64/x86_64, AppImage, OpenXR). The app keeps its package (so its Steam
+    shortcut on the Frame), name, artwork, tags and switches (Desktop Mode entry, overlay app); a folder keeps the
+    program chosen before if it's still there. Returns {"entry", "different": its name looks like another app's,
+    "name": the new version's own name}."""
+    entry = library.game(package)
+    if entry is None or not is_linux(entry):
+        raise ValueError("only Linux apps can get a newer version this way")
+    before = ((entry.get("analysis") or {}).get("label")) or entry.get("title")
+    old_source = ((entry.get("analysis") or {}).get("extra") or {}).get("source")
+    if reporter:
+        reporter.log(f"reading {Path(path).name}")
+    stored = add_linux_app(path, reporter, replace=package)
+    name = (stored.get("analysis") or {}).get("label")
+    stored = _mark_source_replaced(package, replaced_source=old_source)
+    return {"entry": stored, "different": _looks_different(before, name), "name": name}
+
+
+def replace_rift_game(package: str, folder: Path | str, reporter: Reporter | None = None) -> dict:
+    """A newer version of a PC VR (Rift) game already in the library (GitHub #161): its new game folder, analysed like
+    a scanned one (programs, VR runtimes, fingerprint). The game keeps its package, name, artwork, tags and the user's
+    own recipe; a program the user confirmed stays if the new folder has it at the same place, else FramePort picks
+    one again (exe_confirmed False when that's unclear: the caller asks). The old folder is left out of later scans.
+    Returns {"entry", "different", "name", "exe_changed"}."""
+    entry = library.game(package)
+    if entry is None or not is_rift(entry):
+        raise ValueError("only PC VR games can get a newer version folder")
+    folder = Path(folder)
+    if not folder.is_dir():
+        raise ValueError(f"{folder} isn't a folder")
+    other = _existing_rift(folder)
+    if other and other["package"] != package:
+        raise ValueError(f"{folder.name} is already in the library as {other.get('title') or other['package']}")
+    before = (entry.get("analysis") or {}).get("label") or entry.get("title")
+    old_dir, old_exe = entry.get("game_dir"), entry.get("exe")
+    keep = old_exe if entry.get("exe_confirmed") and old_exe and (folder / old_exe).is_file() else None
+    stored = add_rift_game(folder, reporter, exe=keep, force=True, replace=entry)
+    if stored is None:
+        raise ValueError(f"no game program found in {folder.name}")
+    replaced = [d for d in (entry.get("replaced_dirs") or []) + [old_dir] if d and d != str(folder)]
+    # build=None: the next install checks the new folder first (prepare_rift); the exe's checksum comes from there
+    stored = _mark_source_replaced(package, build=None, replaced_dirs=list(dict.fromkeys(replaced)))
+    name = (stored.get("analysis") or {}).get("label")
+    return {"entry": stored, "different": _looks_different(before, name), "name": name,
+            "exe_changed": stored.get("exe") != old_exe}
+
+
+def replace_source(package: str, path: Path | str, reporter: Reporter | None = None) -> dict:
+    """A newer version of any game in the library: an APK (Quest/Android), an app file or folder (Linux) or a game
+    folder (PC VR). See replace_apk, replace_linux_app, replace_rift_game."""
+    entry = library.game(package)
+    if entry is None:
+        raise ValueError(f"{package} isn't in the library")
+    if is_linux(entry):
+        return replace_linux_app(package, path, reporter)
+    if is_rift(entry):
+        return replace_rift_game(package, path, reporter)
+    return replace_apk(package, Path(path), reporter)
 
 
 def _analyze_entry(entry: dict, reporter: Reporter | None = None):
@@ -1275,10 +1384,11 @@ def install_rift(package: str, target: Target, reporter: Reporter, add_to_librar
     result = target.install_pcvr(package, title, Path(entry["game_dir"]), entry["exe"], recipe, reporter,
                                  revive_dir=rdir, revive_version=revive.installed_version() if rdir else None,
                                  exe_sha256=entry["build"].get("sha256"), art_lookup=entry.get("quest_package"),
-                                 overlay=rift_overlay(entry, recipe))
+                                 overlay=rift_overlay(entry, recipe), **_source_args(entry, target.label))
     if add_to_library:
         target.add_to_library([package], reporter)
-    _record_install(package, target.label, {"exe": entry["exe"], "result": result, "time": time.time()})
+    _record_install(package, target.label, {"exe": entry["exe"], "result": result, "time": time.time(),
+                                            "source_id": entry.get("source_id")})
     return result
 
 

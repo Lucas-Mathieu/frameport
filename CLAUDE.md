@@ -223,6 +223,13 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
     store matches and links then only update `auto_title`; a locked name gets no twin suffix); `sync_title` → Frame
     agent v77 `rename` (deployment.json title, same shortcut appid: upsert matches by Exe) + art + one Steam restart, PC
     `PcReviveTarget.rename`; an unreachable Frame → `steam_name_stale` (game page "Update name on Frame", next install).
+  - Newer versions (GitHub #161): game menu "Update with a newer APK…" (`pipeline.replace_apk`, outdated via
+    `build.source_version`) and, for Linux apps / PC VR games, "Update with a newer version…" (`replace_linux_app` /
+    `replace_rift_game` via `add_linux_app(replace=)` / `add_rift_game(replace=)`, CLI `frameport new-version`): the
+    entry keeps package, name, art, tags, switches, user recipe (a confirmed exe if the new folder has it); a new
+    `source_id` goes into the deployment's `recipe` dict at install (no agent change) → `C.source_replaced` = outdated
+    (Frame + `pc_outdated`); such an install re-sends same-size files changed after the last install (mtime/ctime,
+    `installer.changed_since`); the old Rift folder is in `replaced_dirs` (rescans skip it). Untested on the device.
   - `Recipe.as_is` = install unchanged (pre-patched libraries): `pipeline.prepare_as_is`; auto for APKs that already
     contain FrameBridge (`frame_patched`). For Rift it changes nothing (the dump is never modified; the Frame copy
     still gets launch fixes like the crash-reporter rename — `-nocrashreports` alone doesn't stop UE 4.23) — it does

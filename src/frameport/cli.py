@@ -398,6 +398,30 @@ def rename(package: str = typer.Argument(..., help="the game (package or part of
             pipeline.sync_title(pkg, _target(None, to="pc"), rep)
 
 
+@app.command("new-version")
+def new_version(package: str = typer.Argument(..., help="the game (package or part of its title)"),
+                path: Path = typer.Argument(..., exists=True, help="the newer version: an APK (Quest/Android games), "
+                                            "an AppImage/archive/folder (Linux apps) or the game folder (PC VR)")):
+    """Point a game at a newer version of it (GitHub #161). Its name, artwork, tags and your own recipe stay; install
+    it again (frameport install) to update it on the Frame."""
+    [pkg] = _pkgs(package, False)
+    try:
+        res = pipeline.replace_source(pkg, path, printing_reporter(verbose=False))
+    except pipeline.WrongPackage as exc:
+        raise typer.BadParameter(f"that APK is a different app: {exc}") from None
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from None
+    g = res["entry"]
+    typer.echo(f"{pkg}: now {path}" + (f" (program {g.get('exe')})" if g.get("kind") in ("rift", "linux") else ""))
+    if res.get("older"):
+        typer.echo("Heads-up: that APK is an older version than the one before.", err=True)
+    if res.get("different"):
+        typer.echo(f"Heads-up: {res.get('name')} looks like a different app than {g.get('title')}.", err=True)
+    if g.get("kind") == "rift" and g.get("exe_confirmed") is False:
+        typer.echo(f"More than one program could start it; FramePort picked {g.get('exe')}. Another one: "
+                   f"frameport recipe {pkg} --exe <program>", err=True)
+
+
 @app.command()
 def patches():
     """List every available patch."""

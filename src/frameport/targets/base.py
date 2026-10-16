@@ -36,7 +36,8 @@ class Target(ABC):
         raise NotImplementedError(f"{self.label} can't launch games")
 
     def install_linux(self, package, title, root, exe, files, appimage, openxr, reporter, x86_64=False,
-                      desktop_entry=True, overlay=None, desktop_icon=True) -> dict:
+                      desktop_entry=True, overlay=None, desktop_icon=True, source_id=None,
+                      changed_since=None) -> dict:
         """Install a Linux app (only the Frame runs them; x86_64 ones through FEX)."""
         raise NotImplementedError(f"{self.label} can't install Linux apps")
 

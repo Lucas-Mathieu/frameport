@@ -220,6 +220,28 @@ class PcvrPlan:
     art_lookup: str | None = None  # package whose store art to use
     dest: str | None = None
     overlay: dict | None = None  # a SteamVR overlay app: the agent's overlay argument (analysis/vroverlay.py)
+    source_id: str | None = None  # which version of the game folder (GitHub #161: a newer one was added)
+    changed_since: float | None = None  # a newer version: game files changed after this are sent again (see below)
+
+
+def changed_since(path: Path, since: float | None) -> bool:
+    """A newer version of a Linux app / PC VR game (GitHub #161): uploads skip files the Frame has with the same
+    size, so a changed file of the same size would stay old. Files written (or unpacked: ctime) after the last
+    install are sent again; since=None (no newer version) never, 0 (last install unknown) always."""
+    if since is None:
+        return False
+    try:
+        st = path.stat()
+    except OSError:
+        return True
+    return max(st.st_mtime, st.st_ctime) > since
+
+
+def _recipe_record(recipe: dict | None, source_id: str | None) -> dict | None:
+    """The deployment's recipe record, with the source version it was installed from (ui.components.source_replaced)."""
+    if not source_id:
+        return recipe
+    return {**(recipe or {}), "source_id": source_id}
 
 
 def install_pcvr(frame: Frame, plan: PcvrPlan, reporter: Reporter) -> dict:
@@ -259,7 +281,8 @@ def install_pcvr(frame: Frame, plan: PcvrPlan, reporter: Reporter) -> dict:
         manifests["helpers"] = {p.name: p.stat().st_size for p in sorted(helpers.iterdir()) if p.is_file()}
         sources["helpers"] = helpers
     to_send = [(t, rel) for t, m in manifests.items() for rel, size in m.items()
-               if prep["existing"].get(t, {}).get(rel) != size]
+               if prep["existing"].get(t, {}).get(rel) != size
+               or t == "game" and changed_since(plan.game_dir / rel, plan.changed_since)]
     need = sum(manifests[t][rel] for t, rel in to_send)
     if need > prep["free_bytes"] - (1 << 30):
         raise RuntimeError(f"not enough space on the Frame: need {need / 2**30:.1f} GiB + 1 GiB headroom, "
@@ -290,7 +313,8 @@ def install_pcvr(frame: Frame, plan: PcvrPlan, reporter: Reporter) -> dict:
         game_args=game_args(plan.recipe), no_crash_reporter="pcvr.no_crash_reporter" in plan.recipe.patches,
         libovr_redirect="pcvr.libovr_redirect" in plan.recipe.patches,
         exe_sha256=plan.exe_sha256, revive_version=plan.revive_version, vr=not is_flat_windows(plan.package),
-        recipe={"patches": sorted(plan.recipe.patches), "source": plan.recipe.source}, overlay=plan.overlay,
+        recipe=_recipe_record({"patches": sorted(plan.recipe.patches), "source": plan.recipe.source}, plan.source_id),
+        overlay=plan.overlay,
     )
     reporter.log(f"installed at {result['base']} (Proton {result['proton']}, Steam shortcut id {result['appid']})")
     log_overlay(result.get("overlay"), reporter)
@@ -325,6 +349,8 @@ class LinuxPlan:
     desktop_entry: bool = True  # an entry in Desktop Mode's menu and on its desktop (GitHub #84)
     desktop_icon: bool = True  # with it, a copy on Desktop Mode's desktop (GitHub #212)
     overlay: dict | None = None  # a SteamVR overlay app: the agent's overlay argument (analysis/vroverlay.py)
+    source_id: str | None = None  # which version of the app (GitHub #161: a newer one was added)
+    changed_since: float | None = None  # a newer version: files changed after this are sent again
 
 
 def install_linux(frame: Frame, plan: LinuxPlan, reporter: Reporter) -> dict:
@@ -339,7 +365,8 @@ def install_linux(frame: Frame, plan: LinuxPlan, reporter: Reporter) -> dict:
     else:
         manifest = local_data_manifest(plan.root)
         manifest = {k: v for k, v in manifest.items() if not k.startswith(".unpacked")}
-    to_send = [rel for rel, size in manifest.items() if prep["existing"].get("app", {}).get(rel) != size]
+    to_send = [rel for rel, size in manifest.items() if prep["existing"].get("app", {}).get(rel) != size
+               or changed_since(plan.root / rel, plan.changed_since)]
     need = sum(manifest[rel] for rel in to_send)
     if need > prep["free_bytes"] - (1 << 30):
         raise RuntimeError(f"not enough space on the Frame: need {need / 2**30:.1f} GiB + 1 GiB headroom, "
@@ -358,7 +385,7 @@ def install_linux(frame: Frame, plan: LinuxPlan, reporter: Reporter) -> dict:
                          appimage=plan.appimage, openxr=plan.openxr, x86_64=plan.x86_64, manifests={"app": manifest},
                          executables=executables, tags=_tags(plan.package), dest=plan.dest,
                          desktop_entry=plan.desktop_entry, desktop_icon=plan.desktop_icon, overlay=plan.overlay,
-                         timeout=900)
+                         recipe=_recipe_record(None, plan.source_id), timeout=900)
     reporter.log(f"installed at {result['base']} (Steam shortcut id {result['appid']})")
     log_overlay(result.get("overlay"), reporter)
     apply_app_icon(frame, plan.package, prep.get("anchor"), result, reporter)

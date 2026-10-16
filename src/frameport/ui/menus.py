@@ -35,6 +35,7 @@ class MenuState:
     media_button: bool = False     # the game page shows "Add videos" already
     movable: bool = False          # the Frame knows which drive it's on (agent v63+, microSD): Move to…
     android: bool = False          # a Quest/Android game (not PC VR, not a Linux app): it can get a newer APK
+    new_version: bool = False      # a Linux app or PC VR game: it can get a newer version (file or folder)
 
 
 def menu_sections(g: dict, st: MenuState, act: Callable[[str], Callable]) -> list:
@@ -55,6 +56,8 @@ def menu_sections(g: dict, st: MenuState, act: Callable[[str], Callable]) -> lis
         top.append((tr("Move to…"), ft.Icons.DRIVE_FILE_MOVE_ROUNDED, act("move")))
     if st.android and not job:  # GitHub #161: the game keeps its name, art and recipe
         top.append((tr("Update with a newer APK…"), ft.Icons.UPGRADE_ROUNDED, act("new_apk")))
+    if st.new_version and not job:  # the same for Linux apps and PC VR games
+        top.append((tr("Update with a newer version…"), ft.Icons.UPGRADE_ROUNDED, act("new_version")))
     if st.on_frame and not rift and not linux and not job:
         # the new build only; the Frame's game data stays (e.g. changed OBBs a normal update would replace)
         top.append((tr("Update app only…"), ft.Icons.SYSTEM_UPDATE_ALT_ROUNDED, act("update_app")))
@@ -103,6 +106,8 @@ def quick_menu(st: MenuState, act: Callable[[str], Callable]) -> list:
     out += st.installs[:1]
     if st.android:
         out.append((tr("Update with a newer APK…"), ft.Icons.UPGRADE_ROUNDED, act("new_apk")))
+    if st.new_version:
+        out.append((tr("Update with a newer version…"), ft.Icons.UPGRADE_ROUNDED, act("new_version")))
     if st.settings:
         out.append((tr("Game settings…"), ft.Icons.TUNE_ROUNDED, act("settings")))
     out.append((tr("Rename…"), ft.Icons.DRIVE_FILE_RENAME_OUTLINE_OUTLINED, act("rename")))

@@ -178,6 +178,8 @@ def install_state(game: dict, frame_info: dict | None) -> str | None:
     # still installed (GitHub #90)
     if not dep or (dep.get("apk_present") is False and not dep.get("drive_missing")):
         return "missing"
+    if source_replaced(game, dep):
+        return "outdated"  # a newer version of the Linux app / PC VR game was added since this install (GitHub #161)
     b = game.get("build") or {}
     if game.get("kind") not in ("linux", "rift") and b.get("apk_recipe_fp") and dep.get("configuration_fp"):
         from ..game_update import plan_update
@@ -192,6 +194,16 @@ def install_state(game: dict, frame_info: dict | None) -> str | None:
             b["source_version"] != (game.get("analysis") or {}).get("version"):
         return "outdated"  # a newer (or older) APK of the game was added since this build (GitHub #161)
     return "outdated" if settings_diff(game, frame_info) else "installed"
+
+
+def source_replaced(game: dict, dep: dict | None) -> bool:
+    """A Linux app or PC VR game got a newer version ("Update with a newer version…", GitHub #161) that this install
+    (the Frame's or the PC's deployment record) doesn't have yet."""
+    sid = game.get("source_id")
+    if not sid or game.get("kind") not in ("linux", "rift"):
+        return False
+    rec = (dep or {}).get("recipe")
+    return (rec.get("source_id") if isinstance(rec, dict) else None) != sid
 
 
 def recipe_changed(game: dict) -> bool:
@@ -216,7 +228,7 @@ def pc_outdated(g: dict, dep: dict) -> bool:
         args = game_args(recipe_from_dict(g["recipe"]))
     except Exception:  # noqa: BLE001
         args = dep.get("game_args") or []
-    return installed != want or list(dep.get("game_args") or []) != args
+    return installed != want or list(dep.get("game_args") or []) != args or source_replaced(g, dep)
 
 
 def one_choice():

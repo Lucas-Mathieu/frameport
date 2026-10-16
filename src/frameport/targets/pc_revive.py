@@ -191,7 +191,9 @@ class PcReviveTarget(Target):
                "tuning": dict(recipe.params("pcvr.steamvr_tuning"), enabled=True)
                if "pcvr.steamvr_tuning" in recipe.patches else None,
                "sha256": extra.get("exe_sha256"), "art_lookup": extra.get("art_lookup"),
-               "recipe": {"patches": sorted(recipe.patches), "source": recipe.source}, "time": time.time()}
+               "recipe": {"patches": sorted(recipe.patches), "source": recipe.source,
+                          **({"source_id": extra["source_id"]} if extra.get("source_id") else {})},
+               "time": time.time()}
         exe_field, _, _ = shortcut_fields(dep)
         d = pc_dir() / package
         try:  # a reinstall keeps the shortcut's appid: Steam's entry is matched by its Exe, whatever its name now

@@ -880,7 +880,7 @@ class FramePortApp:
                     self.toast(msg, error=True, action=tr("Details"),
                                on_action=lambda e: self.show_activity(True))
             self.refresh_view()
-            if job.kind == "scan" and self.exe_queue:
+            if job.kind in ("scan", "task") and self.exe_queue:  # (a task: a newer PC VR game version)
                 self.page.run_thread(self.next_exe_choice)
         elif job and job.active and job.package and self.route[:2] == ("game", job.package):
             pkg, transit = self.hero_transit or (None, None)
@@ -1152,6 +1152,7 @@ class FramePortApp:
             "move": lambda e: self.move_game(pkg),
             "update_app": lambda e: self.update_app_only(pkg),
             "new_apk": lambda e: self.page.run_task(self.update_with_apk, pkg),
+            "new_version": lambda e: self.page.run_task(self.update_with_version, pkg),
             "uninstall_frame": lambda e: self.uninstall(pkg, "frame"),
             "uninstall_pc": lambda e: self.uninstall(pkg, "pc"),
             "remove": lambda e: self.remove_from_library(pkg),
@@ -1168,7 +1169,8 @@ class FramePortApp:
             settings=self.has_game_settings(g), programs=rift or (linux and bool(self.linux_programs(g))),
             selectable=lv is not None,
             media_button=C.is_media_player(g) and not rift,
-            movable=connected and C.frame_drive(g, self.frame_info) is not None, android=not rift and not linux)
+            movable=connected and C.frame_drive(g, self.frame_info) is not None, android=not rift and not linux,
+            new_version=rift or linux)
         return menu_sections(g, st, handlers.__getitem__)
 
     def open_game_menu(self, pkg: str) -> None:
@@ -1620,6 +1622,60 @@ class FramePortApp:
                     title=self._title(pkg))
             return tr("{title}: newer APK added").format(title=self._title(pkg))
         self.submit(tr("Newer APK for {title}").format(title=self._title(pkg)), run, pkg, "task")
+
+    async def update_with_version(self, pkg: str) -> None:
+        """Game menu "Update with a newer version…" for Linux apps and PC VR games (GitHub #161): pick the new app
+        file or folder (how the app was added) / the new game folder; the game keeps its name, art, tags and switches,
+        and its page then offers Update on Frame (or on this PC)."""
+        from ..analysis import linux as linux_analysis
+
+        if self.jobs.busy_with(pkg):
+            return
+        g = library.game(pkg) or {}
+        rift = g.get("kind") == "rift"
+        title = tr("Newer version of {title}").format(title=self._title(pkg))
+        if rift or self._linux_folder_app(g):
+            path = await C.pick_dir(self.page, dialog_title=title)
+            if not path:
+                return
+        else:
+            paths = await C.pick_files(self.page, dialog_title=title)
+            if not paths:
+                return
+            path = paths[0]
+            if not linux_analysis.looks_like_linux_app(Path(path)):
+                self.toast(tr("{name} isn't a Linux app (AppImage, Linux program or .zip/.tar archive)")
+                           .format(name=Path(path).name), error=True)
+                return
+        on_frame = self.frame_state == "connected" and \
+            C.install_state(g, self.frame_info) in ("installed", "outdated")
+        on_pc = rift and pkg in self.pc_installs()
+
+        def run(job: Job):
+            job.reporter.stage(tr("Reading the new version"))
+            res = pipeline.replace_source(pkg, Path(path), job.reporter)
+            if res.get("different"):
+                self.toast(tr("Heads-up: {name} looks like a different app than {title}.").format(
+                    name=res.get("name") or Path(path).name, title=self._title(pkg)))
+            if rift and res["entry"].get("exe_confirmed") is False:  # which program starts it? (asked after the job)
+                self.exe_queue.append(pkg)
+            self.open_game(pkg)
+            if on_frame or on_pc:
+                return tr("{title}: newer version added. Press Update to install it.").format(
+                    title=self._title(pkg))
+            return tr("{title}: newer version added").format(title=self._title(pkg))
+        self.submit(tr("Newer version for {title}").format(title=self._title(pkg)), run, pkg, "task")
+
+    @staticmethod
+    def _linux_folder_app(g: dict) -> bool:
+        """A Linux app added from a folder (its newer version is a folder too), not from an AppImage/archive."""
+        from ..analysis import linux as linux_analysis
+
+        extra = (g.get("analysis") or {}).get("extra") or {}
+        source = Path(extra.get("source") or g.get("game_dir") or "")
+        if source.exists():
+            return source.is_dir()
+        return not extra.get("files") and not source.name.lower().endswith(linux_analysis.ARCHIVES)
 
     def updatable(self) -> list[tuple[str, str]]:
         """[(package, "frame" | "pc")] installs with an update ready (a newer build or changed patch settings)."""
