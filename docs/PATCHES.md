@@ -1944,7 +1944,7 @@ How often the picture updates. Higher is smoother if the game can keep up.
 - **Catalog games (3):** Does it Stack?, Majora's Mask VR, Vacation Simulator.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
-> Display refresh rate for this game (72, 80, 90, 96, 108, 120 or 144; 0 = the game's choice). A video's frame rate that divides the refresh rate plays smoothest (for example 30 fps at 90 Hz, 24 fps at 72 Hz).
+> Display refresh rate for this game (72, 80, 90, 96, 108, 120 or 144; 0 = the game's choice). Applied through SteamVR before the game starts. A video's frame rate that divides the refresh rate plays smoothest (for example 30 fps at 90 Hz, 24 fps at 72 Hz).
 
 ### <a id="adapter-release_wait"></a>Wait for the game's GPU
 

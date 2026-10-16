@@ -45,7 +45,7 @@ try:
 except ImportError:  # Windows: pc_revive loads this file for its VDF code only (GitHub #131)
     fcntl = None
 
-AGENT_VERSION = 95
+AGENT_VERSION = 96
 HOME = os.path.expanduser("~")
 STEAM = os.path.join(HOME, ".local/share/Steam")
 ANCHORS = os.path.join(HOME, "Applications/quest-frame")
@@ -2439,6 +2439,9 @@ class SteamVRApps:
     """IVRApplications of the running SteamVR, through its libopenvr_api.so (ctypes) as a utility app (never starts
     SteamVR). `None` from open() = SteamVR isn't running."""
 
+    interface = b"FnTable:IVRApplications_007"
+    table_size = 31
+
     @classmethod
     def open(cls):
         import ctypes
@@ -2457,13 +2460,13 @@ class SteamVRApps:
         vr.VR_InitInternal2(ctypes.byref(err), VR_APP_UTILITY, None)
         if err.value:
             return None
-        ptr = vr.VR_GetGenericInterface(b"FnTable:IVRApplications_007", ctypes.byref(err))
+        ptr = vr.VR_GetGenericInterface(cls.interface, ctypes.byref(err))
         if not ptr:
             vr.VR_ShutdownInternal()
             return None
         self = cls()
         self.vr, self.ct = vr, ctypes
-        self.table = (ctypes.c_void_p * 31).from_address(ptr)
+        self.table = (ctypes.c_void_p * cls.table_size).from_address(ptr)
         return self
 
     def fn(self, name, restype, *argtypes):
@@ -3188,8 +3191,6 @@ def upgrade_launchers():
                 new = new.replace("\nfix_perms\n", "\n" + cloud + "\nfix_perms\n", 1)
             new = set_codec_line(new, wants_hw_video(os.path.dirname(path)))
             new = set_gamepad_line(new, wants_gamepad(os.path.dirname(path)))
-            new = set_config_sync_line(new, os.path.basename(os.path.dirname(path)),
-                                       wants_config_sync(os.path.dirname(path)))
             pkg = os.path.basename(os.path.dirname(path))
             base = launcher_base(new, pkg)
             if base:  # games on a drive whose path has a space reach Lepton through a link (agent v83)
@@ -3225,6 +3226,11 @@ def upgrade_launchers():
                 new = new.replace("\n    trap - EXIT INT TERM\n", f"\n    trap - EXIT INT TERM\n    {end}\n", 1)
             elif "\nexec " in new:  # Proton launcher: exec replaces the shell, so only the start is logged
                 new = new.replace("\nexec ", f"\n{start}\nexec ", 1)
+        if "export LEPTON_ENV_FRAMEBRIDGE_CONFIG=" in new:
+            # Normalize startup helpers after restoring the play log, so the first upgrade has the final order.
+            pkg = os.path.basename(os.path.dirname(path))
+            new = set_config_sync_line(new, pkg, wants_config_sync(os.path.dirname(path)))
+            new = set_refresh_rate_line(new, pkg)
         if new == text:
             continue
         tmp = path + ".tmp"
@@ -3612,6 +3618,7 @@ def write_launcher(anchor, base, pkg, title, appid, lepton, env, hw_video=False,
                             plays_start=plays_lines(anchor)[0],
                             plays_end=plays_lines(anchor)[1], restart=restart_block(pkg, lepton))
     text = set_config_sync_line(text, pkg, config_sync)
+    text = set_refresh_rate_line(text, pkg)
     path = os.path.join(anchor, "launch.sh")
     with open(path + ".tmp", "w") as f:
         f.write(text)
@@ -3802,6 +3809,89 @@ def cmd_config_sync(args):
     if not dep:
         raise AgentError(f"{pkg} is not installed")
     return sync_game_config(pkg, dep)
+
+
+# SteamVR's OpenXR runtime only enumerates its current rate and rejects requests for any other rate. Select the
+# mode through the host's per-app setting before Lepton starts; the APK's refresh_rate setting alone cannot do it.
+class SteamVRSettings(SteamVRApps):
+    interface = b"FnTable:IVRSettings_003"
+    table_size = 11
+
+    def refresh_rate(self, appid, rate):
+        ct = self.ct
+        section, key = f"steam.app.{int(appid)}".encode(), b"preferredRefreshRate"
+        err = ct.c_int(0)
+        if rate > 0:
+            ct.CFUNCTYPE(None, ct.c_char_p, ct.c_char_p, ct.c_float, ct.POINTER(ct.c_int))(
+                self.table[3])(section, key, rate, ct.byref(err))  # SetFloat
+        else:
+            ct.CFUNCTYPE(None, ct.c_char_p, ct.c_char_p, ct.POINTER(ct.c_int))(
+                self.table[10])(section, key, ct.byref(err))  # RemoveKeyInSection: restore the game's choice
+        if err.value:
+            name = ct.CFUNCTYPE(ct.c_char_p, ct.c_int)(self.table[0])(err.value)
+            raise AgentError((name or b"SteamVR settings error").decode())
+
+
+REFRESH_RATE_MARKER = ".frameport-refresh-rate"
+
+
+def sync_refresh_rate(pkg, dep, check_running=True):
+    """Apply a saved Quest refresh rate to SteamVR. Retry from launch.sh when SteamVR wasn't available on save."""
+    if not dep or dep.get("kind", "quest") != "quest" or not dep.get("appid"):
+        return None
+    marker = os.path.join(dep["base"], REFRESH_RATE_MARKER)
+    rate = None
+    try:
+        for line in open(os.path.join(dep["base"], "settings.conf")):
+            key, _, value = line.strip().partition("=")
+            if key == "refresh_rate":
+                rate = float(value)
+    except (OSError, ValueError):
+        return {"skipped": "refresh rate settings missing or invalid"}
+    if rate is None and not os.path.exists(marker):
+        return None  # don't touch manually configured SteamVR preferences for games with no FramePort override
+    rate = rate or 0.0
+    if not (rate == 0 or 60 <= rate <= 144):
+        return {"skipped": "invalid refresh rate"}
+    if check_running and container_running(dep["appid"]):
+        return {"skipped": "the game is running (applied at its next start)"}
+    vr = None
+    try:
+        vr = SteamVRSettings.open()
+        if vr is None:
+            return {"skipped": "SteamVR unavailable (applied at the next start)"}
+        vr.refresh_rate(dep["appid"], rate)
+        if rate > 0:
+            with open(marker, "w") as f:
+                f.write(str(rate))
+        elif os.path.exists(marker):
+            os.remove(marker)
+        return {"refresh_rate": rate, "app_key": f"steam.app.{dep['appid']}"}
+    except (OSError, AgentError) as exc:
+        return {"skipped": str(exc)}
+    finally:
+        if vr is not None:
+            vr.close()
+
+
+def set_refresh_rate_line(text, pkg):
+    text = "".join(line for line in text.splitlines(True) if " _refresh_rate " not in line)
+    if "\nsetsid " not in text:
+        return text
+    agent = shlex.quote(os.path.abspath(__file__))
+    line = (f'timeout 10s python3 {agent} _refresh_rate {shlex.quote(pkg)} '
+            '>"$app_dir/refresh-rate.log" 2>&1 9>&- || true')
+    # Run before the wrappers, which are kept immediately ahead of child=''. Also stay ahead of the play log
+    # and config-sync steps so repairing those doesn't move this line on the next upgrade.
+    for anchor in ("\n" + VIDEO_CODEC_LINE + "\n", "\n" + GAMEPAD_LINE + "\n", "\nchild=''\n", "\nsetsid "):
+        if anchor in text:
+            return text.replace(anchor, f"\n{line}{anchor}", 1)
+    return text
+
+
+def refresh_rate_worker(pkg):
+    pkg = check_pkg(pkg)
+    print(json.dumps(sync_refresh_rate(pkg, deployment(pkg), check_running=False)))
 
 
 def cmd_video_codec_status(args):
@@ -4112,7 +4202,7 @@ def configure_install(args, prep, moved):
     synced = sync_game_config(pkg, dep)
     write_deployment(pkg, dep)
     return {"ok": True, "base": base, "appid": appid, "moved_data_files": moved, "controller_models": models,
-            "config_sync": synced, "deployment": deployment_summary(dep)}
+            "config_sync": synced, "deployment": deployment_summary(dep), "refresh_rate": sync_refresh_rate(pkg, dep)}
 
 
 # --------------------------------------------------------------- Steam Frame controller models (XR_FB_render_model)
@@ -5394,7 +5484,8 @@ def cmd_set_settings(args):
                     else int(number)
         dep["configuration_fp"] = hashlib.sha256(json.dumps(applied, sort_keys=True).encode()).hexdigest()[:32]
         write_deployment(pkg, dep)
-    return {"settings": current, "controller_models": models, "config_sync": synced}
+    return {"settings": current, "controller_models": models, "config_sync": synced,
+            "refresh_rate": sync_refresh_rate(pkg, dep)}
 
 
 TITLE_MAX = 128
@@ -8534,6 +8625,9 @@ def main():
         return 0
     if len(sys.argv) >= 3 and sys.argv[1] == "_config_sync":
         config_sync_worker(sys.argv[2])
+        return 0
+    if len(sys.argv) >= 3 and sys.argv[1] == "_refresh_rate":
+        refresh_rate_worker(sys.argv[2])
         return 0
     if len(sys.argv) >= 3 and sys.argv[1] == "_tools_worker":
         tools_worker(sys.argv[2])

@@ -116,7 +116,8 @@ SETTINGS = [
     ("aim_forward", "float", 0.0, "Pointer origin forward (m)",
      "Moves where the pointing ray starts forward (+) or back (−)."),
     ("refresh_rate", "float", 0.0, "Refresh rate (Hz)",
-     "Display refresh rate for this game (72, 80, 90, 96, 108, 120 or 144; 0 = the game's choice). A video's frame "
+     "Display refresh rate for this game (72, 80, 90, 96, 108, 120 or 144; 0 = the game's choice). Applied through "
+     "SteamVR before the game starts. A video's frame "
      "rate that divides the refresh rate plays smoothest (for example 30 fps at 90 Hz, 24 fps at 72 Hz)."),
     ("layer_debug", "int", 0, "Extra diagnostics (log)",
      "Logs details for debugging: composition layers and swapchains, focus changes, play-space creation, pointer vs "

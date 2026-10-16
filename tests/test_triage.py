@@ -517,7 +517,8 @@ LOG_ENTITLEMENT = """
 10-15 12:45:23.964   212   240 I ActivityManager: Start proc 1214:com.FlatHeadStudio.DeadlyDelivery/u0a14 for \
 pre-top-activity {com.FlatHeadStudio.DeadlyDelivery/com.unity3d.player.UnityPlayerActivity}
 10-15 12:45:38.349  1214  1238 E Unity   : [LobbyManager]: Entitlement check failed: .
-10-15 12:45:38.349  1214  1238 E Unity   : FlatHeads.<>c__DisplayClass105_0:<CheckEntitlementAndConfigureAsync>b__0(Message)
+10-15 12:45:38.349  1214  1238 E Unity   : \
+FlatHeads.<>c__DisplayClass105_0:<CheckEntitlementAndConfigureAsync>b__0(Message)
 10-15 12:45:38.352  1214  1238 I Unity   : [LobbyManager]: Retrying oculus authentication in 2 seconds.
 10-15 12:45:43.372  1214  1286 I FrameBridge: pacing: 71.6 fps, displayTime vs predicted: avg 13.97 ms, max 83.33 ms
 10-15 12:45:46.349  1214  1238 I Unity   : stopping xr plugin

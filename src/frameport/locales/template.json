@@ -418,7 +418,7 @@
  "Disable Meta XR Audio telemetry": "",
  "Disconnect": "",
  "Dismiss": "",
- "Display refresh rate for this game (72, 80, 90, 96, 108, 120 or 144; 0 = the game's choice). A video's frame rate that divides the refresh rate plays smoothest (for example 30 fps at 90 Hz, 24 fps at 72 Hz).": "",
+ "Display refresh rate for this game (72, 80, 90, 96, 108, 120 or 144; 0 = the game's choice). Applied through SteamVR before the game starts. A video's frame rate that divides the refresh rate plays smoothest (for example 30 fps at 90 Hz, 24 fps at 72 Hz).": "",
  "Documents": "",
  "Don't pause on short interruptions": "",
  "Done": "",

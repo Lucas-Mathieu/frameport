@@ -66,9 +66,9 @@ def _when(value, end_of_day: bool = False) -> float:
         except ValueError as exc:
             raise AnnouncementError(f"not a date: {value!r}") from exc
     if isinstance(value, dt.datetime):
-        return (value if value.tzinfo else value.replace(tzinfo=dt.timezone.utc)).timestamp()
+        return (value if value.tzinfo else value.replace(tzinfo=dt.UTC)).timestamp()
     if isinstance(value, dt.date):
-        day = dt.datetime(value.year, value.month, value.day, tzinfo=dt.timezone.utc)
+        day = dt.datetime(value.year, value.month, value.day, tzinfo=dt.UTC)
         return (day + dt.timedelta(days=1 if end_of_day else 0)).timestamp()
     raise AnnouncementError(f"not a date: {value!r}")
 
