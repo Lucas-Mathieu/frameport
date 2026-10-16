@@ -229,6 +229,10 @@ SETTINGS = [
      "subpasses lose an invalid depth resolve. Found with the validation layer in Into The Radius 2 (flickering "
      "models, windows behind models). Also leaves out image barriers without an image and refuses image views without "
      "one, which crash the Frame's driver (for example Metro Awakening)."),
+    ("vk_pipeline_log", "int", 0, "Vulkan shim: pipeline log (diagnostics)",
+     "Vulkan shim (frame.vk_sanitize): logs every failing graphics/compute pipeline creation with its shader stages "
+     "(named like the vk_shader_dump files), structure types and any sampler Y'CbCr conversion involved, to find the "
+     "pipeline behind Unreal's \"Shader compilation failures are Fatal.\" No effect on the game."),
     ("vk_validation", "int", 0, "Vulkan shim: validation layer",
      "Diagnostics: the Vulkan shim (frame.vk_sanitize) adds Khronos' validation layer to the game's instance; its "
      "findings go to launch.log. The layer library (libVkLayer_khronos_validation.so) must be in the APK."),
@@ -418,6 +422,8 @@ UI: dict[str, dict] = {
                 help="Older way to turn upside-down panels; prefer Fix upside-down menus.", control=("switch",)),
     "swap_eyes": dict(group="troubleshooting", level="advanced", label="Swap eyes",
                 help="Shows each eye's picture to the other eye. For testing.", control=("switch",)),
+    "vk_pipeline_log": dict(group="troubleshooting", level="advanced", label="Vulkan pipeline failures (log)",
+                help="Logs graphics pipelines the Frame's driver refuses. No effect on the game.", control=("switch",)),
     "vk_validation": dict(group="troubleshooting", level="advanced", label="Vulkan error checks (log)",
                 help="Logs Vulkan mistakes the game makes. Needs a special test build.", control=("switch",)),
     "rect_clamp": dict(group="troubleshooting", level="advanced", label="Keep pictures in bounds",
@@ -581,6 +587,7 @@ class AdapterSetting(Patch):
             "vk_hide_fdm": lambda a: a.engine == "Unreal",  # Unreal's Vulkan isn't always detected (Metro Awakening)
             "vk_query_slots": lambda a: a.engine == "Unreal" and ap.is_vulkan(a),
             "vk_validation": lambda a: a.engine == "Unreal",
+            "vk_pipeline_log": lambda a: a.engine in ("Unreal", "Other") and "arm64-v8a" in a.abis,
             # wherever the Vulkan shim can be (vk_sanitize); Unreal's Vulkan builds are rarely detected as such
             "vk_shader_dump": lambda a: a.engine in ("Unreal", "Other") and "arm64-v8a" in a.abis,
             "zink_shader_fix": ap.is_gles,

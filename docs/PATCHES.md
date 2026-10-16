@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 178 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 179 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -12,7 +12,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 
 - [Patches from OVRPort](#group-overport) (25)
 - [Steam Frame patches](#group-frame) (61)
-- [Game settings](#group-adapter) (71)
+- [Game settings](#group-adapter) (72)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
 
@@ -170,6 +170,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Retry refused picture formats](#adapter-swapchain_fix) | `adapter.swapchain_fix` | Game settings |  |
 | [Steady controller input after focus](#adapter-sync_guard) | `adapter.sync_guard` | Game settings | 3 |
 | [Hide Vulkan foveation](#adapter-vk_hide_fdm) | `adapter.vk_hide_fdm` | Game settings | 1 |
+| [Vulkan pipeline failures (log)](#adapter-vk_pipeline_log) | `adapter.vk_pipeline_log` | Game settings |  |
 | [Stop objects popping in and out](#adapter-vk_query_slots) | `adapter.vk_query_slots` | Game settings |  |
 | [Vulkan shader dump (diagnostics)](#adapter-vk_shader_dump) | `adapter.vk_shader_dump` | Game settings |  |
 | [Vulkan shader fixes](#adapter-vk_shader_fix) | `adapter.vk_shader_fix` | Game settings | 1 |
@@ -2260,6 +2261,20 @@ For Unreal Engine 5 games that crash on the Frame (for example Metro Awakening).
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > Vulkan shim (frame.vk_sanitize): the game doesn't see VK_EXT_fragment_density_map(2). Unreal Engine 5 turns on fragment-density-map foveation when the driver offers it and expects the density map from the headset, which the Frame doesn't provide: image views and barriers for a missing image, then a crash in the Frame's Vulkan driver (for example Metro Awakening). Valve's own foveation layer isn't affected.
+
+### <a id="adapter-vk_pipeline_log"></a>Vulkan pipeline failures (log)
+
+Logs graphics pipelines the Frame's driver refuses. No effect on the game.
+
+- `adapter.vk_pipeline_log`
+- **Changes:** Game setting: stored in the build and on the Frame (settings.conf); can be changed without a rebuild.
+- **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
+- **Options:**
+  - Value: int, default `0`.
+  - Game settings → Troubleshooting → "Vulkan pipeline failures (log)" (advanced).
+- **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
+
+> Vulkan shim (frame.vk_sanitize): logs every failing graphics/compute pipeline creation with its shader stages (named like the vk_shader_dump files), structure types and any sampler Y'CbCr conversion involved, to find the pipeline behind Unreal's "Shader compilation failures are Fatal." No effect on the game.
 
 ### <a id="adapter-vk_query_slots"></a>Stop objects popping in and out
 

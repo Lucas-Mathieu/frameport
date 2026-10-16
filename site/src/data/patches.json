@@ -319,6 +319,11 @@
   "title": "Hide Vulkan foveation",
   "group": "Game settings"
  },
+ "adapter.vk_pipeline_log": {
+  "anchor": "adapter-vk_pipeline_log",
+  "title": "Vulkan pipeline failures (log)",
+  "group": "Game settings"
+ },
  "adapter.vk_query_slots": {
   "anchor": "adapter-vk_query_slots",
   "title": "Stop objects popping in and out",

@@ -18,6 +18,8 @@
 // Shader dump (vk_shader_dump=1, diagnostics): every distinct module the game creates is written once to the app's
 // files/fp_vk_shaders/ with an index of every creation (order, time), to find the shader behind a GPU hang
 // (shader_dump.h).
+// Pipeline log (vk_pipeline_log=1, diagnostics): failing vkCreateGraphicsPipelines/vkCreateComputePipelines calls are
+// logged with their stages' modules (vk_shader_dump names) and any sampler Y'CbCr conversion involved (pipeline_log.h).
 //
 // Query slots (adapter setting vk_query_slots=2, per game): with multiview, Vulkan counts a query that runs in a
 // multiview render pass as one query per view (N consecutive indices). Mesa's drivers (the Frame's Turnip) write a
@@ -103,6 +105,7 @@ static int spec_fixes;       // vk_spec_fixes: make two Unreal habits valid Vulk
 static int validation;       // vk_validation: add Khronos' validation layer (bundled in the APK) to the instance
 static int hide_fdm;         // vk_hide_fdm: the game doesn't see VK_EXT_fragment_density_map(2)
 static int want_dump;        // vk_shader_dump: write the game's SPIR-V modules to files/fp_vk_shaders/
+static int want_pipeline_log;  // vk_pipeline_log: log failing pipeline creations (pipeline_log.h)
 static char app_files[400];  // /sdcard/Android/data/<package>/files
 
 static void read_settings(const char *path) {
@@ -115,6 +118,7 @@ static void read_settings(const char *path) {
         if (!strncmp(line, "vk_hide_fdm=", 12)) hide_fdm = atoi(line + 12) != 0;
         if (!strncmp(line, "vk_spec_fixes=", 14)) spec_fixes = atoi(line + 14) != 0;
         if (!strncmp(line, "vk_shader_dump=", 15)) want_dump = atoi(line + 15) != 0;
+        if (!strncmp(line, "vk_pipeline_log=", 16)) want_pipeline_log = atoi(line + 16) != 0;
         if (!strncmp(line, "vk_query_slots=", 15)) {
             int v = atoi(line + 15);
             query_slots = v == 1 ? 2 : v >= 2 && v <= 4 ? v : 1;  // 1 = on (the settings dialog's switch) = 2 slots
@@ -155,8 +159,10 @@ static void read_all_settings(void) {
     if (env && *env) read_settings(env);
 }
 
+static int readable(const void *p, size_t n);
 #include "sha256.h"  // only run for modules whose size matches a fix, or every module with vk_shader_dump
 #include "shader_dump.h"
+#include "pipeline_log.h"
 
 // The fixed copy of `code` (caller frees) and its size, or NULL when no fix matches.
 static uint32_t *fixed_shader(const uint32_t *code, size_t size, size_t *out_size) {
@@ -184,6 +190,10 @@ static void init(void) {
     if (validation) LOG("vk shim: adding %s to the instance", VALIDATION_LAYER);
     if (hide_fdm) LOG("vk shim: fragment density map extensions hidden from the game");
     if (want_dump && !dump_init(app_files)) LOG("vk shim: shader dump not possible (no package name or files dir)");
+    if (want_pipeline_log) {
+        pl_on = 1;
+        LOG("vk shim: logging failed pipeline creations and sampler Y'CbCr conversions");
+    }
     if (spec_fixes) LOG("vk shim: Vulkan spec fixes on (depth images can be cleared, no depth resolve in shader-resolve "
                         "subpasses)");
     real_vk = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
@@ -401,12 +411,15 @@ static VkRenderPassCreateInfo2 clean_create_info(Arena *a, const VkRenderPassCre
 
 #define MAX_DEVICES 8
 enum { FN_RP2, FN_RP2KHR, FN_CSM, FN_CIMG, FN_CQP, FN_DQP, FN_BQ, FN_EQ, FN_CRQP, FN_RQP, FN_RQPEXT, FN_GQPR, FN_CCQPR,
-      FN_PB, FN_PB2, FN_PB2KHR, FN_EDEP, FN_CDEV, FN_CIV, FN_COUNT };
+      FN_PB, FN_PB2, FN_PB2KHR, FN_EDEP, FN_CDEV, FN_CIV, FN_CGP, FN_CCP, FN_CSAMP, FN_CDSL, FN_CPL, FN_CYC, FN_CYCKHR,
+      FN_COUNT };
 static const char *const FN_NAMES[FN_COUNT] = {
     "vkCreateRenderPass2", "vkCreateRenderPass2KHR", "vkCreateShaderModule", "vkCreateImage", "vkCreateQueryPool", "vkDestroyQueryPool",
     "vkCmdBeginQuery", "vkCmdEndQuery", "vkCmdResetQueryPool", "vkResetQueryPool", "vkResetQueryPoolEXT",
     "vkGetQueryPoolResults", "vkCmdCopyQueryPoolResults", "vkCmdPipelineBarrier", "vkCmdPipelineBarrier2",
-    "vkCmdPipelineBarrier2KHR", "vkEnumerateDeviceExtensionProperties", "vkCreateDevice", "vkCreateImageView"};
+    "vkCmdPipelineBarrier2KHR", "vkEnumerateDeviceExtensionProperties", "vkCreateDevice", "vkCreateImageView",
+    "vkCreateGraphicsPipelines", "vkCreateComputePipelines", "vkCreateSampler", "vkCreateDescriptorSetLayout",
+    "vkCreatePipelineLayout", "vkCreateSamplerYcbcrConversion", "vkCreateSamplerYcbcrConversionKHR"};
 static struct { VkDevice device; PFN_vkVoidFunction fn[FN_COUNT]; } devices[MAX_DEVICES];
 static PFN_vkCreateRenderPass2 fallback_rp2khr;  // from vkGetInstanceProcAddr
 static pthread_mutex_t dev_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -468,11 +481,19 @@ EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(VkDevice device, cons
     if (dump_on && ci) dump_module(ci->pCode, ci->codeSize);  // the game's own module, before any fix
     size_t size = 0;
     uint32_t *code = nfixes && ci && ci->pCode ? fixed_shader(ci->pCode, ci->codeSize, &size) : NULL;
-    if (!code) return real(device, ci, alloc, module);
+    if (!code) {
+        VkResult r = real(device, ci, alloc, module);
+        if (pl_on && ci && module) {
+            if (r == VK_SUCCESS) pl_module_add(*module, ci->pCode, ci->codeSize);
+            else LOG("vk shim: vkCreateShaderModule failed: %d (%zu bytes)", r, ci->codeSize);
+        }
+        return r;
+    }
     VkShaderModuleCreateInfo copy = *ci;  // the caller's create info and code stay untouched
     copy.codeSize = size;
     copy.pCode = code;
     VkResult r = real(device, &copy, alloc, module);
+    if (pl_on && module && r == VK_SUCCESS) pl_module_add(*module, ci->pCode, ci->codeSize);  // named as the game's
     free(code);
     if (fixes_applied++ < 20) LOG("vk shim: fixed shader module (%zu -> %zu bytes): %d", ci->codeSize, size, r);
     return r;
@@ -845,6 +866,72 @@ static VKAPI_ATTR void VKAPI_CALL cmd_pipeline_barrier2_khr(VkCommandBuffer cb, 
     pipeline_barrier2(cb, info, FN_PB2KHR);
 }
 
+// ---------------------------------------------------------------- pipeline log (vk_pipeline_log, diagnostics)
+
+static VKAPI_ATTR VkResult VKAPI_CALL create_graphics_pipelines(VkDevice device, VkPipelineCache cache, uint32_t count,
+                                                               const VkGraphicsPipelineCreateInfo *ci,
+                                                               const VkAllocationCallbacks *alloc, VkPipeline *out) {
+    PFN_vkCreateGraphicsPipelines real = (PFN_vkCreateGraphicsPipelines)any_fn(device, FN_CGP);
+    if (!real) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult r = real(device, cache, count, ci, alloc, out);
+    pl_graphics(count, ci, out, r);
+    return r;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL create_compute_pipelines(VkDevice device, VkPipelineCache cache, uint32_t count,
+                                                              const VkComputePipelineCreateInfo *ci,
+                                                              const VkAllocationCallbacks *alloc, VkPipeline *out) {
+    PFN_vkCreateComputePipelines real = (PFN_vkCreateComputePipelines)any_fn(device, FN_CCP);
+    if (!real) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult r = real(device, cache, count, ci, alloc, out);
+    pl_compute(count, ci, out, r);
+    return r;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL create_sampler(VkDevice device, const VkSamplerCreateInfo *ci,
+                                                    const VkAllocationCallbacks *alloc, VkSampler *sampler) {
+    PFN_vkCreateSampler real = (PFN_vkCreateSampler)any_fn(device, FN_CSAMP);
+    if (!real) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult r = real(device, ci, alloc, sampler);
+    pl_sampler_created(ci, r, sampler ? *sampler : VK_NULL_HANDLE);
+    return r;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL create_set_layout(VkDevice device, const VkDescriptorSetLayoutCreateInfo *ci,
+                                                       const VkAllocationCallbacks *alloc, VkDescriptorSetLayout *l) {
+    PFN_vkCreateDescriptorSetLayout real = (PFN_vkCreateDescriptorSetLayout)any_fn(device, FN_CDSL);
+    if (!real) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult r = real(device, ci, alloc, l);
+    pl_set_layout_created(ci, r, l ? *l : VK_NULL_HANDLE);
+    return r;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL create_pipeline_layout(VkDevice device, const VkPipelineLayoutCreateInfo *ci,
+                                                            const VkAllocationCallbacks *alloc, VkPipelineLayout *l) {
+    PFN_vkCreatePipelineLayout real = (PFN_vkCreatePipelineLayout)any_fn(device, FN_CPL);
+    if (!real) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult r = real(device, ci, alloc, l);
+    pl_layout_created(ci, r, l ? *l : VK_NULL_HANDLE);
+    return r;
+}
+
+static VkResult create_conversion(VkDevice device, const VkSamplerYcbcrConversionCreateInfo *ci,
+                                  const VkAllocationCallbacks *alloc, VkSamplerYcbcrConversion *c, int which) {
+    PFN_vkCreateSamplerYcbcrConversion real = (PFN_vkCreateSamplerYcbcrConversion)any_fn(device, which);
+    if (!real) return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult r = real(device, ci, alloc, c);
+    pl_conversion_created(ci, r, c ? *c : VK_NULL_HANDLE);
+    return r;
+}
+static VKAPI_ATTR VkResult VKAPI_CALL create_conversion_core(VkDevice d, const VkSamplerYcbcrConversionCreateInfo *ci,
+                                                            const VkAllocationCallbacks *a, VkSamplerYcbcrConversion *c) {
+    return create_conversion(d, ci, a, c, FN_CYC);
+}
+static VKAPI_ATTR VkResult VKAPI_CALL create_conversion_khr(VkDevice d, const VkSamplerYcbcrConversionCreateInfo *ci,
+                                                           const VkAllocationCallbacks *a, VkSamplerYcbcrConversion *c) {
+    return create_conversion(d, ci, a, c, FN_CYCKHR);
+}
+
 static int wrapped_index(const char *name) {
     for (int i = 0; i < FN_COUNT; i++)
         if (!strcmp(name, FN_NAMES[i])) return i;
@@ -855,7 +942,7 @@ static PFN_vkVoidFunction wrap(const char *name) {
     switch (wrapped_index(name)) {
     case FN_RP2: return (PFN_vkVoidFunction)vkCreateRenderPass2;
     case FN_RP2KHR: return (PFN_vkVoidFunction)create_render_pass2_khr;
-    case FN_CSM: return nfixes || dump_on ? (PFN_vkVoidFunction)vkCreateShaderModule : NULL;  // else no detour
+    case FN_CSM: return nfixes || dump_on || pl_on ? (PFN_vkVoidFunction)vkCreateShaderModule : NULL;  // else no detour
     case FN_CIMG: return spec_fixes ? (PFN_vkVoidFunction)create_image : NULL;
     case FN_PB: return spec_fixes ? (PFN_vkVoidFunction)cmd_pipeline_barrier : NULL;
     case FN_PB2: return spec_fixes ? (PFN_vkVoidFunction)cmd_pipeline_barrier2 : NULL;
@@ -863,6 +950,13 @@ static PFN_vkVoidFunction wrap(const char *name) {
     case FN_EDEP: return hide_fdm ? (PFN_vkVoidFunction)vkEnumerateDeviceExtensionProperties : NULL;
     case FN_CDEV: return hide_fdm || spec_fixes ? (PFN_vkVoidFunction)vkCreateDevice : NULL;
     case FN_CIV: return spec_fixes ? (PFN_vkVoidFunction)create_image_view : NULL;
+    case FN_CGP: return pl_on ? (PFN_vkVoidFunction)create_graphics_pipelines : NULL;
+    case FN_CCP: return pl_on ? (PFN_vkVoidFunction)create_compute_pipelines : NULL;
+    case FN_CSAMP: return pl_on ? (PFN_vkVoidFunction)create_sampler : NULL;
+    case FN_CDSL: return pl_on ? (PFN_vkVoidFunction)create_set_layout : NULL;
+    case FN_CPL: return pl_on ? (PFN_vkVoidFunction)create_pipeline_layout : NULL;
+    case FN_CYC: return pl_on ? (PFN_vkVoidFunction)create_conversion_core : NULL;
+    case FN_CYCKHR: return pl_on ? (PFN_vkVoidFunction)create_conversion_khr : NULL;
     default: break;
     }
     if (query_slots < 2) return NULL;  // no query remapping: no detours
