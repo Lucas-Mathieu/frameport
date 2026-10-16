@@ -76,6 +76,10 @@ SUMMARIES = {
                                       "with the content check off. Experimental; the game still needs its data.",
     "frame.unreal_skip_obb_check": "Starts Unreal games without re-checking their data file (they'd seem to hang "
                                    "on an invisible check screen).",
+    "frame.gms_platform_version": "Lets games with Google Play services code start on the Frame (they'd crash at "
+                                  "start on an Android 12 call).",
+    "frame.usb_midi_watcher": "Lets apps with a USB MIDI driver start on the Frame (they'd crash looking for USB "
+                               "devices); USB MIDI devices aren't available there.",
     "frame.unity_appui_vibrator": "Lets games built with Unity's App UI start on the Frame (they'd quit at once on an "
                                   "Android 12 vibrator call).",
     "frame.bhaptics_permission": "Stops bHaptics from asking for a Bluetooth permission the Frame doesn't have (the "

@@ -418,6 +418,18 @@ signatures:
     diagnosis: The game has no internal storage (saves, settings) inside Lepton. Usually its folder's path has a space (a microSD card named for example "Steam Frame 512g"), which Lepton's own scripts can't handle; FramePort's launcher (agent 83 and newer) gives Lepton a path without spaces. Connect FramePort once so the launcher is updated, then start the game again.
     report: true
     supersedes: [java-crash, native-crash]
+  - id: gms-android12-call
+    pattern: 'No virtual method permitUnsafeIntentLaunch\(\)'
+    severity: fatal
+    diagnosis: Google Play services' code in the game called an Android 12 method (the game was built for Android 12 and newer, so its version checks were built in as "always true") and Lepton runs Android 11; the game crashes on its GoogleApiHandler thread at start (for example Titan Isles). The patch makes those checks answer "no" again; Play services themselves aren't on the Frame, so sign-in and other Google features stay off.
+    suggest: [frame.gms_platform_version]
+    supersedes: [java-crash]
+  - id: usb-midi-watcher
+    pattern: 'UsbManager\.getDeviceList\(\)'' on a null object reference|at jp\.kshoji\.driver\.midi\.device\.MidiDeviceConnectionWatcher\$MidiDeviceConnectionWatchThread\.checkConnectedDevices'
+    severity: fatal
+    diagnosis: The app's USB MIDI driver (kshoji's, used by Unity MIDI plugins, for example PianoVision) asked Android's USB service for MIDI devices; the Frame's Android has no USB service, so the app crashed. The patch stops that poll; USB MIDI devices can't reach the app on the Frame anyway.
+    suggest: [frame.usb_midi_watcher]
+    supersedes: [java-crash]
   - id: unity-appui-vibrator
     pattern: 'NoClassDefFoundError: Failed resolution of: Landroid/os/VibratorManager;'
     severity: fatal

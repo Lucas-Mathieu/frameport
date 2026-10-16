@@ -434,6 +434,11 @@
   "title": "GL shim (Mesa GLSL compatibility)",
   "group": "Steam Frame patches"
  },
+ "frame.gms_platform_version": {
+  "anchor": "frame-gms_platform_version",
+  "title": "Play services: Android 11 version checks",
+  "group": "Steam Frame patches"
+ },
  "frame.godot_clipboard": {
   "anchor": "frame-godot_clipboard",
   "title": "Godot apps: start without a clipboard service",
@@ -637,6 +642,11 @@
  "frame.unreal_thumb_touch": {
   "anchor": "frame-unreal_thumb_touch",
   "title": "Unreal: thumb follows the capacitive touches",
+  "group": "Steam Frame patches"
+ },
+ "frame.usb_midi_watcher": {
+  "anchor": "frame-usb_midi_watcher",
+  "title": "USB MIDI: don't poll for USB devices",
   "group": "Steam Frame patches"
  },
  "frame.vermillion_scene_canvas": {
