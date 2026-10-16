@@ -16,7 +16,8 @@
 // block bindings and default-block uniform values (copied before every such draw), then the original is bound again.
 //
 // Logcat tag GLMV. Setting gl_mv_debug=1 (libframe_settings.so / framebridge.conf / FRAMEBRIDGE_CONFIG, as the GL
-// shim): glGetError after every twin draw, and per-5-s counters.
+// shim): glGetError after every twin draw, and per-5-s counters. gl_mv_debug=2 (trace) also checks every draw and
+// logs the state of the first draws of each 5 s window, failed texture uploads/copies and shader compiles.
 #define _GNU_SOURCE
 #include <EGL/egl.h>
 #include <GLES3/gl32.h>
@@ -111,7 +112,27 @@
     X(void, UniformMatrix2x4fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     X(void, UniformMatrix4x2fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     X(void, UniformMatrix3x4fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
-    X(void, UniformMatrix4x3fv, (GLint, GLsizei, GLboolean, const GLfloat *))
+    X(void, UniformMatrix4x3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
+    TRACE_LIST(X)
+
+// gl_mv_debug=2 (trace): the draw state and texture/shader calls behind black output
+#define TRACE_LIST(X) \
+    X(GLboolean, IsEnabled, (GLenum)) \
+    X(void, GetBooleanv, (GLenum, GLboolean *)) \
+    X(GLenum, CheckFramebufferStatus, (GLenum)) \
+    X(void, GetTexLevelParameteriv, (GLenum, GLint, GLenum, GLint *)) \
+    X(void, GetTexParameteriv, (GLenum, GLenum, GLint *)) \
+    X(void, Clear, (GLbitfield)) \
+    X(void, Viewport, (GLint, GLint, GLsizei, GLsizei)) \
+    X(void, TexImage2D, (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void *)) \
+    X(void, TexSubImage2D, (GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void *)) \
+    X(void, CompressedTexImage2D, (GLenum, GLint, GLenum, GLsizei, GLsizei, GLint, GLsizei, const void *)) \
+    X(void, TexStorage2D, (GLenum, GLsizei, GLenum, GLsizei, GLsizei)) \
+    X(void, CopyTexImage2D, (GLenum, GLint, GLenum, GLint, GLint, GLsizei, GLsizei, GLint)) \
+    X(void, CopyTexSubImage2D, (GLenum, GLint, GLint, GLint, GLint, GLint, GLsizei, GLsizei)) \
+    X(void, GenerateMipmap, (GLenum)) \
+    X(void, BindTexture, (GLenum, GLuint)) \
+    X(void, TexParameteri, (GLenum, GLenum, GLint))
 
 #define DECL(ret, name, args) static ret(*r_##name) args;
 REAL_LIST(DECL)
@@ -515,6 +536,147 @@ static void stats(void) {
     twin_draws = mv_draws = uniform_sets = 0;
 }
 
+// ---------------------------------------------------------------- trace (gl_mv_debug=2, diagnostics)
+// Every draw is checked with glGetError (this also consumes errors the game would read), counted per draw
+// framebuffer, and the first draws of every 5 s window are logged with the state that decides whether they write
+// anything: framebuffer status and views, program, viewport/scissor, colour/depth/stencil/blend state and the texture
+// on the active unit. Texture uploads, copies and shader compiles that fail are logged too.
+#define TRACE_DETAIL 12  // detailed draws per window
+#define TRACE_WINDOWS 40  // windows with detail
+#define NTFB 16
+struct tfb { GLint fb; unsigned long draws, errors, clears; };
+static int trace_detail, trace_windows;
+static unsigned long trace_draws, trace_errors, trace_clears;
+static GLenum trace_first_error;
+static struct tfb tfb[NTFB];
+static struct timespec trace_last;
+static pthread_mutex_t trace_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static struct tfb *tfb_slot(GLint fb) {
+    for (int i = 0; i < NTFB; ++i)
+        if (tfb[i].fb == fb && (tfb[i].draws || tfb[i].clears)) return &tfb[i];
+    for (int i = 0; i < NTFB; ++i)
+        if (!tfb[i].draws && !tfb[i].clears) { tfb[i].fb = fb; return &tfb[i]; }
+    return NULL;
+}
+
+static void trace_window(void) {  // under trace_lock
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    if (!trace_last.tv_sec) trace_last = now;
+    if (now.tv_sec - trace_last.tv_sec < 5) return;
+    trace_last = now;
+    char buf[700];
+    int n = 0;
+    for (int i = 0; i < NTFB && n < (int)sizeof(buf) - 60; ++i)
+        if (tfb[i].draws || tfb[i].clears)
+            n += snprintf(buf + n, sizeof(buf) - n, " fb%d:d%lu/e%lu/c%lu", tfb[i].fb, tfb[i].draws, tfb[i].errors,
+                          tfb[i].clears);
+    LOG("trace 5s: %lu draws, %lu with a GL error (first 0x%x), %lu clears;%s", trace_draws, trace_errors,
+        trace_first_error, trace_clears, n ? buf : " none");
+    {  // idTech 4 engines (Doom3Quest, PreyVR) export their clocks; GUI animations run on com_frameTime, so one that
+       // stands still leaves menus at their first step (PreyVR, GitHub #306: 0 Hz refresh rate -> 0 ms per tic)
+        static int *frame_time, *tic_number, *frame_number, looked;
+        if (!looked) {
+            looked = 1;
+            frame_time = dlsym(RTLD_DEFAULT, "com_frameTime");
+            tic_number = dlsym(RTLD_DEFAULT, "com_ticNumber");
+            frame_number = dlsym(RTLD_DEFAULT, "com_frameNumber");
+        }
+        if (frame_time && tic_number && frame_number)
+            LOG("trace clocks: com_frameTime=%d com_ticNumber=%d com_frameNumber=%d", *frame_time, *tic_number,
+                *frame_number);
+    }
+    memset(tfb, 0, sizeof(tfb));
+    trace_draws = trace_errors = trace_clears = 0;
+    trace_first_error = 0;
+    if (trace_windows < TRACE_WINDOWS) {
+        ++trace_windows;
+        trace_detail = 0;
+    }
+}
+
+static void trace_state(const char *what, GLenum mode, GLsizei count, GLenum err) {
+    GLint fb = 0, prog = 0, vp[4] = {0}, sc[4] = {0}, unit = 0, tex = 0, dfunc = 0, bsrc = 0, bdst = 0, bsrca = 0,
+          bdsta = 0, cullmode = 0;
+    GLboolean cmask[4] = {0}, dmask = 0;
+    r_GetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &fb);
+    r_GetIntegerv(GL_CURRENT_PROGRAM, &prog);
+    r_GetIntegerv(GL_VIEWPORT, vp);
+    r_GetIntegerv(GL_SCISSOR_BOX, sc);
+    r_GetIntegerv(GL_ACTIVE_TEXTURE, &unit);
+    r_GetIntegerv(GL_DEPTH_FUNC, &dfunc);
+    r_GetIntegerv(GL_BLEND_SRC_RGB, &bsrc);
+    r_GetIntegerv(GL_BLEND_DST_RGB, &bdst);
+    r_GetIntegerv(GL_BLEND_SRC_ALPHA, &bsrca);
+    r_GetIntegerv(GL_BLEND_DST_ALPHA, &bdsta);
+    r_GetIntegerv(GL_CULL_FACE_MODE, &cullmode);
+    r_GetBooleanv(GL_COLOR_WRITEMASK, cmask);
+    r_GetBooleanv(GL_DEPTH_WRITEMASK, &dmask);
+    GLenum status = r_CheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+    GLint linked = 0;
+    if (prog) r_GetProgramiv((GLuint)prog, GL_LINK_STATUS, &linked);
+    struct prog *p = prog ? find_prog((GLuint)prog, 0) : NULL;
+    r_GetIntegerv(GL_TEXTURE_BINDING_2D, &tex);  // (on the active unit)
+    GLint tw = 0, th = 0, tfmt = 0, minf = 0, maxl = 0, imm = 0;
+    if (tex) {
+        r_GetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
+        r_GetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
+        r_GetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &tfmt);
+        r_GetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, &minf);
+        r_GetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, &maxl);
+        r_GetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_IMMUTABLE_LEVELS, &imm);
+    }
+    r_GetError();  // (the queries above must not count as the game's)
+    LOG("trace %s(mode=0x%x n=%d) err=0x%x fb=%d status=0x%x views=%d prog=%d linked=%d mv=%d vp=%d,%d %dx%d "
+        "scissor=%d %d,%d %dx%d cmask=%d%d%d%d blend=%d 0x%x/0x%x,0x%x/0x%x depth=%d f=0x%x w=%d stencil=%d cull=%d "
+        "0x%x unit=0x%x tex2d=%d %dx%d fmt=0x%x min=0x%x maxl=%d imm=%d",
+        what, mode, count, err, fb, status, draw_fb_views(), prog, linked, p ? p->multiview : -1, vp[0], vp[1], vp[2],
+        vp[3], r_IsEnabled(GL_SCISSOR_TEST), sc[0], sc[1], sc[2], sc[3], cmask[0], cmask[1], cmask[2], cmask[3],
+        r_IsEnabled(GL_BLEND), bsrc, bdst, bsrca, bdsta, r_IsEnabled(GL_DEPTH_TEST), dfunc, dmask,
+        r_IsEnabled(GL_STENCIL_TEST), r_IsEnabled(GL_CULL_FACE), cullmode, unit, tex, tw, th, tfmt, minf, maxl, imm);
+}
+
+static void trace_before(void) {
+    if (debug >= 2) r_GetError();
+}
+
+static void trace_after(const char *what, GLenum mode, GLsizei count) {
+    if (debug < 2) return;
+    GLenum err = r_GetError();
+    GLint fb = 0;
+    r_GetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &fb);
+    int detail;
+    pthread_mutex_lock(&trace_lock);
+    ++trace_draws;
+    if (err) {
+        ++trace_errors;
+        if (!trace_first_error) trace_first_error = err;
+    }
+    struct tfb *e = tfb_slot(fb);
+    if (e) {
+        ++e->draws;
+        if (err) ++e->errors;
+    }
+    detail = trace_windows < TRACE_WINDOWS && trace_detail < TRACE_DETAIL;
+    if (detail) ++trace_detail;
+    trace_window();
+    pthread_mutex_unlock(&trace_lock);
+    if (detail) trace_state(what, mode, count, err);
+}
+
+static int trace_logs;
+#define TRACE_CALL(fmt, ...)                                                     \
+    do {                                                                         \
+        if (debug >= 2) {                                                        \
+            GLenum e_ = r_GetError();                                            \
+            if ((e_ || trace_logs < 40) && trace_logs < 400) {                   \
+                ++trace_logs;                                                    \
+                LOG("trace " fmt " err=0x%x", __VA_ARGS__, e_);                  \
+            }                                                                    \
+        }                                                                        \
+    } while (0)
+
 // Before a draw: bind the twin when the program is multiview and the framebuffer has no views. 1 = twin bound.
 static int begin_draw(void) {
     struct prog *p = cur_prog;
@@ -558,6 +720,14 @@ EXPORT void glLinkProgram(GLuint program) {
     INIT();
     note_program(program);
     r_LinkProgram(program);
+    if (debug >= 2) {
+        GLint ok = 0;
+        r_GetProgramiv(program, GL_LINK_STATUS, &ok);
+        char log[700] = {0};
+        r_GetProgramInfoLog(program, sizeof(log) - 1, NULL, log);
+        struct prog *p = find_prog(program, 0);
+        LOG("trace glLinkProgram(%u) ok=%d multiview=%d log: %s", program, ok, p ? p->multiview : -1, log);
+    }
 }
 
 EXPORT void glDeleteProgram(GLuint program) {
@@ -626,41 +796,141 @@ static void w_ftmsmv(GLenum target, GLenum attachment, GLuint texture, GLint lev
 #define DRAW(name, call)                \
     INIT();                             \
     if (!r_##name) return;              \
+    trace_before();                     \
     if (begin_draw()) {                 \
         r_##name call;                  \
         end_draw("gl" #name);           \
     } else {                            \
         r_##name call;                  \
-    }
+    }                                   \
+    trace_after("gl" #name, call_mode, call_count);
 
-EXPORT void glDrawArrays(GLenum mode, GLint first, GLsizei count) { DRAW(DrawArrays, (mode, first, count)) }
+EXPORT void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
+    GLenum call_mode = mode; GLsizei call_count = count;
+    DRAW(DrawArrays, (mode, first, count))
+}
 EXPORT void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices) {
+    GLenum call_mode = mode; GLsizei call_count = count;
     DRAW(DrawElements, (mode, count, type, indices))
 }
 EXPORT void glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instances) {
+    GLenum call_mode = mode; GLsizei call_count = count;
     DRAW(DrawArraysInstanced, (mode, first, count, instances))
 }
 EXPORT void glDrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, const void *indices, GLsizei instances) {
+    GLenum call_mode = mode; GLsizei call_count = count;
     DRAW(DrawElementsInstanced, (mode, count, type, indices, instances))
 }
 EXPORT void glDrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type,
                                 const void *indices) {
+    GLenum call_mode = mode; GLsizei call_count = count;
     DRAW(DrawRangeElements, (mode, start, end, count, type, indices))
 }
-EXPORT void glDrawArraysIndirect(GLenum mode, const void *indirect) { DRAW(DrawArraysIndirect, (mode, indirect)) }
+EXPORT void glDrawArraysIndirect(GLenum mode, const void *indirect) {
+    GLenum call_mode = mode; GLsizei call_count = -1;
+    DRAW(DrawArraysIndirect, (mode, indirect))
+}
 EXPORT void glDrawElementsIndirect(GLenum mode, GLenum type, const void *indirect) {
+    GLenum call_mode = mode; GLsizei call_count = -1;
     DRAW(DrawElementsIndirect, (mode, type, indirect))
 }
 EXPORT void glDrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const void *indices, GLint base) {
+    GLenum call_mode = mode; GLsizei call_count = count;
     DRAW(DrawElementsBaseVertex, (mode, count, type, indices, base))
 }
 EXPORT void glDrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type,
                                           const void *indices, GLint base) {
+    GLenum call_mode = mode; GLsizei call_count = count;
     DRAW(DrawRangeElementsBaseVertex, (mode, start, end, count, type, indices, base))
 }
 EXPORT void glDrawElementsInstancedBaseVertex(GLenum mode, GLsizei count, GLenum type, const void *indices,
                                               GLsizei instances, GLint base) {
+    GLenum call_mode = mode; GLsizei call_count = count;
     DRAW(DrawElementsInstancedBaseVertex, (mode, count, type, indices, instances, base))
+}
+
+// ---------------------------------------------------------------- traced calls (pass-through unless gl_mv_debug=2)
+EXPORT void glClear(GLbitfield mask) {
+    INIT();
+    if (debug >= 2) r_GetError();
+    r_Clear(mask);
+    if (debug >= 2) {
+        GLenum err = r_GetError();
+        GLint fb = 0;
+        r_GetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &fb);
+        pthread_mutex_lock(&trace_lock);
+        ++trace_clears;
+        struct tfb *e = tfb_slot(fb);
+        if (e) ++e->clears;
+        pthread_mutex_unlock(&trace_lock);
+        if (err) LOG("trace glClear(0x%x) fb=%d err=0x%x", mask, fb, err);
+    }
+}
+EXPORT void glTexImage2D(GLenum t, GLint l, GLint ifmt, GLsizei w, GLsizei h, GLint b, GLenum f, GLenum ty,
+                         const void *px) {
+    INIT();
+    if (debug >= 2) r_GetError();
+    r_TexImage2D(t, l, ifmt, w, h, b, f, ty, px);
+    GLint tex = 0;
+    if (debug >= 2) r_GetIntegerv(GL_TEXTURE_BINDING_2D, &tex);
+    TRACE_CALL("glTexImage2D(target=0x%x tex=%d level=%d ifmt=0x%x %dx%d fmt=0x%x type=0x%x data=%d)", t, tex, l, ifmt,
+               w, h, f, ty, px != NULL);
+}
+EXPORT void glTexSubImage2D(GLenum t, GLint l, GLint x, GLint y, GLsizei w, GLsizei h, GLenum f, GLenum ty,
+                            const void *px) {
+    INIT();
+    if (debug >= 2) r_GetError();
+    r_TexSubImage2D(t, l, x, y, w, h, f, ty, px);
+    TRACE_CALL("glTexSubImage2D(target=0x%x level=%d %d,%d %dx%d fmt=0x%x type=0x%x)", t, l, x, y, w, h, f, ty);
+}
+EXPORT void glCompressedTexImage2D(GLenum t, GLint l, GLenum ifmt, GLsizei w, GLsizei h, GLint b, GLsizei size,
+                                   const void *data) {
+    INIT();
+    if (debug >= 2) r_GetError();
+    r_CompressedTexImage2D(t, l, ifmt, w, h, b, size, data);
+    TRACE_CALL("glCompressedTexImage2D(target=0x%x level=%d ifmt=0x%x %dx%d size=%d)", t, l, ifmt, w, h, size);
+}
+EXPORT void glTexStorage2D(GLenum t, GLsizei levels, GLenum ifmt, GLsizei w, GLsizei h) {
+    INIT();
+    if (debug >= 2) r_GetError();
+    r_TexStorage2D(t, levels, ifmt, w, h);
+    TRACE_CALL("glTexStorage2D(target=0x%x levels=%d ifmt=0x%x %dx%d)", t, levels, ifmt, w, h);
+}
+EXPORT void glCopyTexImage2D(GLenum t, GLint l, GLenum ifmt, GLint x, GLint y, GLsizei w, GLsizei h, GLint b) {
+    INIT();
+    if (debug >= 2) r_GetError();
+    r_CopyTexImage2D(t, l, ifmt, x, y, w, h, b);
+    GLint rfb = 0;
+    if (debug >= 2) r_GetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rfb);
+    TRACE_CALL("glCopyTexImage2D(target=0x%x level=%d ifmt=0x%x %d,%d %dx%d read fb=%d)", t, l, ifmt, x, y, w, h, rfb);
+}
+EXPORT void glCopyTexSubImage2D(GLenum t, GLint l, GLint xo, GLint yo, GLint x, GLint y, GLsizei w, GLsizei h) {
+    INIT();
+    if (debug >= 2) r_GetError();
+    r_CopyTexSubImage2D(t, l, xo, yo, x, y, w, h);
+    GLint rfb = 0;
+    if (debug >= 2) r_GetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rfb);
+    TRACE_CALL("glCopyTexSubImage2D(target=0x%x level=%d %d,%d from %d,%d %dx%d read fb=%d)", t, l, xo, yo, x, y, w, h,
+               rfb);
+}
+EXPORT void glGenerateMipmap(GLenum t) {
+    INIT();
+    if (debug >= 2) r_GetError();
+    r_GenerateMipmap(t);
+    TRACE_CALL("glGenerateMipmap(target=0x%x)", t);
+}
+EXPORT void glCompileShader(GLuint sh) {
+    INIT();
+    r_CompileShader(sh);
+    if (debug < 2) return;
+    GLint ok = 0;
+    r_GetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+    char log[700] = {0};
+    r_GetShaderInfoLog(sh, sizeof(log) - 1, NULL, log);
+    if (!ok || (log[0] && trace_logs < 400)) {
+        ++trace_logs;
+        LOG("trace glCompileShader(%u) ok=%d log: %s", sh, ok, log);
+    }
 }
 
 // A context made current on this thread (engines with a render thread move theirs between threads, e.g. Doom3Quest's
@@ -698,7 +968,8 @@ EXPORT __eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *na
     OWN(glFramebufferTexture) OWN(glDrawBuffers) OWN(glDrawArrays) OWN(glDrawElements) OWN(glDrawArraysInstanced)
     OWN(glDrawElementsInstanced) OWN(glDrawRangeElements) OWN(glDrawArraysIndirect) OWN(glDrawElementsIndirect)
     OWN(glDrawElementsBaseVertex) OWN(glDrawRangeElementsBaseVertex) OWN(glDrawElementsInstancedBaseVertex)
-    OWN(eglMakeCurrent)
+    OWN(eglMakeCurrent) OWN(glClear) OWN(glTexImage2D) OWN(glTexSubImage2D) OWN(glCompressedTexImage2D)
+    OWN(glTexStorage2D) OWN(glCopyTexImage2D) OWN(glCopyTexSubImage2D) OWN(glGenerateMipmap) OWN(glCompileShader)
 #undef OWN
     return fn;
 }

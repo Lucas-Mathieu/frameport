@@ -15,6 +15,8 @@
 //  * drops requested instance extensions the runtime lacks (e.g. XR_FB_passthrough);
 //  * retries rejected swapchains with 1 sample / a supported format (swapchain_fix, overport #71);
 //  * drops composition layers that reference swapchains that failed to create (layer_fix);
+//  * answers xrGetDisplayRefreshRateFB with the measured display rate when the runtime lacks it or reports 0 Hz
+//    (session_fixes.c);
 //  * serves cube swapchains the runtime refuses as GL/Vulkan cube maps and drops their layers (cube_standin, cube_standin.c);
 //  * optionally requests mutable-format swapchain images (mutable_fix, off by default);
 //  * optionally swaps left/right images of stereo projection layers (swap_eyes, off by default);
@@ -2225,6 +2227,9 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const 
     if (layer_debug || refresh_rate > 0) {
         HOOK_AS(xrRequestDisplayRefreshRateFB, hook_request_refresh_rate)
     }
+    // The Frame's runtime has no XR_FB_display_refresh_rate, but OVRPort's dispatcher offers it to the game and answers
+    // 0 Hz without it: the measured rate instead (the runtime's own answer when it has one).
+    if (instance != XR_NULL_HANDLE) HOOK_AS(xrGetDisplayRefreshRateFB, hook_get_refresh_rate)
     if (surface_emul) HOOK_AS(xrCreateSwapchainAndroidSurfaceKHR, hook_xrCreateSwapchainAndroidSurfaceKHR)
     if (eye_debug || release_wait) HOOK_AS(xrReleaseSwapchainImage, eye_hook_xrReleaseSwapchainImage)
     if (layer_debug || cube_standin) {  // counters + cube stand-ins; every other wait/release hook above takes precedence

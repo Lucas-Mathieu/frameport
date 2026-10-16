@@ -448,6 +448,9 @@ Repo is on an NTFS drive (`core.fileMode=false`); line endings are LF (`.gitattr
   XR_KHR_composition_layer_equirect2/cylinder, XR_FB_composition_layer_image_layout (flip emulated by Vulkan blit).
 - `xrConvertTimespecTimeToTimeKHR`/`xrConvertTimeToTimespecTimeKHR` return FUNCTION_UNSUPPORTED → adapter emulates
   (offset = predictedDisplayTime − period − CLOCK_MONOTONIC, sampled in xrWaitFrame).
+- No XR_FB_display_refresh_rate (`xrGetDisplayRefreshRateFB` -7), yet OVRPort's dispatcher offers it and answered 0 Hz
+  → FrameBridge always answers with the measured rate (1/predictedDisplayPeriod, else 72). PreyVR (#306, idTech 4:
+  `USERCMD_MSEC = 1000 / GetRefresh()`) had 0 ms tics: async thread spinning, `com_frameTime` stuck at 0, menu black.
 - Guardian STAGE bounds report 1×1 m (scene emulation uses ≥1.5 m).
 - GL goes through **Zink** (Mesa GL on Vulkan). Mesa GLSL is strict: `#pragma` before `#extension` fails, implicit
   int/float conversions fail (enable `GL_EXT_shader_implicit_conversions`), num_views=2 shaders on single-view FBOs

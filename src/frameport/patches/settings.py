@@ -230,7 +230,9 @@ SETTINGS = [
      "findings go to launch.log. The layer library (libVkLayer_khronos_validation.so) must be in the APK."),
     ("gl_mv_debug", "int", 0, "Multiview interposer: diagnostics",
      "Diagnostics for frame.gl_multiview_fbo: checks for GL errors after every single-view draw of a multiview "
-     "shader and logs counters every 5 seconds (tag GLMV in launch.log)."),
+     "shader and logs counters every 5 seconds (tag GLMV in launch.log). 2 (frameport settings) also checks every "
+     "draw and logs the draw state, failed texture uploads and shader compiles and, for idTech 4 engines, the game "
+     "clock."),
     ("gl_hide_msrtt", "int", 1, "GL shim: hide multisampled render-to-texture",
      "GL shim only: hide GL_EXT_multisampled_render_to_texture(2) (Zink crashes rendering Unity's runtime MSAA eye "
      "buffer through it, for example The Room VR)."),

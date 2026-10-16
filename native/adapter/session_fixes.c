@@ -9,6 +9,7 @@
 //  * aim_pitch / aim_yaw / aim_forward: correct the aim pose of controllers (pointer rays) by a fixed offset;
 //  * refresh_rate: display refresh rate requested at session start (and instead of the app's own requests).
 #include "layer_math.h"
+#include "refresh_rate.h"
 
 static void emul_on_begin_session(const XrSessionBeginInfo *info);  // layer_emul_gl.c
 
@@ -626,6 +627,26 @@ static XRAPI_ATTR XrResult XRAPI_CALL hook_request_refresh_rate(XrSession sessio
     LOG("refresh rate: app asked for %.1f Hz, requested %.1f Hz: result %d", rate, wanted, result);
     // A refused override keeps the current rate (as frame-control's compat layer does) instead of failing the app.
     return XR_FAILED(result) && refresh_rate > 0 ? XR_SUCCESS : result;
+}
+
+// Always on: the Frame's runtime has no XR_FB_display_refresh_rate; OVRPort's dispatcher still offers the extension and
+// its xrGetDisplayRefreshRateFB then answers 0 Hz. idTech 4 VR ports (Team Beef's Doom3Quest engine: PreyVR, GitHub
+// #306) run their game clock at 1000 / refresh ms per tic: with 0 Hz the tic length is 0, the async thread spins and
+// the frame/GUI time never advances (main menu stuck at its first animation step: black, only the cursor). A rate the
+// runtime doesn't give is replaced by the one the frame timing shows (refresh_rate.h).
+static XRAPI_ATTR XrResult XRAPI_CALL hook_get_refresh_rate(XrSession session, float *rate) {
+    if (!rate) return XR_ERROR_VALIDATION_FAILURE;
+    PFN_xrGetDisplayRefreshRateFB fn = (PFN_xrGetDisplayRefreshRateFB)lookup(active_instance, "xrGetDisplayRefreshRateFB");
+    XrResult result = fn ? fn(session, rate) : XR_ERROR_FUNCTION_UNSUPPORTED;
+    if ((XR_SUCCEEDED(result) && *rate > 0.0f) || result == XR_ERROR_HANDLE_INVALID) return result;
+    float runtime = XR_SUCCEEDED(result) ? *rate : 0.0f;
+    *rate = fb_refresh_rate((int64_t)last_display_period, refresh_rate);
+    static int logs;
+    if (logs < 4) {
+        ++logs;
+        LOG("refresh rate: runtime reported %.1f Hz (result %d), reporting %.1f Hz", runtime, result, *rate);
+    }
+    return XR_SUCCESS;
 }
 
 static XRAPI_ATTR XrResult XRAPI_CALL hook_xrBeginSession(XrSession session, const XrSessionBeginInfo *info) {

@@ -519,7 +519,7 @@ FramePort's layer between the game and the Steam Frame: fills in what the Frame 
 - **Suggested (on):** Required for every OpenXR/overport build on the Frame.
 - **Suggested by launch-test signatures:**
   - `cube-swapchain-refused` (fatal): The game asked for a cube-map swapchain (for example an OVROverlay skybox or loading cube), which the Frame's runtime doesn't have.
-  - `cylinder-menu-layers-rejected` (error): The game draws a curved (cylinder) screen to each eye separately (for example the Doom3Quest / PreyVR menu).
+  - `cylinder-menu-layers-rejected` (info): The runtime rejected a frame's layers once (XR_ERROR_LAYER_INVALID).
   - `graphics-requirements-missing` (fatal): The game can't start VR on the Frame; rebuild it with the current FramePort.
   - `swapchain-rect-invalid` (fatal): The runtime rejects the game's frames, so it stops drawing (for example stuck at a "Waiting" box).
   - `time-conversion` (warning): The Frame's runtime lacks timespec time conversion; the current adapter build emulates it.
@@ -1724,7 +1724,7 @@ Logs details when flat panels stay black. No effect on the game.
   - Game settings → Troubleshooting → "Flat panel diagnostics (log)" (advanced).
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
-> Diagnostics for frame.gl_multiview_fbo: checks for GL errors after every single-view draw of a multiview shader and logs counters every 5 seconds (tag GLMV in launch.log).
+> Diagnostics for frame.gl_multiview_fbo: checks for GL errors after every single-view draw of a multiview shader and logs counters every 5 seconds (tag GLMV in launch.log). 2 (frameport settings) also checks every draw and logs the draw state, failed texture uploads and shader compiles and, for idTech 4 engines, the game clock.
 
 ### <a id="adapter-haptic_fix"></a>Fix freezes when controllers vibrate
 
