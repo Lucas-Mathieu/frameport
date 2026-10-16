@@ -148,6 +148,7 @@ static int sync_guard;       // xrSyncActions one at a time with xrPollEvent, pa
 static int profile_remap = 1; // Meta's newer controller profiles (rejected by the Frame) -> oculus/touch_controller
 static int proximity_emul;   // finger proximity from capacitive touch: 1 thumb, 2 thumb + index (session_fixes.c)
 static int runtime_has_proximity;  // the runtime has XR_FB_touch_controller_proximity itself
+static int runtime_has_detached_controllers;  // the runtime has XR_META_detached_controllers (detached_controllers.c)
 static int layer_debug;      // diagnostics: layers, swapchains, session states, spaces, aim/grip, refresh rates
 static int input_diag;       // diagnostics: controller profiles, bindings, missing functions, failing input calls
 static int stable_local;     // keep every LOCAL space the app creates on the session-start origin
@@ -424,6 +425,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo *info
     for (uint32_t j = 0; available && j < available_count; ++j)
         if (!strcmp(available[j].extensionName, "XR_FB_composition_layer_image_layout")) runtime_has_image_layout = 1;
         else if (!strcmp(available[j].extensionName, "XR_FB_touch_controller_proximity")) runtime_has_proximity = 1;
+        else if (!strcmp(available[j].extensionName, "XR_META_detached_controllers"))
+            runtime_has_detached_controllers = 1;
     // Layer types are only valid if their extension ends up enabled; some apps submit them regardless.
     int has_equirect = 0, has_equirect2 = 0, has_cylinder = 0, has_cube = 0;
     for (uint32_t i = 0; i < kept; ++i) {
@@ -2040,7 +2043,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetCurrentInteractionProfile(XrSession session,
     PFN_xrGetCurrentInteractionProfile fn =
         (PFN_xrGetCurrentInteractionProfile)lookup(active_instance, "xrGetCurrentInteractionProfile");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
-    XrResult result = fn(session, user, state);
+    XrResult result = detached_current_profile(user, state, fn(session, user, state));
     if (input_diag && XR_SUCCEEDED(result) && state) input_diag_current_profile(user, state->interactionProfile);
     if (layer_debug && active_instance) {  // which device each hand has, as the runtime reports it
         PFN_xrPathToString str = (PFN_xrPathToString)lookup(active_instance, "xrPathToString");
@@ -2226,7 +2229,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const 
     if (layer_debug) HOOK_AS(xrGetActionStateBoolean, hook_xrGetActionStateBoolean)
     if (layer_debug || aim_correction_on() || profile_remap || input_diag || proximity_emul)
         HOOK_AS(xrSuggestInteractionProfileBindings, hook_xrSuggestInteractionProfileBindings)
-    if (proximity_emul) HOOK_AS(xrCreateAction, hook_xrCreateAction)
+    if (proximity_emul || profile_remap) HOOK_AS(xrCreateAction, hook_xrCreateAction)
     if (layer_debug || aim_correction_on()) {
         HOOK_AS(xrCreateActionSpace, hook_xrCreateActionSpace)
     }

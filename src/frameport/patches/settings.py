@@ -112,8 +112,9 @@ SETTINGS = [
      "Apps that suggest controller bindings only for Meta's newer profiles (Touch Plus, Touch Pro), which the Frame's "
      "runtime rejects (XR_ERROR_PATH_UNSUPPORTED), get the same bindings as oculus/touch_controller instead "
      "(components Touch lacks are dropped), and the runtime's answer for each hand is reported to them as their own "
-     "profile (Unity's OpenXR input only connects controllers of a profile it knows). Without it such apps get no "
-     "controller input."),
+     "profile (Unity's OpenXR input only connects controllers of a profile it knows). Meta's detached-controller paths "
+     "(XR_META_detached_controllers, which the Frame lacks) are left out of the app's actions and bindings: one such "
+     "path made Unity attach no controller input at all. Without it such apps get no controller input."),
     ("haptic_scale", "float", 1.0, "Vibration strength",
      "Scales every controller vibration the game asks for (0-1): plain vibrations, Meta's amplitude envelopes and "
      "PCM buffers. For games whose vibrations feel much stronger than on a Quest."),

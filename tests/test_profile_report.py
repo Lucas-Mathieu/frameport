@@ -123,3 +123,101 @@ def test_reports_the_games_profile_after_a_remap(harness):
         "oculus/touch_controller",
     ]
     assert len(logged) == 3  # once per report (at most 4)
+
+
+DETACHED = r"""
+#include <openxr/openxr.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#define LOG(...) (fprintf(stderr, __VA_ARGS__), fputc('\n', stderr))
+static XrInstance active_instance = (XrInstance)(uintptr_t)1;
+static int profile_remap = 1, runtime_has_detached_controllers;
+static char paths[32][XR_MAX_PATH_LENGTH];
+static int path_count;
+static XRAPI_ATTR XrResult XRAPI_CALL fake_string_to_path(XrInstance i, const char *s, XrPath *out) {
+    (void)i;
+    for (int k = 0; k < path_count; ++k) if (!strcmp(paths[k], s)) { *out = (XrPath)(k + 1); return XR_SUCCESS; }
+    snprintf(paths[path_count], XR_MAX_PATH_LENGTH, "%s", s);
+    *out = (XrPath)++path_count;
+    return XR_SUCCESS;
+}
+static XRAPI_ATTR XrResult XRAPI_CALL fake_path_to_string(XrInstance i, XrPath p, uint32_t cap, uint32_t *n,
+                                                          char *out) {
+    (void)i;
+    if (!p || p > (XrPath)path_count) return XR_ERROR_PATH_INVALID;
+    *n = (uint32_t)snprintf(out, cap, "%s", paths[p - 1]) + 1;
+    return XR_SUCCESS;
+}
+static PFN_xrVoidFunction lookup(XrInstance i, const char *name) {
+    (void)i;
+    if (!strcmp(name, "xrPathToString")) return (PFN_xrVoidFunction)fake_path_to_string;
+    return NULL;
+}
+#include "detached_controllers.c"
+static XrPath P(const char *s) { XrPath p; fake_string_to_path(0, s, &p); return p; }
+static void show_action(const XrActionCreateInfo *info) {
+    printf("%s:", info->actionName);
+    for (uint32_t i = 0; i < info->countSubactionPaths; ++i) printf(" %s", paths[info->subactionPaths[i] - 1]);
+    printf("\n");
+}
+int main(void) {
+    XrPath sub[4] = {P("/user/hand/left"), P("/user/hand/right"), P("/user/detached_controller_meta/left"),
+                     P("/user/detached_controller_meta/right")}, kept[4];
+    XrActionCreateInfo info = {XR_TYPE_ACTION_CREATE_INFO, NULL, "thumbstick", XR_ACTION_TYPE_VECTOR2F_INPUT, 4, sub,
+                               "Thumbstick"}, copy;
+    show_action(detached_strip_action(&info, &copy, kept));
+    info.countSubactionPaths = 2;  // hands only: passed on as it is
+    printf("%d\n", detached_strip_action(&info, &copy, kept) == &info);
+
+    XrActionSuggestedBinding b[3] = {{(XrAction)(uintptr_t)7, P("/user/hand/left/input/thumbstick")},
+                                     {(XrAction)(uintptr_t)7, P("/user/detached_controller_meta/left/input/thumbstick")},
+                                     {(XrAction)(uintptr_t)8, P("/user/hand/right/input/a/click")}}, kb[3];
+    XrInteractionProfileSuggestedBinding s = {XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING, NULL,
+                                              P("/interaction_profiles/oculus/touch_controller"), 3, b}, scopy;
+    const XrInteractionProfileSuggestedBinding *u = detached_strip_bindings(&s, &scopy, kb);
+    for (uint32_t i = 0; i < u->countSuggestedBindings; ++i) printf("%s\n", paths[u->suggestedBindings[i].binding - 1]);
+
+    XrInteractionProfileState st = {XR_TYPE_INTERACTION_PROFILE_STATE, NULL, 5};
+    XrResult r = detached_current_profile(sub[2], &st, XR_ERROR_PATH_UNSUPPORTED);
+    printf("%d %llu\n", r, (unsigned long long)st.interactionProfile);
+    printf("%d\n", detached_current_profile(sub[0], &st, XR_ERROR_PATH_UNSUPPORTED));  // hands: unchanged
+    printf("%d\n", detached_current_profile(sub[2], &st, XR_ERROR_ACTIONSET_NOT_ATTACHED));  // other errors stay
+
+    runtime_has_detached_controllers = 1;  // the runtime knows them: nothing changes
+    info.countSubactionPaths = 4;
+    printf("%d %d %d\n", detached_strip_action(&info, &copy, kept) == &info,
+           detached_strip_bindings(&s, &scopy, kb) == &s,
+           detached_current_profile(sub[2], &st, XR_ERROR_PATH_UNSUPPORTED));
+    runtime_has_detached_controllers = 0;
+    profile_remap = 0;  // off: nothing changes
+    printf("%d %d\n", detached_strip_action(&info, &copy, kept) == &info, detached_strip_bindings(&s, &scopy, kb) == &s);
+    return 0;
+}
+"""
+
+
+def test_detached_controller_paths_left_out(tmp_path):
+    (tmp_path / "detached.c").write_text(DETACHED)
+    subprocess.run([CC, "-std=c11", "-D_GNU_SOURCE", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
+                    "-Wno-missing-field-initializers", "-I", str(INC), "-I", str(ROOT / "native/adapter"),
+                    str(tmp_path / "detached.c"), "-o", str(tmp_path / "detached")], check=True)
+    p = subprocess.run([str(tmp_path / "detached")], capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.splitlines() == [
+        "thumbstick: /user/hand/left /user/hand/right",
+        "1",
+        "/user/hand/left/input/thumbstick",
+        "/user/hand/right/input/a/click",
+        "0 0",
+        str(-22),  # XR_ERROR_PATH_UNSUPPORTED
+        str(-46),  # XR_ERROR_ACTIONSET_NOT_ATTACHED
+        "1 1 -22",
+        "1 1",
+    ]
+    assert p.stderr.splitlines() == [
+        "profile_remap: action thumbstick without 2 detached-controller path(s) (the runtime has no "
+        "XR_META_detached_controllers)",
+        "profile_remap: /interaction_profiles/oculus/touch_controller bindings without 1 detached-controller path(s)",
+    ]

@@ -1916,7 +1916,7 @@ For apps that only know Quest 3/Pro controllers: without it they get no buttons.
   - Game settings → Controllers → "Treat newer Quest controllers as Touch" (advanced).
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
-> Apps that suggest controller bindings only for Meta's newer profiles (Touch Plus, Touch Pro), which the Frame's runtime rejects (XR_ERROR_PATH_UNSUPPORTED), get the same bindings as oculus/touch_controller instead (components Touch lacks are dropped), and the runtime's answer for each hand is reported to them as their own profile (Unity's OpenXR input only connects controllers of a profile it knows). Without it such apps get no controller input.
+> Apps that suggest controller bindings only for Meta's newer profiles (Touch Plus, Touch Pro), which the Frame's runtime rejects (XR_ERROR_PATH_UNSUPPORTED), get the same bindings as oculus/touch_controller instead (components Touch lacks are dropped), and the runtime's answer for each hand is reported to them as their own profile (Unity's OpenXR input only connects controllers of a profile it knows). Meta's detached-controller paths (XR_META_detached_controllers, which the Frame lacks) are left out of the app's actions and bindings: one such path made Unity attach no controller input at all. Without it such apps get no controller input.
 
 ### <a id="adapter-proximity_emul"></a>Animate fingers from touch
 

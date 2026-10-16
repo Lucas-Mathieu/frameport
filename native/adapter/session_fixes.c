@@ -297,6 +297,7 @@ static const char *const TOUCH_RIGHT[] = {"input/a/click", "input/a/touch", "inp
     "input/system/click"};
 static int app_suggested_touch;
 #include "profile_report.c"  // remapped_profile, current_profile_fix (xrGetCurrentInteractionProfile)
+#include "detached_controllers.c"  // detached controllers' paths on a runtime without them
 
 static int in_list(const char *s, const char *const *list, size_t n) {
     for (size_t i = 0; i < n; ++i)
@@ -333,8 +334,13 @@ static XRAPI_ATTR XrResult XRAPI_CALL hook_xrCreateAction(XrActionSet set, const
         XrAction *action) {
     PFN_xrCreateAction fn = (PFN_xrCreateAction)lookup(active_instance, "xrCreateAction");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
-    XrResult r = fn(set, info, action);
-    if (XR_SUCCEEDED(r) && info && action) {  // OVRPlugin's action names
+    XrActionCreateInfo copy;
+    XrPath *kept = info && info->countSubactionPaths ? calloc(info->countSubactionPaths, sizeof(*kept)) : NULL;
+    XrResult r = fn(set, detached_strip_action(info, &copy, kept), action);
+    free(kept);
+    if (XR_FAILED(r) && input_diag)  // this hook replaces input_diag's wrapper of xrCreateAction
+        diag_call_failed("xrCreateAction", r, diag_name_detail(info ? info->actionName : NULL));
+    if (proximity_emul && XR_SUCCEEDED(r) && info && action) {  // OVRPlugin's action names
         if (!strcmp(info->actionName, "hand_thumb_proximity")) thumb_proximity_action = *action;
         else if (!strcmp(info->actionName, "hand_trigger_proximity")) trigger_proximity_action = *action;
         else return r;
@@ -430,11 +436,26 @@ static XrResult remap_to_touch(XrInstance instance, PFN_xrSuggestInteractionProf
     return r;
 }
 
+static XrResult suggest_bindings(XrInstance instance, PFN_xrSuggestInteractionProfileBindings fn,
+                                 const XrInteractionProfileSuggestedBinding *suggested);
+
 static XRAPI_ATTR XrResult XRAPI_CALL hook_xrSuggestInteractionProfileBindings(XrInstance instance,
         const XrInteractionProfileSuggestedBinding *suggested) {
     PFN_xrSuggestInteractionProfileBindings fn =
         (PFN_xrSuggestInteractionProfileBindings)lookup(instance, "xrSuggestInteractionProfileBindings");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    XrInteractionProfileSuggestedBinding copy;
+    XrActionSuggestedBinding *kept = suggested && suggested->countSuggestedBindings
+        ? calloc(suggested->countSuggestedBindings, sizeof(*kept)) : NULL;
+    const XrInteractionProfileSuggestedBinding *use = detached_strip_bindings(suggested, &copy, kept);
+    // a profile with only detached-controller bindings: nothing the runtime could bind
+    XrResult r = use != suggested && !use->countSuggestedBindings ? XR_SUCCESS : suggest_bindings(instance, fn, use);
+    free(kept);
+    return r;
+}
+
+static XrResult suggest_bindings(XrInstance instance, PFN_xrSuggestInteractionProfileBindings fn,
+                                 const XrInteractionProfileSuggestedBinding *suggested) {
     PFN_xrPathToString to_string = (PFN_xrPathToString)lookup(instance, "xrPathToString");
     if (suggested && to_string && (layer_debug || aim_correction_on()))
         for (uint32_t i = 0; i < suggested->countSuggestedBindings; ++i) {
