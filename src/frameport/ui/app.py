@@ -96,6 +96,9 @@ def reduce_motion_setting() -> bool:
     return bool(library.setting(REDUCE_MOTION, False))
 
 
+SIDEBAR_WIDTH = 236  # logical px before the UI scale (content_insets)
+
+
 class FramePortApp:
     def __init__(self, page: ft.Page):
         from .views.library import load_filters
@@ -145,9 +148,12 @@ class FramePortApp:
                                    self.stop_live(),  # and stop a live view (it would keep the Frame encoding)
                                    self.stop_keyboard(), self.stop_monitor(), self.monitor_hub.close(),
                                    _link_state.update(owner=None) if _link_state["owner"] is self else None)
+        from .announcer import Announcer
         from .updater import Updater
 
         self.updater = Updater(self)  # new FramePort releases (sidebar card, Library bar, one-click update)
+        # maintainer announcements (pop-up once, not on a first start); before updater.start() saves this start
+        self.announcer = Announcer(self)
 
         page.title = tr("FramePort")
         for problem in T.load_user_themes(themes_dir()):  # installed theme files (Settings → Appearance)
@@ -182,6 +188,7 @@ class FramePortApp:
         self._start_auto_pair()
         threading.Thread(target=self._backfill_covers, daemon=True).start()
         self.updater.start()
+        self.announcer.start()
         self.run_bg(self._refresh_catalog)  # confirmed game configs from GitHub main (no release needed)
         _link_state["owner"] = self
         if _link_state["thread"] is None:
@@ -236,12 +243,17 @@ class FramePortApp:
             self.activity_card,
             self.conn_card,
             self.power_row,  # under the Frame card (owner's choice)
-        ], spacing=T.S2), width=T.px(236), bgcolor=T.SIDEBAR, padding=T.S4,
+        ], spacing=T.S2), width=T.px(SIDEBAR_WIDTH), bgcolor=T.SIDEBAR, padding=T.S4,
             border=None if T.DUAL else ft.Border(right=ft.BorderSide(1, T.BORDER)))
         # dual themes: the sidebar's edge is the portal, blue at the top into orange at the bottom
         edge = [ft.Container(width=2, gradient=C.portal_gradient(vertical=True, opacity=0.7))] if T.DUAL else []
         self.page.controls = [ft.Row([sidebar, *edge, self.body, self.activity.root], expand=True, spacing=0,
                                      vertical_alignment=ft.CrossAxisAlignment.STRETCH)]
+
+    def content_insets(self) -> tuple[float, float]:
+        """How much of the window's left (the sidebar + its edge) and right (the activity panel, when open) isn't the
+        content area: pop-ups about the content (announcements) centre over what's between."""
+        return T.px(SIDEBAR_WIDTH) + (2 if T.DUAL else 0), float(self.activity.root.width or 0)
 
     def restyle(self, theme: str) -> None:
         """Switch the colour theme while running (Settings → Appearance): new tokens, the window rebuilt, the views

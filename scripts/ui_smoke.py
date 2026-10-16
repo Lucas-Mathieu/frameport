@@ -101,6 +101,8 @@ def main() -> int:
     ap.add_argument("--viewport", default="1280x820", help="browser size, e.g. 2560x1440")
     ap.add_argument("--update", action="store_true", help="pretend a new FramePort release exists (update UI: "
                     "changelog dialog, what's new bar + dialog, Settings changelog)")
+    ap.add_argument("--announcement", action="store_true", help="show the announcement pop-up (with a picture, "
+                    "then text only); nothing is fetched")
     ap.add_argument("--fake-frame", action="store_true", help="pretend a Steam Frame is connected (no device needed)")
     ap.add_argument("--hover", default=None, help="x,y: move the mouse there before the Library screenshot")
     ap.add_argument("--install-questions", nargs="+", metavar="PKG", default=None,
@@ -421,6 +423,26 @@ def main() -> int:
             print(f"open dialogs: {len([d for d in a.page._dialogs.controls if d.open])}, queued: {queued}", flush=True)
         steps = [("library", lambda a: a.navigate(0)), ("questions", open_questions),
                  ("after-1st-double", double_click), ("after-2nd-double", double_click), ("end", report)]
+    if args.announcement:
+        import shutil
+
+        from frameport import announcements
+        from frameport.core.paths import user_data_dir
+
+        text = ("---\nid: smoke\ntitle: FramePort 1.3 brings the Monitor to every Frame\ndate: 2026-10-14T12:00:00Z\n"
+                "---\n"
+                "The **Monitor** tab now shows fps, battery and temperatures for any game the Frame runs, including "
+                "Steam's own. Open it from the sidebar's Frame card.\n\n"
+                "- Install links from FrameDrop buttons open in FramePort\n"
+                "- Uploads over the USB cable are about **3× faster**\n\n"
+                "Questions? Ask in [Discussions](https://example.invalid).")
+        news = announcements.parse(text)
+        pic = user_data_dir() / "announcements" / "smoke.png"
+        pic.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(Path(__file__).resolve().parents[1] / "docs" / "images" / "library.png", pic)
+        steps = [("announcement-image", lambda a: (a.navigate(0), a.announcer.show(news, pic))),
+                 ("announcement-text", lambda a: (a.page.pop_dialog(), time.sleep(1.5), a.announcer.show(
+                     announcements.parse(text.replace("id: smoke", "id: smoke2")))))]
     if args.update:
         from frameport import __version__, updates
 

@@ -274,6 +274,15 @@ Rick and Morty runs on the Frame via its catalog recipe (OpenVR, no Revive),
     `working-config.yml` issue → maintainer label `catalog-accepted` (a plain issue needs `working-config` added by
     hand) → `catalog-from-issue.yml` workflow (`scripts/catalog_from_issue.py` validates) opens a catalog PR. App log:
     `core/applog.py` (`<data>/logs/app.log`, finished GUI jobs in `<data>/logs/jobs/`).
+  - Announcements (2026-10-15, announcements/README.md; app only, the owner dropped the site pop-up): source of
+    truth `announcements/current.md` on `main` (front matter id/title/date + optional image/image_alt/button+url/
+    expires/active, Markdown body; ships `active: false`). `announcements.py` (no Flet; raw GitHub via
+    `cache.cached_text`, 6 h) + `ui/announcer.py` (pop-up 20 s after start / every 6 h when no dialog is open and not
+    on welcome; `C.dialog` with the portal edge, image downloaded + Pillow-checked into `<data>/announcements/`, shown
+    by asset URL). Shown only if the user was around before `date` (setting `announce.since`, set once at the GUI's
+    first start: 0 when `USED_BEFORE` settings exist, else now), once: any close (X, outside click, Escape, button)
+    stores the id (`announce.dismissed`, last 50). New announcement = new id; same id = typo fix.
+    `FRAMEPORT_NO_ANNOUNCEMENTS`; `ui_smoke.py --announcement` renders it.
   - Self-update (docs/ARCHITECTURE.md "Self-update", docs/INSTALL.md "Updating"): `_version.py` = the only version
     (`frameport.__version__`; pyproject reads it via hatch `dynamic`; app log, diagnostics, User-Agent, Settings use
     it — never `importlib.metadata`, bundles have no dist-info). `updates.py` (no Flet): `check()` = GitHub
