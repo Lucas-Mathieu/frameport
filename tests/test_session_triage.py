@@ -111,6 +111,14 @@ def test_space_warp_is_a_question_not_an_automatic_fix():
     assert "space-warp-used" not in {f.id for f in triage(off + log, "RUNNING", PKG).findings}
 
 
+def test_eye_depth_swapchain_is_not_space_warp():
+    # GitHub #323: Unreal's OpenXR plugin submits eye depth (XR_KHR_composition_layer_depth) in a D24S8 (129)
+    # swapchain of the eye size; only space warp's motion-vector swapchain (97) shows that space warp is used
+    log = START + fb("17:39:02", "xrCreateSwapchain 1728x1728 format=129 samples=1 array=2 faces=1 usage=0x22 "
+                                 "flags=0x0 result=0")
+    assert "space-warp-used" not in {f.id for f in triage(log, "RUNNING", PKG).findings}
+
+
 def test_gpu_hang_from_kernel_lines():
     kernel = "kernel: 1790000000.0 steamos kernel: msm_dpu: [drm:a6xx_hangcheck] hangcheck detected gpu lockup\n"
     r = triage(START, "UNKNOWN", PKG, kernel=kernel)

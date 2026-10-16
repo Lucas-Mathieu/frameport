@@ -113,6 +113,10 @@ static void snap_on_enumerate(XrSwapchain handle, uint32_t count, const XrSwapch
 static void snap_on_acquire(XrSwapchain handle, uint32_t index);
 static void snap_end_frame(const XrFrameEndInfo *info);
 static int frame_balance = 0;  // end a still-open frame before the next xrBeginFrame
+// diagnostics (headless launch tests, GitHub #323): report shouldRender=TRUE from xrWaitFrame. Without a worn headset the
+// session never becomes VISIBLE, the runtime answers shouldRender=FALSE and engines that honour it (Unreal's OpenXR
+// plugin) submit no layers at all, so a headless run never exercises the game's real frame submission.
+static int force_render = 0;
 static int frame_begins, frame_discarded, frame_ends, frame_balanced;  // per pacing period (layer_debug)
 static int frame_open;
 static int sc_acquires, sc_waits, sc_releases, sc_wait_fails;  // per pacing period (layer_debug)  // drop XrCompositionLayerColorScaleBiasKHR (the runtime's color pass)
@@ -120,6 +124,7 @@ static int controller_fix = 1;
 static int swapchain_fix = 1;
 static int cube_standin = 1;  // cube swapchains the runtime refuses: served by the adapter (cube_standin.c)
 static int rect_clamp = 1;
+static int action_dedup = 1;  // rename duplicate action names in a set (session_fixes.c; GitHub #323)
 static int pose_consistency = 0;  // repeat xrLocateViews queries for one display time get the same poses (GitHub #8)  // clamp submitted image rects to their swapchain (SteamVR rejects a 1 px overrun)
 static int pose_time_fix;   // poses asked for at CLOCK_MONOTONIC "now" or far in the past: at XrTime "now" (pose_time.c)
 static int pose_debug;      // diagnostics: requested pose times vs the predicted display time (pose_time.c)
@@ -180,6 +185,7 @@ static void read_settings(const char *path) {
         if (sscanf(line, "strip_color_bias=%f", &value) == 1) strip_color_bias = (int)value;
         if (sscanf(line, "fade_quad=%f", &value) == 1) fade_quad = value > 0 ? (int)value : 0;
         if (sscanf(line, "frame_balance=%f", &value) == 1) frame_balance = value != 0;
+        if (sscanf(line, "force_render=%f", &value) == 1) force_render = value != 0;
         if (sscanf(line, "snapshot=%f", &value) == 1) snapshot = value > 0 ? (int)value : 0;
         if (sscanf(line, "flip_dump=%f", &value) == 1) flip_dump = value > 0 ? (int)value : 0;
         if (sscanf(line, "gl_error_clear=%f", &value) == 1) gl_error_clear = value != 0;
@@ -187,6 +193,7 @@ static void read_settings(const char *path) {
         if (sscanf(line, "swapchain_fix=%f", &value) == 1) swapchain_fix = value != 0;
         if (sscanf(line, "cube_standin=%f", &value) == 1) cube_standin = value != 0;
         if (sscanf(line, "rect_clamp=%f", &value) == 1) rect_clamp = value != 0;
+        if (sscanf(line, "action_dedup=%f", &value) == 1) action_dedup = value != 0;
         if (sscanf(line, "pose_consistency=%f", &value) == 1) pose_consistency = value != 0;
         if (sscanf(line, "pose_debug=%f", &value) == 1) pose_debug = value != 0;
         if (sscanf(line, "pose_time_fix=%f", &value) == 1) pose_time_fix = value != 0;
@@ -280,6 +287,7 @@ static void initialize(void) {
     if (fade_quad) LOG("per-game: fade_quad=%d (colour-scale fades drawn as a black quad%s)", fade_quad,
                        fade_quad > 1 ? "; the layer's own scale removed" : "");
     if (frame_balance) LOG("per-game: frame_balance=1 (an open frame is ended before the next one begins)");
+    if (force_render) LOG("per-game: force_render=1 (xrWaitFrame reports shouldRender=TRUE; diagnostics)");
     if (eye_debug || release_wait) LOG("per-game: eye_debug=%d release_wait=%d log_file=%s", eye_debug, release_wait,
                                        log_file ? path : "none");
     if (controller_models && *process && !strchr(process, '/')) render_model_init(process);
@@ -1433,6 +1441,16 @@ XRAPI_ATTR XrResult XRAPI_CALL xrWaitFrame(XrSession session, const XrFrameWaitI
         pose_time_display(state->predictedDisplayTime);
         pose_time_note_offset((long long)(state->predictedDisplayTime - mono));
         if (layer_debug) debug_aim_vs_grip(state->predictedDisplayTime);
+        // shouldRender changes (a few): a game that submits no layers while the runtime says not to render shows
+        // nothing, e.g. Unreal's OpenXR plugin in a headless launch test
+        static int last_should_render = -1, should_render_logged;
+        if ((int)state->shouldRender != last_should_render && should_render_logged < 12) {
+            ++should_render_logged;
+            LOG("xrWaitFrame: shouldRender=%d period=%.2f ms%s", (int)state->shouldRender,
+                state->predictedDisplayPeriod / 1e6, force_render && !state->shouldRender ? " (force_render: reported as 1)" : "");
+        }
+        last_should_render = (int)state->shouldRender;
+        if (force_render) state->shouldRender = XR_TRUE;
     }
     return result;
 }
@@ -2229,7 +2247,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const 
     if (layer_debug) HOOK_AS(xrGetActionStateBoolean, hook_xrGetActionStateBoolean)
     if (layer_debug || aim_correction_on() || profile_remap || input_diag || proximity_emul)
         HOOK_AS(xrSuggestInteractionProfileBindings, hook_xrSuggestInteractionProfileBindings)
-    if (proximity_emul || profile_remap) HOOK_AS(xrCreateAction, hook_xrCreateAction)
+    if (action_dedup || proximity_emul || profile_remap || input_diag) HOOK_AS(xrCreateAction, hook_xrCreateAction)
     if (layer_debug || aim_correction_on()) {
         HOOK_AS(xrCreateActionSpace, hook_xrCreateActionSpace)
     }

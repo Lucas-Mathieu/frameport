@@ -107,8 +107,6 @@ static const char *diag_perf_detail(XrPerfSettingsDomainEXT domain, XrPerfSettin
 }
 DIAG_CHECKED(xrStringToPath, (XrInstance instance, const char *path, XrPath *out), (instance, path, out),
              diag_name_detail(path))
-DIAG_CHECKED(xrCreateAction, (XrActionSet set, const XrActionCreateInfo *info, XrAction *action), (set, info, action),
-             diag_name_detail(info ? info->actionName : NULL))
 DIAG_CHECKED(xrAttachSessionActionSets, (XrSession session, const XrSessionActionSetsAttachInfo *info),
              (session, info), NULL)
 DIAG_CHECKED(xrPerfSettingsSetPerformanceLevelEXT,
@@ -116,11 +114,46 @@ DIAG_CHECKED(xrPerfSettingsSetPerformanceLevelEXT,
              (session, domain, level), diag_perf_detail(domain, level))
 #undef DIAG_CHECKED
 
+// Every action set and action the game creates, with its localized name: SteamVR turns them into an input manifest and
+// drops a game whose manifest it can't load ("SetXrInputConfig failed. Failed to load manifest" in vrserver.txt; the
+// app then counts as exited: home environment while the game keeps running, GitHub #323). Bytes outside printable
+// ASCII and the JSON specials " and \ are written as \xNN.
+static const char *diag_escaped(const char *in, char *out, size_t size) {
+    size_t used = 0;
+    for (const unsigned char *c = (const unsigned char *)(in ? in : "(null)"); *c && used + 5 < size; ++c) {
+        int special = *c < 0x20 || *c > 0x7e || *c == '"' || *c == '\\';
+        used += (size_t)(special ? snprintf(out + used, size - used, "\\x%02x", *c)
+                                 : snprintf(out + used, size - used, "%c", *c));
+    }
+    out[used] = 0;
+    return out;
+}
+static XRAPI_ATTR XrResult XRAPI_CALL diag_xrCreateActionSet(XrInstance instance, const XrActionSetCreateInfo *info,
+        XrActionSet *set) {
+    PFN_xrCreateActionSet fn = (PFN_xrCreateActionSet)lookup(instance, "xrCreateActionSet");
+    if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
+    XrResult result = fn(instance, info, set);
+    char a[XR_MAX_ACTION_SET_NAME_SIZE * 4 + 8], b[XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE * 4 + 8];
+    if (info)
+        LOG("input_diag: action set \"%s\" (\"%s\") priority %u -> %d", diag_escaped(info->actionSetName, a, sizeof(a)),
+            diag_escaped(info->localizedActionSetName, b, sizeof(b)), info->priority, (int)result);
+    return result;
+}
+// Called by session_fixes.c's hook_xrCreateAction (hooked whenever input_diag is on), with the names it created.
+static void diag_log_action(const XrActionCreateInfo *info, XrResult result) {
+    char a[XR_MAX_ACTION_NAME_SIZE * 4 + 8], b[XR_MAX_LOCALIZED_ACTION_NAME_SIZE * 4 + 8];
+    if (info)
+        LOG("input_diag: action \"%s\" (\"%s\") type %d, %u subaction path(s) -> %d",
+            diag_escaped(info->actionName, a, sizeof(a)), diag_escaped(info->localizedActionName, b, sizeof(b)),
+            (int)info->actionType, info->countSubactionPaths, (int)result);
+    if (XR_FAILED(result)) diag_call_failed("xrCreateAction", result, diag_name_detail(info ? info->actionName : NULL));
+}
+
 // xrGetInstanceProcAddr: our wrapper for `name`, NULL if it isn't one of ours.
 static PFN_xrVoidFunction input_diag_hook(const char *name) {
 #define DIAG(fn) if (!strcmp(name, #fn)) return (PFN_xrVoidFunction)diag_##fn;
     DIAG(xrStringToPath)
-    DIAG(xrCreateAction)
+    DIAG(xrCreateActionSet)
     DIAG(xrAttachSessionActionSets)
     DIAG(xrPerfSettingsSetPerformanceLevelEXT)
 #undef DIAG

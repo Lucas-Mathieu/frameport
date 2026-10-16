@@ -208,7 +208,8 @@ signatures:
     suggest: [adapter.vk_shader_dump, adapter.zink_shader_dump]
     report: true
   - id: space-warp-used
-    pattern: 'xrCreateSwapchain \d+x\d+ format=(97|129) '
+    # space warp's motion vectors (97 = R16G16B16A16_SFLOAT); its depth (129) is also what eye depth layers use (#323)
+    pattern: 'xrCreateSwapchain \d+x\d+ format=97 '
     unless: 'per-game: hide_space_warp=1'
     severity: info
     diagnosis: The game uses Meta's space warp (it renders half of its frames plus motion vectors, and the runtime makes
@@ -216,6 +217,13 @@ signatures:
       Metro Awakening). Turning it off makes the game render every frame itself.
     question: Did textures flicker, jump or smear while you moved?
     suggest: [adapter.hide_space_warp]
+  - id: duplicate-action-renamed
+    pattern: 'action_dedup: action .* already exists in its set'
+    severity: info
+    diagnosis: The game creates two controller actions with the same name (for example an Unreal action and axis both
+      called Turn). The Frame's runtime then can't load the game's controller setup and drops the game back to the home
+      environment while it keeps running. FramePort renamed the second one, so this is handled.
+    suggest: []
   - id: unity-runtime-msaa
     pattern: 'recommended MSAA level is [248]\. Switching to the recommended level'
     severity: info

@@ -1,4 +1,9 @@
 {
+ "adapter.action_dedup": {
+  "anchor": "adapter-action_dedup",
+  "title": "Unique controller action names",
+  "group": "Game settings"
+ },
  "adapter.aim_forward": {
   "anchor": "adapter-aim_forward",
   "title": "Pointer start",

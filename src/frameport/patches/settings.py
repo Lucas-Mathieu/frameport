@@ -184,6 +184,11 @@ SETTINGS = [
      "on some Frames; SteamVR then rejects every frame (xrEndFrame -25, XR_ERROR_SWAPCHAIN_RECT_INVALID) and the game "
      "stops drawing (for example PowerWash Simulator stuck at \"Waiting\"). An empty rect (0x0, e.g. BattleTalent's "
      "first frames, GitHub #293) is rejected the same way and becomes the whole swapchain image."),
+    ("action_dedup", "int", 1, "Unique controller action names",
+     "Gives a controller action whose name already exists in its action set a free name (\"turn\" -> \"turn_2\"). "
+     "The Frame's runtime accepts duplicate names but then can't load the game's input manifest and treats the game "
+     "as closed: black, then the home environment while the game keeps running with sound (for example Scared By "
+     "Squares, whose Unreal project has an action and an axis both called Turn; GitHub #323)."),
     ("swap_eyes", "int", 0, "Swap eyes", "Swap left/right views (diagnostic)."),
     ("strip_depth", "int", 0, "Strip depth layers", "Remove XR_KHR_composition_layer_depth chains (diagnostic)."),
     ("mutable_fix", "int", 0, "Mutable swapchain fix", "Experimental Vulkan mutable-format workaround."),
@@ -409,6 +414,10 @@ UI: dict[str, dict] = {
     "rect_clamp": dict(group="troubleshooting", level="advanced", label="Keep pictures in bounds",
                 help="Stops games from hanging when their eye picture is a little too big or empty (for example "
                      "PowerWash Simulator). Leave it on.", control=("switch",)),
+    "action_dedup": dict(group="troubleshooting", level="advanced", label="Unique controller action names",
+                help="Stops games from dropping back to the home environment at start because two of their "
+                     "controller actions share a name (for example Scared By Squares). Leave it on.",
+                control=("switch",)),
     "gl_hide_msrtt": dict(group="troubleshooting", level="advanced", label="Hide fast anti-aliasing (OpenGL ES)",
                 help="For Unity games that crash when they turn on anti-aliasing (for example The Room "
                      "VR).", control=("switch",)),

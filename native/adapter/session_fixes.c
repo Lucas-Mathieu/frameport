@@ -330,16 +330,69 @@ static int touch_has(const char *path) {
 // rest touched; index (proximity_emul=2) = trigger touched. Only when the runtime lacks the extension itself.
 static XrAction thumb_proximity_action, trigger_proximity_action;
 
+// ---------------------------------------------------------------- duplicate action names (action_dedup)
+// OpenXR requires action names and localized names to be unique within an action set (XR_ERROR_NAME_DUPLICATED), but
+// the Frame's runtime accepts duplicates and then can't load the input manifest it builds from them: vrserver logs
+// "SetXrInputConfig failed. Failed to load manifest", drops the app's connection and treats it as exited, so the
+// headset goes back to the home environment while the game keeps running with sound (GitHub #323, Scared By Squares:
+// Unreal's OpenXR plugin creates "turn" twice, from an action mapping and an axis mapping of the same name). The
+// game only uses the handles, so a later duplicate is created under a free name ("turn_2", "Turn 2").
+#include "action_names.h"
+#define DEDUP_MAX 512
+static struct { XrActionSet set; char name[XR_MAX_ACTION_NAME_SIZE]; char localized[XR_MAX_LOCALIZED_ACTION_NAME_SIZE]; }
+    dedup_seen[DEDUP_MAX];
+static int dedup_count;
+static pthread_mutex_t dedup_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static int dedup_taken(void *ctx, const char *name, const char *localized) {  // caller holds dedup_lock
+    XrActionSet set = *(XrActionSet *)ctx;
+    for (int i = 0; i < dedup_count; ++i)
+        if (dedup_seen[i].set == set && (!strcmp(dedup_seen[i].name, name) || !strcmp(dedup_seen[i].localized, localized)))
+            return 1;
+    return 0;
+}
+
+// Fills `out` (a copy of `info`) with free names when `info`'s are taken in `set`; 1 if it did.
+static int dedup_rename(XrActionSet set, const XrActionCreateInfo *info, XrActionCreateInfo *out,
+                        char name[XR_MAX_ACTION_NAME_SIZE], char localized[XR_MAX_LOCALIZED_ACTION_NAME_SIZE]) {
+    if (!action_unique_names(info->actionName, info->localizedActionName, dedup_taken, &set, name,
+                             XR_MAX_ACTION_NAME_SIZE, localized, XR_MAX_LOCALIZED_ACTION_NAME_SIZE))
+        return 0;
+    *out = *info;
+    memcpy(out->actionName, name, XR_MAX_ACTION_NAME_SIZE);
+    memcpy(out->localizedActionName, localized, XR_MAX_LOCALIZED_ACTION_NAME_SIZE);
+    return 1;
+}
+
+static void dedup_note(XrActionSet set, const XrActionCreateInfo *info) {  // caller holds dedup_lock
+    if (dedup_count >= DEDUP_MAX) return;
+    dedup_seen[dedup_count].set = set;
+    snprintf(dedup_seen[dedup_count].name, XR_MAX_ACTION_NAME_SIZE, "%s", info->actionName);
+    snprintf(dedup_seen[dedup_count].localized, XR_MAX_LOCALIZED_ACTION_NAME_SIZE, "%s", info->localizedActionName);
+    ++dedup_count;
+}
+
 static XRAPI_ATTR XrResult XRAPI_CALL hook_xrCreateAction(XrActionSet set, const XrActionCreateInfo *info,
         XrAction *action) {
     PFN_xrCreateAction fn = (PFN_xrCreateAction)lookup(active_instance, "xrCreateAction");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
-    XrActionCreateInfo copy;
+    XrActionCreateInfo copy, renamed;
     XrPath *kept = info && info->countSubactionPaths ? calloc(info->countSubactionPaths, sizeof(*kept)) : NULL;
-    XrResult r = fn(set, detached_strip_action(info, &copy, kept), action);
+    const XrActionCreateInfo *use = detached_strip_action(info, &copy, kept);
+    char name[XR_MAX_ACTION_NAME_SIZE], localized[XR_MAX_LOCALIZED_ACTION_NAME_SIZE];
+    if (action_dedup && info) pthread_mutex_lock(&dedup_lock);
+    if (action_dedup && info && dedup_rename(set, use, &renamed, name, localized)) {
+        LOG("action_dedup: action \"%s\" (\"%s\") already exists in its set: created as \"%s\" (\"%s\")",
+            info->actionName, info->localizedActionName, name, localized);
+        use = &renamed;
+    }
+    XrResult r = fn(set, use, action);
+    if (action_dedup && info) {
+        if (XR_SUCCEEDED(r)) dedup_note(set, use);
+        pthread_mutex_unlock(&dedup_lock);
+    }
+    if (input_diag) diag_log_action(use, r);  // this hook replaces input_diag's wrapper of xrCreateAction
     free(kept);
-    if (XR_FAILED(r) && input_diag)  // this hook replaces input_diag's wrapper of xrCreateAction
-        diag_call_failed("xrCreateAction", r, diag_name_detail(info ? info->actionName : NULL));
     if (proximity_emul && XR_SUCCEEDED(r) && info && action) {  // OVRPlugin's action names
         if (!strcmp(info->actionName, "hand_thumb_proximity")) thumb_proximity_action = *action;
         else if (!strcmp(info->actionName, "hand_trigger_proximity")) trigger_proximity_action = *action;

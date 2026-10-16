@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 175 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 176 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -12,7 +12,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 
 - [Patches from OVRPort](#group-overport) (25)
 - [Steam Frame patches](#group-frame) (60)
-- [Game settings](#group-adapter) (69)
+- [Game settings](#group-adapter) (70)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
 
@@ -58,7 +58,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [GL shim (Mesa GLSL compatibility)](#frame-gl_shim) | `frame.gl_shim` | Steam Frame patches | 2 |
 | [Play services: Android 11 version checks](#frame-gms_platform_version) | `frame.gms_platform_version` | Steam Frame patches |  |
 | [Godot apps: start without a clipboard service](#frame-godot_clipboard) | `frame.godot_clipboard` | Steam Frame patches | 1 |
-| [Hardware video decoding (H.264, HEVC, VP9)](#frame-hw_video_decode) | `frame.hw_video_decode` | Steam Frame patches | 28 |
+| [Hardware video decoding (H.264, HEVC, VP9)](#frame-hw_video_decode) | `frame.hw_video_decode` | Steam Frame patches | 29 |
 | [Language packs from the game's files](#frame-langpacks) | `frame.langpacks` | Steam Frame patches |  |
 | [Launcher category (INFO → LAUNCHER)](#frame-launcher) | `frame.launcher` | Steam Frame patches | default |
 | [GL wrapper: OpenGL ES depth formats (Minecraft)](#frame-ltw_depth) | `frame.ltw_depth` | Steam Frame patches | default |
@@ -94,7 +94,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Unreal: stand-ins for OVRPlugin functions OVRPort lacks](#frame-unreal_ovrp_entrypoints) | `frame.unreal_ovrp_entrypoints` | Steam Frame patches | 3 |
 | [Unreal: Quest controller bindings (RPOC key map)](#frame-unreal_quest_keymap) | `frame.unreal_quest_keymap` | Steam Frame patches | 3 |
 | [Unreal: don't wait for the Quest shader precompile](#frame-unreal_quest_precompile) | `frame.unreal_quest_precompile` | Steam Frame patches | 3 |
-| [Unreal: start without the OBB check](#frame-unreal_skip_obb_check) | `frame.unreal_skip_obb_check` | Steam Frame patches | 8 |
+| [Unreal: start without the OBB check](#frame-unreal_skip_obb_check) | `frame.unreal_skip_obb_check` | Steam Frame patches | 9 |
 | [Unreal: skip the OBB delivery check](#frame-unreal_skip_obb_delivery) | `frame.unreal_skip_obb_delivery` | Steam Frame patches | 1 |
 | [Unreal: bypass the stalled loading splash](#frame-unreal_splash_bypass) | `frame.unreal_splash_bypass` | Steam Frame patches | 1 |
 | [Unreal: thumb follows the capacitive touches](#frame-unreal_thumb_touch) | `frame.unreal_thumb_touch` | Steam Frame patches | 7 |
@@ -105,6 +105,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [VrApi → OpenXR bridge](#frame-vrapi_bridge) | `frame.vrapi_bridge` | Steam Frame patches | 4 |
 | [Quiet Meta's VrApi loader (OpenXR games)](#frame-vrapi_stub) | `frame.vrapi_stub` | Steam Frame patches | 2 |
 | [OpenGL ES: shader fixes (Vulkan layer under Zink)](#frame-zink_shader_fix) | `frame.zink_shader_fix` | Steam Frame patches | 2 |
+| [Unique controller action names](#adapter-action_dedup) | `adapter.action_dedup` | Game settings |  |
 | [Pointer start](#adapter-aim_forward) | `adapter.aim_forward` | Game settings |  |
 | [Pointer angle](#adapter-aim_pitch) | `adapter.aim_pitch` | Game settings |  |
 | [Pointer turn](#adapter-aim_yaw) | `adapter.aim_yaw` | Game settings |  |
@@ -679,7 +680,7 @@ Plays the game's videos on the Frame's video hardware, so 4K and 8K video runs s
 - `frame.hw_video_decode` · also for 2D apps
 - **Changes:** Install only: written on the Frame when the game is installed; the APK isn't changed.
 - **Suggested (on):** The game plays video through Android's decoders (MediaCodec, ExoPlayer or VLC): decode it on the Frame's hardware.
-- **Catalog games (28):** 4XVR Video Player, AugmentedEmpire, Batman: Arkham Shadow, Battlemarked, Breathedge VR, Dance Central, Exploding Kittens VR, Eye of the Temple and 20 more.
+- **Catalog games (29):** 4XVR Video Player, AugmentedEmpire, Batman: Arkham Shadow, Battlemarked, Breathedge VR, Dance Central, Exploding Kittens VR, Eye of the Temple and 21 more.
 - **Source:** [patches/frame/hw_video_decode.py](../src/frameport/patches/frame/hw_video_decode.py)
 
 > Decodes the game's videos on the Frame's hardware video decoder instead of Android's software decoders, which stutter or fall behind with 4K/8K video (for example video players, Batman: Arkham Shadow's cutscenes). Adds FramePort's codec plugin (OMX.frameport.avc/hevc/vp9.decoder) to this game's container only; the APK isn't changed. When the hardware is busy (for example Steam's own hardware video decoding is on) the video is decoded in software as before.
@@ -1153,7 +1154,7 @@ Starts Unreal games without re-checking their data file (they'd seem to hang on 
 - `frame.unreal_skip_obb_check` · also for 2D apps
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** Unreal checks the OBB's contents before starting (bVerifyOBBOnStartUp); on the Frame a failed or slow check can't be seen and the game seems to hang.
-- **Catalog games (8):** Dance Central, Kill It With Fire VR, Lost Recipes, MacacoVR, Maestro, Puzzling Places, Ragnarock, The 7th Guest VR.
+- **Catalog games (9):** Dance Central, Kill It With Fire VR, Lost Recipes, MacacoVR, Maestro, Puzzling Places, Ragnarock, Scared By Squares and 1 more.
 - **Suggested by launch-test signatures:**
   - `unreal-obb-check-stuck` (fatal): The game stays on Unreal's OBB check screen (DownloaderActivity), which the Frame doesn't show, and never starts VR (for example Contractors, GitHub #159).
 - **Source:** [patches/frame/unreal_obb_check.py](../src/frameport/patches/frame/unreal_obb_check.py)
@@ -1301,6 +1302,20 @@ Repairs shaders that hang the graphics chip at certain effects, from the game's 
 ## <a id="group-adapter"></a>Game settings
 
 Settings of FrameBridge, FramePort's OpenXR layer inside every converted Quest game. Most can be changed on the Frame later without a rebuild (game page → Game settings).
+
+### <a id="adapter-action_dedup"></a>Unique controller action names
+
+Stops games from dropping back to the home environment at start because two of their controller actions share a name (for example Scared By Squares). Leave it on.
+
+- `adapter.action_dedup`
+- **Changes:** Game setting: stored in the build and on the Frame (settings.conf); can be changed without a rebuild.
+- **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
+- **Options:**
+  - Value: int, default `1`.
+  - Game settings → Troubleshooting → "Unique controller action names" (advanced).
+- **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
+
+> Gives a controller action whose name already exists in its action set a free name ("turn" -&gt; "turn_2"). The Frame's runtime accepts duplicate names but then can't load the game's input manifest and treats the game as closed: black, then the home environment while the game keeps running with sound (for example Scared By Squares, whose Unreal project has an action and an axis both called Turn; GitHub #323).
 
 ### <a id="adapter-aim_forward"></a>Pointer start
 
