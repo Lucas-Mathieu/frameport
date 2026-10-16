@@ -59,6 +59,11 @@ SETTINGS = [
      "Drop layers whose swapchain failed or whose extension isn't enabled."),
     ("passthrough_emul", "int", 1, "Emulate passthrough",
      "XR_FB_passthrough via ALPHA_BLEND (Frame grayscale cameras)."),
+    ("alpha_blend_emul", "int", 1, "Emulate layer alpha blending",
+     "With emulated passthrough, honours the eye layer's XR_FB_composition_layer_alpha_blend, which the Frame's "
+     "runtime ignores: Unreal games keep inverted alpha and ask for inverse blending, so the room showed where the "
+     "game drew and black where it should show the room (for example Star Wars: Beyond Victory). The alpha is "
+     "inverted in the game's image before it is composited (Vulkan)."),
     ("flip_emul", "int", 1, "Emulate flipped quads",
      "Blit quads flagged XrCompositionLayerImageLayoutFB VERTICAL_FLIP upside down (Vulkan). Fixes UI panels and "
      "text that show upside down (for example Assassin's Creed Nexus)."),
@@ -343,6 +348,10 @@ UI: dict[str, dict] = {
     "passthrough_emul": dict(group="room", level="common", label="See your room",
                              help="Shows the Frame's cameras where the game expects passthrough.",
                              control=("switch",)),
+    "alpha_blend_emul": dict(group="room", level="advanced", label="Fix inside-out mixed reality",
+                             depends="passthrough_emul",
+                             help="For games that show your room on their objects and darkness where your room "
+                                  "should be.", control=("switch",)),
     "scene_emul": dict(group="room", level="common", label="Pretend room layout",
                        help="Mixed-reality games that build their level from your room get a simple room with walls.",
                        control=("switch",)),
@@ -532,6 +541,8 @@ class AdapterSetting(Patch):
             "scene_width": lambda a: ap.uses_scene(a) or a.extra.get("mr_only"),
             "scene_depth": lambda a: ap.uses_scene(a) or a.extra.get("mr_only"),
             "passthrough_emul": lambda a: (a.extra.get("mr_only")
+                                           or "com.oculus.feature.PASSTHROUGH" in (a.extra.get("features") or {})),
+            "alpha_blend_emul": lambda a: (a.extra.get("mr_only")
                                            or "com.oculus.feature.PASSTHROUGH" in (a.extra.get("features") or {})),
             "flip_emul": ap.is_vulkan,
             "flip_quads": ap.is_vulkan,

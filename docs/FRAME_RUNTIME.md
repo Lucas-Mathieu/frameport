@@ -106,6 +106,8 @@
 - Swapchain formats: GLES `GL_SRGB8_ALPHA8` (35907) / `GL_SRGB8` (35905) only, samples = 1. Vulkan: 43 (R8G8B8A8_SRGB)
   and 50, not 37/44 (UNORM).
 - Environment blend: ALPHA_BLEND available (grayscale passthrough cameras).
+- XR_FB_composition_layer_alpha_blend and XR_KHR_composition_layer_color_scale_bias are not the runtime's (OVRPort's
+  dispatcher lists alpha_blend): their structs are ignored, so FrameBridge emulates inverse alpha (`alpha_blend_emul`).
 - Reference spaces: STAGE bounds are reported as 1×1 m.
 - Display 72 Hz by default in tests. Head pose is only tracked while the headset is worn; otherwise flags 0x3 and
   the session stays below FOCUSED.

@@ -74,6 +74,7 @@ typedef struct {
     // submitted again without a new acquire: flipping them again would undo it)
     struct { XrRect2Di rect; uint32_t layer; } flipped[MAX_IMAGES][4];
     uint32_t flipped_count[MAX_IMAGES];
+    uint32_t alpha_inverted[MAX_IMAGES];  // alpha_blend_vk.c: array layers whose alpha was inverted since the acquire
     int dumped;  // flip_dump saved this swapchain's quad
     int logged;  // its first in-place flip was logged
 } tracked_swapchain;
@@ -136,6 +137,7 @@ static void flip_on_acquire(XrSwapchain handle, uint32_t index) {
     if (t) {
         t->last_acquired = index;
         if (index < MAX_IMAGES) t->flipped_count[index] = 0;  // new content: upside down again
+        if (index < MAX_IMAGES) t->alpha_inverted[index] = 0;
         if(t->acquired_count<MAX_IMAGES)t->acquired[t->acquired_count++]=index;
     }
     pthread_mutex_unlock(&flip_lock);

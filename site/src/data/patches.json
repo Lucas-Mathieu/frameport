@@ -14,6 +14,11 @@
   "title": "Pointer turn",
   "group": "Game settings"
  },
+ "adapter.alpha_blend_emul": {
+  "anchor": "adapter-alpha_blend_emul",
+  "title": "Fix inside-out mixed reality",
+  "group": "Game settings"
+ },
  "adapter.controller_fix": {
   "anchor": "adapter-controller_fix",
   "title": "Use controllers",

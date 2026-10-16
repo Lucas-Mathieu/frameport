@@ -136,18 +136,20 @@ def build_adapter(tc: Path):
     src = HERE / "adapter"
     shader_tools = tc.parents[3] / "shader-tools" / tc.name
     suffix = ".exe" if os.name == "nt" else ""
-    sections = ["// Generated from surface_composite.vert and surface_composite.frag.\n"]
-    for stage in ("vert", "frag"):
-        binary = CACHE / f"surface_composite_{stage}.spv"
-        run([shader_tools / ("glslc" + suffix), "--target-env=vulkan1.0", "-O",
-             src / f"surface_composite.{stage}", "-o", binary])
-        run([shader_tools / ("spirv-val" + suffix), "--target-env", "vulkan1.0", binary])
-        data = binary.read_bytes()
-        words = struct.unpack(f"<{len(data)//4}I", data)
-        sections.append(f"static const uint32_t surface_composite_{stage}_spv[] = {{\n" +
-                        "\n".join("    " + ",".join(f"0x{v:08x}" for v in words[i:i+8]) + ","
-                                  for i in range(0, len(words), 8)) + "\n};\n")
-    (src / "surface_composite_spv.h").write_text("".join(sections), encoding="utf-8")
+    for header, shaders in (("surface_composite", ("vert", "frag")), ("alpha_blend", ("vert", "frag"))):
+        names = " and ".join(f"{header}.{stage}" for stage in shaders)
+        sections = [f"// Generated from {names}.\n"]
+        for stage in shaders:
+            binary = CACHE / f"{header}_{stage}.spv"
+            run([shader_tools / ("glslc" + suffix), "--target-env=vulkan1.0", "-O",
+                 src / f"{header}.{stage}", "-o", binary])
+            run([shader_tools / ("spirv-val" + suffix), "--target-env", "vulkan1.0", binary])
+            data = binary.read_bytes()
+            words = struct.unpack(f"<{len(data)//4}I", data)
+            sections.append(f"static const uint32_t {header}_{stage}_spv[] = {{\n" +
+                            "\n".join("    " + ",".join(f"0x{v:08x}" for v in words[i:i+8]) + ","
+                                      for i in range(0, len(words), 8)) + "\n};\n")
+        (src / f"{header}_spv.h").write_text("".join(sections), encoding="utf-8")
     run([sys.executable, src / "gen_forwarders.py"])
     inc = openxr_include("adapter")
     common = ["-shared", "-fPIC", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-gnu-conditional-omitted-operand",

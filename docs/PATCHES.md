@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 174 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 175 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -12,7 +12,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 
 - [Patches from OVRPort](#group-overport) (25)
 - [Steam Frame patches](#group-frame) (60)
-- [Game settings](#group-adapter) (68)
+- [Game settings](#group-adapter) (69)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
 
@@ -108,6 +108,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Pointer start](#adapter-aim_forward) | `adapter.aim_forward` | Game settings |  |
 | [Pointer angle](#adapter-aim_pitch) | `adapter.aim_pitch` | Game settings |  |
 | [Pointer turn](#adapter-aim_yaw) | `adapter.aim_yaw` | Game settings |  |
+| [Fix inside-out mixed reality](#adapter-alpha_blend_emul) | `adapter.alpha_blend_emul` | Game settings |  |
 | [Use controllers](#adapter-controller_fix) | `adapter.controller_fix` | Game settings | 1 |
 | [Show Steam Frame controllers](#adapter-controller_models) | `adapter.controller_models` | Game settings | 6 |
 | [Stand in for cube layers](#adapter-cube_standin) | `adapter.cube_standin` | Game settings |  |
@@ -1342,6 +1343,20 @@ Turns the pointer left or right.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > Turns the controllers' pointing ray left (+) or right (−).
+
+### <a id="adapter-alpha_blend_emul"></a>Fix inside-out mixed reality
+
+For games that show your room on their objects and darkness where your room should be.
+
+- `adapter.alpha_blend_emul`
+- **Changes:** Game setting: stored in the build and on the Frame (settings.conf); can be changed without a rebuild.
+- **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
+- **Options:**
+  - Value: int, default `1`.
+  - Game settings → Mixed reality → "Fix inside-out mixed reality" (advanced); shown while `adapter.passthrough_emul` is on.
+- **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
+
+> With emulated passthrough, honours the eye layer's XR_FB_composition_layer_alpha_blend, which the Frame's runtime ignores: Unreal games keep inverted alpha and ask for inverse blending, so the room showed where the game drew and black where it should show the room (for example Star Wars: Beyond Victory). The alpha is inverted in the game's image before it is composited (Vulkan).
 
 ### <a id="adapter-controller_fix"></a>Use controllers
 

@@ -127,6 +127,7 @@ static int layer_fix = 1;
 static int mutable_fix = 0;
 static int swap_eyes = 0;
 static int passthrough_emul = 1;
+static int alpha_blend_emul = 1;  // alpha_blend_vk.c: honour XR_FB_composition_layer_alpha_blend with passthrough
 static int respace_kick = 0;
 static int strip_depth = 0;
 static int flip_quads = 0;
@@ -192,6 +193,7 @@ static void read_settings(const char *path) {
         if (sscanf(line, "mutable_fix=%f", &value) == 1) mutable_fix = value != 0;
         if (sscanf(line, "swap_eyes=%f", &value) == 1) swap_eyes = value != 0;
         if (sscanf(line, "passthrough_emul=%f", &value) == 1) passthrough_emul = value != 0;
+        if (sscanf(line, "alpha_blend_emul=%f", &value) == 1) alpha_blend_emul = value != 0;
         if (sscanf(line, "respace_kick=%f", &value) == 1) respace_kick = value != 0;
         if (sscanf(line, "strip_depth=%f", &value) == 1) strip_depth = value != 0;
         if (sscanf(line, "flip_quads=%f", &value) == 1) flip_quads = value != 0;
@@ -571,6 +573,7 @@ static void flip_on_create_swapchain(XrSwapchain handle, const XrSwapchainCreate
 static int flip_wants_transfer(const XrSwapchainCreateInfo *info);
 static void clear_gl_errors(const char *where);
 static void flip_on_destroy(XrSwapchain handle);
+static void ab_on_destroy(XrSwapchain handle);
 static void emul_on_create_swapchain(XrSwapchain handle, const XrSwapchainCreateInfo *info);
 static void emul_on_destroy_swapchain(XrSwapchain handle);
 static int emul_virtual_create(XrSession session, const XrSwapchainCreateInfo *info, XrSwapchain *out);
@@ -712,6 +715,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySwapchain(XrSwapchain swapchain) {
     surf_scene_destroy(swapchain);
     forget_swapchain(swapchain);
     surf_on_destroy(swapchain);
+    ab_on_destroy(swapchain);
     flip_on_destroy(swapchain);
     emul_on_destroy_swapchain(swapchain);
     snap_on_destroy(swapchain);
@@ -893,6 +897,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetSystemProperties(XrInstance instance, XrSyst
 }
 
 #include "flip_vk.c"
+#include "alpha_blend_vk.c"
 #include "pose_time.c"
 
 // XR_KHR_convert_timespec_time for runtimes that lack it (Frame): XrTime is derived from the monotonic clock
@@ -1639,8 +1644,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
                                          q->radius, q->subImage.imageRect.offset.x, q->subImage.imageRect.offset.y,
                                          q->subImage.imageRect.extent.width, q->subImage.imageRect.extent.height);
             }
-            for (const XrBaseInStructure *n = (const XrBaseInStructure *)l->next; n && used < sizeof(now) - 32; n = n->next)
+            for (const XrBaseInStructure *n = (const XrBaseInStructure *)l->next; n && used < sizeof(now) - 48; n = n->next) {
                 used += (size_t)snprintf(now + used, sizeof(now) - used, " n=%d", n->type);
+                if (n->type == XR_TYPE_COMPOSITION_LAYER_ALPHA_BLEND_FB) {  // src/dst factors: colour, then alpha
+                    const XrCompositionLayerAlphaBlendFB *ab = (const XrCompositionLayerAlphaBlendFB *)n;
+                    used += (size_t)snprintf(now + used, sizeof(now) - used, "(%d,%d/%d,%d)", ab->srcFactorColor,
+                                             ab->dstFactorColor, ab->srcFactorAlpha, ab->dstFactorAlpha);
+                }
+            }
             used += (size_t)snprintf(now + used, sizeof(now) - used, "]");
         }
         if (strcmp(now, last)) {
@@ -1768,6 +1779,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
             projections[count] = *(const XrCompositionLayerProjection *)layer;
             projections[count].layerFlags |= XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT |
                                              XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
+            // the game's XR_FB_composition_layer_alpha_blend factors (ignored by the Frame's runtime), e.g. Unreal's
+            // inverted scene alpha: the camera showed where the game drew and black where it didn't (GitHub #329)
+            if (alpha_blend_emul && alpha_blend_apply(&projections[count]) == 2)
+                projections[count].layerFlags &= ~(XrCompositionLayerFlags)XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
             layer = (const XrCompositionLayerBaseHeader *)&projections[count];
         }
         if (strip_depth && layer->type == XR_TYPE_COMPOSITION_LAYER_PROJECTION &&

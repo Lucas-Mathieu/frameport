@@ -539,6 +539,9 @@ def test_game_settings_dialog_shows_relevant_settings_and_saves_only_changes():
     vulkan = _analysis()
     gles = _analysis(graphics="GLES (declared in manifest)")
     assert ad.relevant(vulkan, "flip_emul", 1) and not ad.relevant(gles, "flip_emul", 1)  # Vulkan-only
+    # inverse alpha blending only matters where passthrough can be shown
+    mr = _analysis(extra={"size": 1, "features": {"com.oculus.feature.PASSTHROUGH": True}})
+    assert ad.relevant(mr, "alpha_blend_emul", 1) and not ad.relevant(vulkan, "alpha_blend_emul", 1)
     assert ad.relevant(gles, "equirect_emul", 0) and not ad.relevant(vulkan, "equirect_emul", 0)
     assert ad.relevant(vulkan, "equirect_emul", 1)  # changed from its default: always shown
     r = Recipe("com.x", patches={"adapter.scale": {"value": 1.5}, "frame.launcher": {}})
