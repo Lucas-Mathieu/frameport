@@ -1,0 +1,21 @@
+package: com.crytek.climb
+title: The Climb
+status: works
+tested_version: '666.0'
+engine: CryEngine
+xr: VrApi
+frame:
+- frame.vrapi_bridge
+device_files:
+  user.cfg: 'r_vr_foveated = 0
+
+    '
+verified:
+  date: '2026-10-16'
+  known_good_sha256: 3899967dd6d3ee0ce3409e94d543405c779e9c282ead29536abe93b3531ca285
+  app: 1.2.0
+  overport_cli: 1.2.5
+  frame_build: '20261015.6141207'
+  agent: 91
+  issue: 341
+source_hint: TheClimb

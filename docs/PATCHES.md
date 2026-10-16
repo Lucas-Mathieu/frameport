@@ -97,7 +97,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Vermillion: paint canvases in the scene](#frame-vermillion_scene_canvas) | `frame.vermillion_scene_canvas` | Steam Frame patches | 1 |
 | [Vivox voice chat: skip Android 12 audio routing](#frame-vivox_audio_route) | `frame.vivox_audio_route` | Steam Frame patches | 2 |
 | [Vulkan: drop invalid render-pass pointers](#frame-vk_sanitize) | `frame.vk_sanitize` | Steam Frame patches | default · 1 |
-| [VrApi → OpenXR bridge](#frame-vrapi_bridge) | `frame.vrapi_bridge` | Steam Frame patches | 3 |
+| [VrApi → OpenXR bridge](#frame-vrapi_bridge) | `frame.vrapi_bridge` | Steam Frame patches | 4 |
 | [Quiet Meta's VrApi loader (OpenXR games)](#frame-vrapi_stub) | `frame.vrapi_stub` | Steam Frame patches | 2 |
 | [OpenGL ES: shader fixes (Vulkan layer under Zink)](#frame-zink_shader_fix) | `frame.zink_shader_fix` | Steam Frame patches | 1 |
 | [Pointer start](#adapter-aim_forward) | `adapter.aim_forward` | Game settings |  |
@@ -170,7 +170,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [OpenGL ES shader fixes](#adapter-zink_shader_fix) | `adapter.zink_shader_fix` | Game settings | 1 |
 | [Keep the game's saved resolution in step](#device-config_sync) | `device.config_sync` | Files and settings on the Frame | 1 |
 | [Show as VR or as a flat window](#device-display_mode) | `device.display_mode` | Files and settings on the Frame |  |
-| [Settings files for the game](#device-files) | `device.files` | Files and settings on the Frame | 2 |
+| [Settings files for the game](#device-files) | `device.files` | Files and settings on the Frame | 3 |
 | [Foveated rendering (Valve)](#device-foveation) | `device.foveation` | Files and settings on the Frame | 3 |
 | [Hide Android's navigation bar](#device-hide_navbar) | `device.hide_navbar` | Files and settings on the Frame |  |
 | [Extra Lepton settings](#device-lepton_env) | `device.lepton_env` | Files and settings on the Frame | 3 |
@@ -1189,7 +1189,7 @@ Lets games built on Meta's oldest VR interface run on the Frame.
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** The engine calls libvrapi.so directly; OVRPort can't translate it.
 - **Conflicts with:** [`frame.vrapi_stub`](#frame-vrapi_stub)
-- **Catalog games (3):** BlazeRush, Path of the Warrior, The Climb 2.
+- **Catalog games (4):** BlazeRush, Path of the Warrior, The Climb, The Climb 2.
 - **Suggested by launch-test signatures:**
   - `direct-vrapi` (warning): The game uses Meta's VrApi directly and needs the VrApi bridge.
   - `vrapi-frame-rejected` (fatal): The VrApi bridge rejected the game's frame options, so no picture reaches the headset even though frame pacing can appear in the log.
@@ -2272,7 +2272,7 @@ Puts settings files next to the game on the Frame, for example to turn off an un
 - **Changes:** Install only: written on the Frame when the game is installed; the APK isn't changed.
 - **Suggested (on):** CryEngine: variable-rate shading isn't supported on the Frame, so user.cfg turns it off (… = 0; The Climb / The Climb 2).
 - **Options:** `files`: text, default none — path relative to files/ -&gt; content
-- **Catalog games (2):** SUPERHOT VR, The Climb 2.
+- **Catalog games (3):** SUPERHOT VR, The Climb, The Climb 2.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > Writes config files into the game's Android/data/&lt;package&gt;/files/ on the Frame, to turn off engine features the Frame doesn't support (for example a CryEngine user.cfg with r_variable_rate_shading = 0, as The Climb 2 needs).

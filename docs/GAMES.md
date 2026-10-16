@@ -134,6 +134,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Tea For God | Quest | ✅ Works |  |
 | TetrisEffect | Quest | ✅ Works |  |
 | The Boys VR | Quest | ✅ Works |  |
+| The Climb | Quest | ✅ Works |  |
 | The Climb 2 | Quest | ✅ Works |  |
 | The Last Clockwinder | Quest | ✅ Works |  |
 | The Room VR | Quest | ✅ Works |  |
