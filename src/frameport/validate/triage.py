@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date
 
 import yaml
 
@@ -209,8 +210,17 @@ def _forgive_headless_end(res: TriageResult, lines: list[str], markers: list[dic
 
 
 def _secs(line: str) -> float | None:
+    """A logcat line's time in seconds, its date included (as a day of a leap year): logcat replays old kernel
+    lines dated days before the game's (BattleTalent, GitHub #293), so the time of day alone can't order them."""
     m = LOGCAT_TIME.match(line)
-    return int(m[1]) * 3600 + int(m[2]) * 60 + int(m[3]) + int(m[4]) / 1000 if m else None
+    if not m:
+        return None
+    month, day = int(m[1]), int(m[2])
+    try:
+        ordinal = date(2000, month, day).timetuple().tm_yday
+    except ValueError:
+        return None
+    return (ordinal * 24 + int(m[3])) * 3600 + int(m[4]) * 60 + int(m[5]) + int(m[6]) / 1000
 
 
 MISSING_OBB = ("The game keeps its content in a data file (.obb) and none was installed: FramePort found no .obb "
@@ -229,22 +239,23 @@ def add_missing_obb(res: TriageResult) -> TriageResult:
     return res
 
 
-LOGCAT_TIME = re.compile(r"^\d\d-\d\d (\d\d):(\d\d):(\d\d)\.(\d{3})")
+LOGCAT_TIME = re.compile(r"^(\d\d)-(\d\d) (\d\d):(\d\d):(\d\d)\.(\d{3})")
+
+
+_YEAR = 366 * 86400
+_HALF_YEAR = _YEAR / 2
 
 
 def frames_stopped(lines: list[str], gap: float = 20.0) -> float | None:
     """Seconds since the last pacing summary (or initial projection submission if none), when over `gap`.
     Twenty seconds allows several of FrameBridge's 5 s pacing windows before suspecting a stalled frame loop."""
-    def secs(line):
-        m = LOGCAT_TIME.match(line)
-        return int(m[1]) * 3600 + int(m[2]) * 60 + int(m[3]) + int(m[4]) / 1000 if m else None
     last_projection = last_pacing = last = None
     for ln in lines:  # logcat lines aren't strictly in time order: the latest time counts, not the last line
-        t = secs(ln)
+        t = _secs(ln)
         if t is None:
             continue
-        if last is not None and t < last - 43200:  # past midnight
-            t += 86400
+        if last is not None and t < last - _HALF_YEAR:  # past New Year (12-31 -> 01-01)
+            t += _YEAR
         last = t if last is None else max(last, t)
         if re.search(r"FrameBridge\s*: pacing:", ln):
             last_pacing = t if last_pacing is None else max(last_pacing, t)

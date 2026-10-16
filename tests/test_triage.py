@@ -206,6 +206,28 @@ def test_frames_stopped_and_unity_render_crash():
     assert triage.frames_stopped(["10-05 23:16:30.000 x FrameBridge: pacing: 72 fps", "10-05 23:16:40.000 y"]) is None
 
 
+def test_frames_stopped_orders_replayed_old_lines_by_date():
+    """BattleTalent (GitHub #293): logcat replays kernel lines dated days before the game's ahead of them; by time
+    of day alone they looked like "past midnight" and a healthy run failed with frames-stopped (83261 s)."""
+    from frameport.validate import triage
+
+    log = ("10-16 00:16:59.468    18    18 I hwservicemanager: hwservicemanager is ready now.\n"
+           "10-14 00:40:12.674    16    16 W auditd  : type=2000 audit(0.0:1): state=initialized\n"
+           "10-14 18:25:54.684     0     0 I binder  : 418000 RLIMIT_NICE not set\n"
+           "10-14 23:59:59.000     0     0 I binder  : 419099 RLIMIT_NICE not set\n"
+           "10-15 02:10:00.000     0     0 I binder  : 419099 RLIMIT_NICE not set\n"
+           "10-15 23:50:00.000     0     0 I binder  : 419099 RLIMIT_NICE not set\n"
+           "10-16 00:17:33.725  1193  1274 I FrameBridge: pacing: 70.2 fps, displayTime vs predicted: avg 15 ms\n"
+           "10-16 00:18:08.734  1193  1274 I FrameBridge: pacing: 72.2 fps, displayTime vs predicted: avg 13 ms\n"
+           "10-16 00:18:13.837  1193  1274 I FrameBridge: layer_debug: frames: 361 xrBeginFrame\n")
+    assert triage.frames_stopped(log.splitlines()) is None
+    assert "frames-stopped" not in [f.id for f in triage.triage(log, "RUNNING").findings]
+    # a real stop still counts, also across midnight and New Year
+    assert triage.frames_stopped(["10-15 23:59:50.000 x FrameBridge: pacing: 72 fps", "10-16 00:00:30.000 y"]) == 40
+    assert triage.frames_stopped(["12-31 23:59:50.000 x FrameBridge: pacing: 72 fps", "01-01 00:00:30.000 y"]) == 40
+    assert triage.frames_stopped(["12-31 23:59:50.000 x FrameBridge: pacing: 72 fps", "01-01 00:00:05.000 y"]) is None
+
+
 def test_vrapi_called_before_init_suggests_the_stub_not_the_bridge():
     log = ("10-06 02:04:56.040  1154  1180 I OVRPlugin: OVRPlugin 1.89.1 initialized\n"
            "10-06 02:04:56.324  1154  1180 F VrApiLoader: vrapi_SetPropertyInt was called before vrapi_Initialize()!\n")

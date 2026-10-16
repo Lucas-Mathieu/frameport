@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -67,19 +68,22 @@ def find_methods(lib: bytes, metadata: bytes, unity_version: str, wanted: dict[s
     cache_file = _cache_file(lib, metadata)
     from ..tools import cpp2il as tool
 
-    nightly = False  # Cpp2IL's development build: for metadata newer than its release reads (Unity 6.5+)
+    # a caller's own Cpp2IL or the user's FRAMEPORT_CPP2IL override: never swapped for another build
+    explicit = cpp2il is not None or bool(os.environ.get("FRAMEPORT_CPP2IL"))
+    nightly = False  # Cpp2IL's development build: reads metadata (Unity 6.5+) and games the release crashes on
     try:
         cached = json.loads(cache_file.read_text())
-        if cached.get("error"):  # Cpp2IL can't read this build (e.g. an old Unity): don't run it again per patch
-            if cpp2il is not None or cached.get("nightly") or not tool.unsupported_metadata(cached["error"]):
+        if cached.get("error"):  # Cpp2IL couldn't read this build: don't run it again per patch
+            if explicit or cached.get("nightly"):
                 raise RuntimeError(cached["error"])
             nightly = True  # only the release couldn't: the development build gets one try
+        elif _poisoned(cached, wanted):
+            pass  # an older FramePort took a Cpp2IL crash for "no such classes": run it again
         elif all(cls in cached.get("classes", {}) or cls in cached.get("missing", []) for cls in wanted):
             return {cls: {m: tuple(v) for m, v in cached["classes"][cls].items() if m in names}
                     for cls, names in wanted.items() if cls in cached.get("classes", {})}
     except (OSError, ValueError, KeyError):
         pass
-    explicit = cpp2il is not None
     exe = cpp2il or (tool.ensure_nightly() if nightly else tool.ensure())
     while True:
         try:
@@ -87,7 +91,7 @@ def find_methods(lib: bytes, metadata: bytes, unity_version: str, wanted: dict[s
             break
         except _Unreadable as exc:
             error = "Cpp2IL couldn't read this game's code: " + str(exc)
-            if not explicit and not nightly and tool.unsupported_metadata(error):
+            if not explicit and not nightly:  # e.g. BattleTalent (Unity 2021.3): the release crashes, nightly reads it
                 nightly, exe = True, tool.ensure_nightly()
                 continue
             cache_file.parent.mkdir(parents=True, exist_ok=True)
@@ -99,8 +103,14 @@ def find_methods(lib: bytes, metadata: bytes, unity_version: str, wanted: dict[s
     return out
 
 
+def _poisoned(cached: dict, wanted: dict) -> bool:
+    """A cache entry written when Cpp2IL crashed after making its folders (GitHub #293): no class found at all and
+    every wanted one recorded missing. A real game always has some of them (UnityEngine's QualitySettings)."""
+    return not cached.get("classes") and bool(wanted) and all(c in cached.get("missing", []) for c in wanted)
+
+
 class _Unreadable(Exception):
-    """Cpp2IL wrote no output; the message is its last exception line."""
+    """Cpp2IL failed or wrote no class files; the message is its last exception line."""
 
 
 def _run(cpp2il: Path, lib: bytes, metadata: bytes, unity_version: str, wanted: dict[str, list[str]],
@@ -116,8 +126,10 @@ def _run(cpp2il: Path, lib: bytes, metadata: bytes, unity_version: str, wanted: 
                                "--output-to", str(t / "out")], capture_output=True, text=True, errors="replace",
                               timeout=timeout, cwd=tmp)
         root = t / "out" / "DiffableCs"
-        if not root.is_dir():
-            raise _Unreadable(_last_error(proc.stdout + proc.stderr))
+        # a crash after Cpp2IL made the folder tree (exit 134, no .cs files: GitHub #293) isn't "no such classes"
+        if proc.returncode != 0 or not root.is_dir() or next(root.rglob("*.cs"), None) is None:
+            error = _last_error(proc.stdout + proc.stderr)
+            raise _Unreadable(error if proc.returncode == 0 else f"{error} (exit code {proc.returncode})")
         out, missing = {}, []
         for cls, names in wanted.items():
             f = root / cls

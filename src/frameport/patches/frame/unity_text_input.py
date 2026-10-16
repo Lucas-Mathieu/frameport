@@ -150,20 +150,25 @@ class Il2cppReturnPatch(Patch):
                     again, more = patch_field_loads(patched or lib, method, offset[0], value, name)
                     patched, notes = again or patched, notes + more
         except Exception as exc:  # noqa: BLE001 - optional fix: the game still builds, unchanged
-            ctx.reporter.check(self.check_name, False, f"not fixed: {exc}")
-            return False
+            # e.g. "Cpp2IL couldn't read this game's code: System.IndexOutOfRangeException: … (exit code 134)"
+            return self._not_applied(ctx, f"{exc}; built without this fix")
         if not notes:  # turned on, but none of its methods is in this game: say so instead of a silent no-op
-            wanted = [f"{c.rsplit('/', 1)[-1][:-3]}.{m}" for c, ms in {**self.targets, **self.field_loads}.items()
-                      for m in ms]
-            detail = (f"not applied ({self.id}): code not found in this game (Cpp2IL found none of "
-                      f"{', '.join(wanted)}); built without this fix")
-            ctx.reporter.log(f"{self.check_name}: {detail}")
-            ctx.checks.append((self.check_name, None, detail))
-            return False
+            wanted = dict.fromkeys(f"{c.rsplit('/', 1)[-1][:-3]}.{m}"
+                                   for c, ms in {**self.targets, **self.field_loads}.items() for m in ms)
+            return self._not_applied(ctx, f"code not found in this game (Cpp2IL found none of {', '.join(wanted)}); "
+                                          "built without this fix")
         ctx.notes.extend(notes)
         if patched is not None:
             ws.put(lib_name, patched)
         return patched is not None
+
+
+    def _not_applied(self, ctx: ApkContext, why: str) -> bool:
+        """A WARN build check (the build still succeeds) naming the patch, and the same line in the log."""
+        detail = f"not applied ({self.id}): {why}"
+        ctx.reporter.log(f"{self.check_name}: {detail}")
+        ctx.checks.append((self.check_name, None, detail))
+        return False
 
 
 class UnityTextInput(Il2cppReturnPatch):

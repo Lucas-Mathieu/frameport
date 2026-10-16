@@ -454,7 +454,7 @@ def test_il2cpp_patch_with_no_code_found_warns_instead_of_a_silent_skip(monkeypa
     (name, ok, detail), = ctx.checks
     assert name == patch.check_name and ok is None
     assert "frame.unity_runtime_msaa_off" in detail and "code not found" in detail
-    assert "get_recommendedMSAALevel" in detail
+    assert "get_recommendedMSAALevel" in detail and detail.count("OVRDisplay.get_recommendedMSAALevel") == 1
     assert any("code not found" in e.message for e in events if e.kind == "log")
 
     # the build turns it into a build check: a WARN, so BuildResult.ok stays true
@@ -463,3 +463,22 @@ def test_il2cpp_patch_with_no_code_found_warns_instead_of_a_silent_skip(monkeypa
     recipe = type("Recipe", (), {"patches": {"frame.unity_runtime_msaa_off": {}}})()
     applied, checks, _ = build.apply_frame_fixes(Path("in.apk"), Path("out.apk"), game, recipe, Reporter())
     assert applied == [] and checks == [{"name": patch.check_name, "ok": None, "detail": detail}]
+
+
+def test_il2cpp_patch_says_when_cpp2il_couldnt_read_the_game(monkeypatch):
+    """Both Cpp2IL builds failed: the WARN names Cpp2IL's error, not "code not found" (GitHub #293)."""
+    from frameport.core.events import Reporter
+
+    base.load_all()
+    error = ("Cpp2IL couldn't read this game's code: System.IndexOutOfRangeException: Index was outside the bounds "
+             "of the array. (exit code 134)")
+
+    def fail(*a, **kw):
+        raise RuntimeError(error)
+
+    monkeypatch.setattr(il2cpp, "find_methods", fail)
+    ctx = base.ApkContext(_FakeWs(_lib()), _analysis(extra={"unity_version": "2021.3.45f2"}), {}, Reporter(), {})
+    patch = base.get("frame.unity_multipass")
+    assert patch.apply(ctx) is False
+    (name, ok, detail), = ctx.checks
+    assert ok is None and "frame.unity_multipass" in detail and error in detail and "code not found" not in detail

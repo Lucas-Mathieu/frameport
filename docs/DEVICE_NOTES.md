@@ -495,7 +495,7 @@ writable). `frame.eos_keychain_loop` (opt-in, triage `eos-keychain-loop`) return
 0.3570 (Unity 6.5, Firebase, Gecko) ran out of bionic's 128 pthread keys → `frame.unity_tls_key_pool` (Klownicle's
 approach, #198: libunity's 4 key imports renamed `fp_tkey_*` via `elf.rename_imports`, `libfp_tkeys.so` pools
 destructor-less keys behind one real key); device: past Firestore, 72 fps. Cpp2IL releases can't read metadata v107
-(Unity 6.5) → `tools/cpp2il.py` falls back to the development CI build (nightly.link) on that error. Vermillion's canvas
+(Unity 6.5) → `tools/cpp2il.py` falls back to the development CI build (nightly.link) on that error, and since #293 on any release failure (BattleTalent, Unity 2021.3: the release dies exit 134 in CsFileUtils.GetTypeName after making the folders, no .cs; `il2cpp._run` = non-zero exit or no .cs is unreadable; never with FRAMEPORT_CPP2IL; caches holding "every class missing" are re-run). Vermillion's canvas
 is an OVROverlay quad (drawn above the hand) → `frame.vermillion_scene_canvas` (PaintableMesh getters → false;
 installed build checked, 72 fps headless; headset not yet). Linux apps: `desktop_icon` switch, a deleted desktop copy
 stays deleted (#212). Findings: OLAR (#201) RHIThread null deref in libUnreal (`ldr x8,[x19,#792]`, x19=0) not fixed by
