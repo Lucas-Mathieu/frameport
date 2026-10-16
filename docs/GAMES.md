@@ -143,6 +143,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Vader Immortal: Episode III | Quest | ✅ Works |  |
 | Vampire Survivors | Quest | ✅ Works |  |
 | Vendetta Forever | Quest | ✅ Works |  |
+| Vermillion | Quest | ✅ Works |  |
 | VR HOT Quest | Quest | ✅ Works |  |
 | VR4 | Quest | ✅ Works |  |
 | Walkabout Mini Golf | Quest | ✅ Works |  |
@@ -174,7 +175,6 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | The Light Brigade | Quest | ⚠️ Works with issues | Judder in weapons |
 | The Thrill Of The Fight | Quest | ⚠️ Works with issues | Right eye doesn't draw the opponent or the referee. |
 | Time Stall | Quest | ⚠️ Works with issues | Both eyes distort during movement (unresolved). |
-| Vermillion | Quest | ⚠️ Works with issues | Runs. |
 | WiiCompiled VR | Quest | ⚠️ Works with issues | To add a game: in FramePort's Files tab, upload your .wcgame file to this game's storage, folder Android/data/org.wiicompiled.quest/files/WiiCompiledOpenXRVR… |
 | Deadly Delivery | Quest | ❌ Doesn't run | Quits after Meta's entitlement check fails: it needs Meta's online services. |
 | Espire 1: VR Operative (Quest Edition) | Quest | ❌ Doesn't run | Mesa GL driver crash during texture upload. |
