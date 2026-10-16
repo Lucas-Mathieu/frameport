@@ -1,22 +1,24 @@
 package: com.UNIVRS.Freedom
-title: Freedom
-status: issues
-notes: Volume can't be changed in the game.
+title: 'Attack on Titan VR: Unbreakable'
+status: works
+notes: Keep the extra files that come with the APK and OBB next to the OBB (they hold the audio). Cutscenes are
+  detached from the head but still viewable.
 tested_version: 1.0.2950
 engine: Unity
 xr: OpenXR
 frame:
 - frame.unity_text_input
+- frame.asset_files
 device:
 - device.text_input_window
 adapter:
   haptic_fix: 1
 verified:
-  date: '2026-10-10'
-  known_good_sha256: 24662272c4cbe5dc7c4f3c803bdb9dead9661ac3d59bf80cca2e260256acc4bc
-  app: 0.12.0
+  date: '2026-10-16'
+  known_good_sha256: 1b3ced1a24b3b708f66aba6aa879863b667c0e502ef153d8a8cfa03e529d21fd
+  app: 1.2.0
   overport_cli: 1.2.5
-  frame_build: '20261007.6125817'
-  agent: 59
-  issue: 132
-source_hint: AOT VR
+  frame_build: '20261015.6141207'
+  agent: 91
+  issue: 337
+source_hint: Aot

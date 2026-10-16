@@ -47,7 +47,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [VrApi → OpenXR adapter (OVRPort)](#patch_vrapi_openxr) | `patch_vrapi_openxr` | Patches from OVRPort |  |
 | [32-bit ARM bridge (Gear VR / Go games)](#frame-a32_bridge) | `frame.a32_bridge` | Steam Frame patches | 6 |
 | [FrameBridge OpenXR adapter](#frame-adapter) | `frame.adapter` | Steam Frame patches | default |
-| [Content files from the game's data](#frame-asset_files) | `frame.asset_files` | Steam Frame patches | 1 |
+| [Content files from the game's data](#frame-asset_files) | `frame.asset_files` | Steam Frame patches | 2 |
 | [Asset-file service bypass](#frame-asset_files_stub) | `frame.asset_files_stub` | Steam Frame patches |  |
 | [Skip Meta avatars](#frame-avatar_stub) | `frame.avatar_stub` | Steam Frame patches | 1 |
 | [bHaptics: skip the Bluetooth permission request](#frame-bhaptics_permission) | `frame.bhaptics_permission` | Steam Frame patches | 5 |
@@ -526,7 +526,7 @@ Lets the game find extra content it keeps next to its data (for example Star War
 - `frame.asset_files`
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** The game asks Meta's platform for asset files and its data has … content file(s) (*.pak) that OVRPort's loader doesn't report.
-- **Catalog games (1):** Star Wars: Tales from the Galaxy's Edge.
+- **Catalog games (2):** Attack on Titan VR: Unbreakable, Star Wars: Tales from the Galaxy's Edge.
 - **Source:** [patches/frame/langpack.py](../src/frameport/patches/frame/langpack.py)
 
 > Some games keep content in separate files next to their OBB (for example Star Wars: Tales from the Galaxy's Edge: its seasons and sound banks) and ask Meta's platform for them as asset files. OVRPort's platform loader doesn't know them, so the game waits for content that never arrives (black screen after loading). Lists the content files shipped with the game's data (*.pak) as installed and answers their download request at once with the file's path; nothing is copied or downloaded. Shares the language-pack library.
@@ -989,7 +989,7 @@ Lets you type into this app's text fields on the Frame (they'd close at once).
 - `frame.unity_text_input` · also for 2D apps
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** Unity app with text fields (…): they close at once on the Frame because it has no system keyboard.
-- **Catalog games (107):** AgeOfJoy, AllInOneSports, Ancient_Dungeon, Arcsmith, Arkio, Assassin's Creed Nexus, Audica, AugmentedEmpire and 99 more.
+- **Catalog games (107):** AgeOfJoy, AllInOneSports, Ancient_Dungeon, Arcsmith, Arkio, Assassin's Creed Nexus, Attack on Titan VR: Unbreakable, Audica and 99 more.
 - **Source:** [patches/frame/unity_text_input.py](../src/frameport/patches/frame/unity_text_input.py)
 
 > Unity's TMP_InputField / InputField wait for Android's on-screen keyboard and close themselves a frame later when there is none (Lepton has no on-screen keyboard; Meta's system keyboard does this on a Quest), so a selected text field only flashes a caret. Rewrites TouchScreenKeyboardShouldBeUsed -&gt; false and isKeyboardUsingEvents (TMP) / InPlaceEditing (uGUI) -&gt; true in libil2cpp.so, found per game with Cpp2IL (downloaded on first use), so fields stay selected and take key presses: Steam's keyboard (with "Show the app window") or Type on Frame from the PC.
@@ -1633,7 +1633,7 @@ For games that freeze the Frame when a controller vibrates (for example Lucky's 
 - **Options:**
   - Value: int, default `0`.
   - Game settings → Controllers → "Fix freezes when controllers vibrate" (advanced).
-- **Catalog games (88):** AgeOfJoy, Ancient_Dungeon, Audica, AugmentedEmpire, Battlemarked, BattleSisters, Beat Saber, Breathedge VR and 80 more.
+- **Catalog games (88):** AgeOfJoy, Ancient_Dungeon, Attack on Titan VR: Unbreakable, Audica, AugmentedEmpire, Battlemarked, BattleSisters, Beat Saber and 80 more.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > Routes OVRPlugin through FramePort's extension shim, which turns Meta's amplitude-envelope vibrations into plain ones: OVRPort's loader reads their nanosecond duration as seconds and allocates gigabytes, freezing the Frame when the game vibrates a controller (for example Lucky's Tale's save slots, GitHub #9). Needs a rebuild.
@@ -2335,7 +2335,7 @@ Lets typing reach this app from Steam's on-screen keyboard or your PC's keyboard
 - `device.text_input_window`
 - **Changes:** Install only: written on the Frame when the game is installed; the APK isn't changed.
 - **Suggested (on):** App with text fields: key presses only reach a shown Android window.
-- **Catalog games (110):** AFFECTED: The Manor, AgeOfJoy, AllInOneSports, Ancient_Dungeon, Arcsmith, Arkio, Assassin's Creed Nexus, Audica and 102 more.
+- **Catalog games (110):** AFFECTED: The Manor, AgeOfJoy, AllInOneSports, Ancient_Dungeon, Arcsmith, Arkio, Assassin's Creed Nexus, Attack on Titan VR: Unbreakable and 102 more.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > Lepton runs VR apps headless: their Android window is never shown, so it never gets keyboard focus and no key press (Steam's on-screen keyboard, a USB/Bluetooth keyboard, Type on Frame) reaches the app's text fields. With Lepton's lepton-show-flatscreen marker the window is shown (behind the VR view, which keeps working) and Steam's keyboard opens for a selected text field. Steam lists the shown window as "Gamescope" (the Frame's compositor). Pairs with "Make Unity text fields work without a system keyboard".

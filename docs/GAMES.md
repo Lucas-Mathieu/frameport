@@ -13,6 +13,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Arkio | Quest | ✅ Works |  |
 | Asgard's Wrath 2 | Quest | ✅ Works |  |
 | Assassin's Creed Nexus | Quest | ✅ Works |  |
+| Attack on Titan VR: Unbreakable | Quest | ✅ Works |  |
 | Audica | Quest | ✅ Works |  |
 | AugmentedEmpire | Quest | ✅ Works |  |
 | BAM | Quest | ✅ Works |  |
@@ -166,7 +167,6 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Exploding Kittens VR | Quest | ⚠️ Works with issues | Requires online for most modes. |
 | ExploreVR | Quest | ⚠️ Works with issues | The 3D world warps and shifts with head movement (wrong perspective). |
 | Fisherman | Quest | ⚠️ Works with issues | Loading screens have corruption, but everything works otherwise. |
-| Freedom | Quest | ⚠️ Works with issues | Volume can't be changed in the game. |
 | Homeworld: Vast Reaches | Quest | ⚠️ Works with issues | The game starts but after selecting to start a new game it seems to crash. |
 | Lawn Mowing Simulator VR | Quest | ⚠️ Works with issues | Left eye textures flicker only when mowing in specific areas. |
 | MacacoVR | Quest | ⚠️ Works with issues | 2d loading screens are glitchy, otherwise main gameplay is fine |
