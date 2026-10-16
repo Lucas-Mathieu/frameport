@@ -613,3 +613,14 @@ def test_meta_system_activities():
     assert "meta-system-activities" in ids and "native-crash" not in ids
     assert next(f for f in r.findings if f.id == "meta-system-activities").severity == "fatal"
     assert r.verdict == "fail"
+
+
+def test_missing_quest_foveation_image_is_diagnostic():
+    message = "OVRPlugin: foveationImage = 0x0, width = 0, height = 0"
+    result = triage(message, "EXITED")
+    finding = next(f for f in result.findings if f.id == "quest-foveation-image-missing")
+    assert finding.severity == "info" and finding.question
+    assert finding.suggest == ["adapter.hide_fb_foveation"]
+    assert "adapter.hide_fb_foveation" not in result.suggestions()
+    result = triage(message + "\nFrameBridge: hide_fb_foveation: filtering dispatcher extensions", "EXITED")
+    assert "quest-foveation-image-missing" not in {f.id for f in result.findings}

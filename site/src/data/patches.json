@@ -154,6 +154,11 @@
   "title": "Vibration strength",
   "group": "Game settings"
  },
+ "adapter.hide_fb_foveation": {
+  "anchor": "adapter-hide_fb_foveation",
+  "title": "Turn off Quest Vulkan foveation",
+  "group": "Game settings"
+ },
  "adapter.hide_space_warp": {
   "anchor": "adapter-hide_space_warp",
   "title": "Turn off space warp",

@@ -1032,3 +1032,19 @@ def test_ovr_stable_user_suggested_for_platform_games():
     p = base.get("frame.ovr_stable_user")
     assert p.detect(_analysis(engine="Unity", libs=["libovrplatformloader.so", "libunity.so"])).recommended
     assert p.detect(_analysis(engine="Unity", libs=["libunity.so"])) is None
+
+
+def test_hide_fb_foveation_setting():
+    from frameport.patches.settings import UI, XRSHIM_SETTINGS
+    from frameport.patches.frame.adapter import needs_xrshim
+
+    patch = base.get("adapter.hide_fb_foveation")
+    assert patch.applies(_analysis())
+    assert not patch.applies(_analysis(graphics="OpenGL ES"))
+    assert patch.detect(_analysis()) is None
+    assert "hide_fb_foveation" not in adapter_settings({})
+    recipe = {patch.id: {"value": 1}}
+    assert adapter_settings(recipe)["hide_fb_foveation"] == 1
+    assert "hide_fb_foveation" in XRSHIM_SETTINGS
+    assert needs_xrshim(recipe)
+    assert UI["hide_fb_foveation"]["level"] == "advanced"

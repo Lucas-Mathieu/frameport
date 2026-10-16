@@ -377,6 +377,13 @@ signatures:
     diagnosis: 'The Frame''s Vulkan driver crashed on a call from Unreal. Unreal 5 passes things Quest''s driver ignores: a depth resolve in a subpass without a depth attachment (handled by the Vulkan shim), and image barriers and views for a missing image when it expects fragment density maps (foveation) from the headset (for example Metro Awakening).'
     suggest: [frame.vk_sanitize, adapter.vk_spec_fixes, adapter.vk_hide_fdm]
     supersedes: [native-crash]
+  - id: quest-foveation-image-missing
+    pattern: 'foveationImage = 0x0, width = 0, height = 0'
+    unless: 'hide_fb_foveation: filtering dispatcher extensions'
+    severity: info
+    question: Did the Vulkan game stop on its first frames?
+    diagnosis: OVRPlugin enabled Quest Vulkan foveation but received no density image. For a first-frame failure, compare with Quest foveation suppressed. This message alone does not prove the crash cause; a null Unreal graphics pipeline can also follow an earlier fatal error.
+    suggest: [adapter.hide_fb_foveation]
   - id: unreal-fdm-missing
     pattern: 'vk shim: left out \d+ image barrier\(s\) without an image \(first: layout \d+ -> 1000218000'
     unless: 'vk shim: fragment density map extensions hidden'

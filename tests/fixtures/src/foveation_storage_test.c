@@ -34,5 +34,13 @@ int main(void) {
     // An invalid cyclic chain is bounded and left untouched.
     fov.next = &fov; ci.next = &fov;
     assert(fb_foveation_storage(&ci, nodes) == -1 && ci.next == &fov);
+    tail.next = NULL; fov.next = &tail; meta.next = &fov; ci.next = &meta;
+    assert(fb_hide_swapchain_foveation(&ci, nodes) == 1);
+    m = ci.next;
+    assert(m != &meta && m->next == &tail && meta.next == &fov);
+    assert(m->additionalCreateFlags == 0x8000 && m->additionalUsageFlags == 0x123);
+    tail.next = (const XrBaseInStructure *)&fov; fov.next = NULL; ci.next = &tail;
+    assert(fb_hide_swapchain_foveation(&ci, nodes) == -1 && ci.next == &tail);
+    ci.next = NULL; assert(fb_hide_swapchain_foveation(&ci, nodes) == 0);
     return 0;
 }

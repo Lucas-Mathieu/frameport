@@ -97,6 +97,9 @@ static int foveation_storage_fix; // ordinary (not SUBSAMPLED) swapchain storage
 static int foveation_eye; // experimental profile upgrade; does not inject Vulkan gaze offsets
 static int foveation_eye_enabled, foveation_eye_supported;
 #include "foveation_storage.h"
+#include "hide_fb_foveation.h"
+static int hide_fb_foveation;
+static int hide_fb_foveation_vulkan;
 // hide XR_FB_space_warp: games then render every frame themselves (UE5 Application SpaceWarp flickered on the Frame,
 // e.g. Into The Radius 2; OVRPort's patch_disable_space_warp doesn't reach UE5's OpenXR plugin)
 static int hide_space_warp = 0;
@@ -183,6 +186,7 @@ static void read_settings(const char *path) {
         if (sscanf(line, "foveation_fix=%f", &value) == 1) foveation_fix = value != 0;
         if (sscanf(line, "foveation_storage_fix=%f", &value) == 1) foveation_storage_fix = value != 0;
         if (sscanf(line, "foveation_eye=%f", &value) == 1) foveation_eye = value != 0;
+        if (sscanf(line, "hide_fb_foveation=%f", &value) == 1) hide_fb_foveation = value != 0;
         if (sscanf(line, "hide_space_warp=%f", &value) == 1) hide_space_warp = value != 0;
         if (sscanf(line, "strip_color_bias=%f", &value) == 1) strip_color_bias = (int)value;
         if (sscanf(line, "fade_quad=%f", &value) == 1) fade_quad = value > 0 ? (int)value : 0;
@@ -284,6 +288,7 @@ static void initialize(void) {
     if (input_diag) LOG("per-game: input_diag=1 (controller-input diagnostics)");
     if (proximity_emul) LOG("per-game: proximity_emul=%d (finger proximity from capacitive touch: %s)", proximity_emul,
                             proximity_emul > 1 ? "thumb + index" : "thumb");
+    if (hide_fb_foveation) LOG("per-game: hide_fb_foveation=1 (Quest Vulkan foveation suppressed)");
     if (hide_space_warp) LOG("per-game: hide_space_warp=1 (XR_FB_space_warp hidden, space warp info removed)");
     if (strip_color_bias) LOG("per-game: strip_color_bias=%d (layer color scale/bias removed)", strip_color_bias);
     if (fade_quad) LOG("per-game: fade_quad=%d (colour-scale fades drawn as a black quad%s)", fade_quad,
@@ -320,6 +325,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo *info
     if (!fn) return XR_ERROR_INITIALIZATION_FAILED;
     if (!info) return XR_ERROR_VALIDATION_FAILURE;
 
+    hide_fb_foveation_vulkan = hide_fb_foveation && fb_instance_uses_vulkan(info);
     int chained = 0, enabled = 0;
     for (const XrBaseInStructure *p = (const XrBaseInStructure *)info->next; p; p = p->next)
         if (p->type == XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR) {
@@ -355,6 +361,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo *info
         int supported = !available;  // if we could not enumerate, pass everything through
         for (uint32_t j = 0; available && j < available_count && !supported; ++j)
             supported = !strcmp(available[j].extensionName, ext);
+        if (hide_fb_foveation_vulkan && fb_is_foveation_extension(ext)) {
+            LOG("hide_fb_foveation: %s not enabled", ext);
+            continue;
+        }
         if (hide_space_warp && !strcmp(ext, "XR_FB_space_warp")) {
             LOG("hide_space_warp: XR_FB_space_warp not enabled");
             continue;
@@ -395,7 +405,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo *info
         if (!requested && offered) { names[kept++] = "XR_FB_display_refresh_rate"; LOG("added XR_FB_display_refresh_rate (refresh_rate)"); }
     }
     foveation_eye_enabled = 0;
-    if (foveation_eye && !foveation_fix) {
+    if (foveation_eye && !foveation_fix && !hide_fb_foveation_vulkan) {
         int fb = 0, config = 0, offered = 0;
         for (uint32_t i = 0; i < kept; ++i) {
             fb |= !strcmp(names[i], "XR_FB_foveation");
@@ -411,7 +421,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo *info
     }
     // Adapter-owned video outputs need an explicit full-rate profile even when
     // the shared injection layer enables foveation for application swapchains.
-    if (surface_emul) {
+    if (surface_emul && !hide_fb_foveation_vulkan) {
         const char *video_extensions[] = {"XR_FB_foveation", "XR_FB_foveation_configuration",
             "XR_FB_swapchain_update_state"};
         for (unsigned e = 0; e < 3; ++e) {
@@ -609,6 +619,7 @@ static int known_swapchain(XrSwapchain handle) {
 
 XRAPI_ATTR XrResult XRAPI_CALL xrCreateFoveationProfileFB(XrSession session,
         const XrFoveationProfileCreateInfoFB *info, XrFoveationProfileFB *profile) {
+    if (hide_fb_foveation_vulkan) return XR_ERROR_FEATURE_UNSUPPORTED;
     PFN_xrCreateFoveationProfileFB fn = (PFN_xrCreateFoveationProfileFB)lookup(active_instance, "xrCreateFoveationProfileFB");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
     if (!info) return XR_ERROR_VALIDATION_FAILURE;
@@ -634,6 +645,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateFoveationProfileFB(XrSession session,
 }
 
 XRAPI_ATTR XrResult XRAPI_CALL xrGetFoveationEyeTrackedStateMETA(XrSession session, XrFoveationEyeTrackedStateMETA *state) {
+    if (hide_fb_foveation_vulkan) return XR_ERROR_FEATURE_UNSUPPORTED;
     PFN_xrGetFoveationEyeTrackedStateMETA fn = (PFN_xrGetFoveationEyeTrackedStateMETA)lookup(active_instance, "xrGetFoveationEyeTrackedStateMETA");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
     XrResult result = fn(session, state);
@@ -653,10 +665,15 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
     FbStorageNode storage_nodes[16];
     // Also with foveation_fix: Valve's injected FDM (device.foveation) stores a SUBSAMPLED image's coarse bins
     // unscaled, and the compositor reads them as garbage around the sharp area (GitHub #303, Medieval Dynasty).
-    if (foveation_storage_fix) {
+    if (!hide_fb_foveation_vulkan && foveation_storage_fix) {
         int changed = fb_foveation_storage(&fixed, storage_nodes);
         LOG("foveation_storage_fix: shared allocation %s", changed > 0 ? "SUBSAMPLED cleared" :
             changed < 0 ? "unchanged (unsupported chain prefix)" : "already ordinary or no META node");
+    }
+    if (hide_fb_foveation_vulkan) {
+        int stripped = fb_hide_swapchain_foveation(&fixed, storage_nodes);
+        if (stripped < 0) return XR_ERROR_VALIDATION_FAILURE;
+        if (stripped) LOG("hide_fb_foveation: removed swapchain foveation create info");
     }
     if (foveation_fix) {
         // Drop leading foveation structs; the chain is const so only a prefix can be skipped.
@@ -1252,12 +1269,15 @@ XRAPI_ATTR XrResult XRAPI_CALL xrApplyHapticFeedback(XrSession session, const Xr
     return result;
 }
 
+#include "hide_foveation_images.h"
+
 XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateSwapchainImages(XrSwapchain swapchain, uint32_t capacity, uint32_t *count,
         XrSwapchainImageBaseHeader *images) {
     PFN_xrEnumerateSwapchainImages fn = (PFN_xrEnumerateSwapchainImages)lookup(active_instance, "xrEnumerateSwapchainImages");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
     if (is_standin(swapchain)) return standin_enumerate(swapchain, capacity, count, images);
     XrResult result = equirect_emul && emul_is_virtual(swapchain) ? emul_virtual_enumerate(swapchain, capacity, count, images)
+                                                                  : hide_fb_foveation_vulkan ? fb_hide_foveation_images(fn, swapchain, capacity, count, images)
                                                                   : fn(swapchain, capacity, count, images);
     if (XR_SUCCEEDED(result) && images && capacity && count) {
         flip_on_enumerate_images(swapchain, *count, images);
@@ -2087,7 +2107,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateInstanceExtensionProperties(const char
         XR_NULL_HANDLE, "xrEnumerateInstanceExtensionProperties");
     if (!fn) return XR_ERROR_INITIALIZATION_FAILED;
     if (!count) return XR_ERROR_VALIDATION_FAILURE;
-    if ((!foveation_fix && !hide_space_warp && !passthrough_emul && !scene_emul && !controller_models) || layer)
+    if ((!foveation_fix && !hide_fb_foveation && !hide_space_warp && !passthrough_emul && !scene_emul && !controller_models) || layer)
         return fn(layer, capacity, count, properties);
 
     uint32_t total = 0;
@@ -2103,6 +2123,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateInstanceExtensionProperties(const char
     for (uint32_t i = 0; i < total; ++i) {
         if (!strcmp(all[i].extensionName, "XR_FB_passthrough")) runtime_has_fb_passthrough = 1;
         if (!strcmp(all[i].extensionName, XR_FB_RENDER_MODEL_EXTENSION_NAME)) runtime_has_render_model = 1;
+        if (hide_fb_foveation && fb_is_foveation_extension(all[i].extensionName)) continue;
         if (foveation_fix && strstr(all[i].extensionName, "foveation")) continue;
         if (hide_space_warp && !strcmp(all[i].extensionName, "XR_FB_space_warp")) continue;
         if (properties && kept < capacity) properties[kept] = all[i];
@@ -2142,9 +2163,29 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateApiLayerProperties(uint32_t capacity, 
     return fn ? fn(capacity, count, properties) : XR_ERROR_INITIALIZATION_FAILED;
 }
 
+static XRAPI_ATTR int XRAPI_CALL framebridge_hide_fb_foveation(void) {
+    pthread_once(&init_once, initialize);
+    return hide_fb_foveation;
+}
+
+static XRAPI_ATTR XrResult XRAPI_CALL fb_hide_update_swapchain(XrSwapchain swapchain, const XrSwapchainStateBaseHeaderFB *state) {
+    if (state && state->type == XR_TYPE_SWAPCHAIN_STATE_FOVEATION_FB) {
+        LOG("hide_fb_foveation: refused foveation profile update");
+        return XR_ERROR_FEATURE_UNSUPPORTED;
+    }
+    PFN_xrUpdateSwapchainFB fn = (PFN_xrUpdateSwapchainFB)lookup(active_instance, "xrUpdateSwapchainFB");
+    return fn ? fn(swapchain, state) : XR_ERROR_FUNCTION_UNSUPPORTED;
+}
+
 // For native/xrshim: emulated functions that overport's dispatcher doesn't know (it never asks us for them).
 __attribute__((visibility("default"))) PFN_xrVoidFunction framebridge_extension_proc(const char *name) {
     pthread_once(&init_once, initialize);
+    if (name && !strcmp(name, "framebridge_hide_fb_foveation"))
+        return (PFN_xrVoidFunction)framebridge_hide_fb_foveation;
+    if (hide_fb_foveation_vulkan && name) {
+        if (!strcmp(name, "xrCreateFoveationProfileFB")) return (PFN_xrVoidFunction)xrCreateFoveationProfileFB;
+        if (!strcmp(name, "xrUpdateSwapchainFB")) return (PFN_xrVoidFunction)fb_hide_update_swapchain;
+    }
     if (name && !foveation_fix && (foveation_storage_fix || foveation_eye)) {
         if (!strcmp(name, "xrCreateFoveationProfileFB")) return (PFN_xrVoidFunction)xrCreateFoveationProfileFB;
         if (!strcmp(name, "xrGetFoveationEyeTrackedStateMETA")) return (PFN_xrVoidFunction)xrGetFoveationEyeTrackedStateMETA;
@@ -2185,6 +2226,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const 
     if (!emulated) emulated = render_model_emulation(name);
     if (!emulated && emulate_scene && !strcmp(name, "xrLocateSpacesKHR")) emulated = (PFN_xrVoidFunction)emu_locate_spaces_khr;
     if (emulated) { *function = emulated; return XR_SUCCESS; }
+    if (hide_fb_foveation_vulkan && !strcmp(name, "xrUpdateSwapchainFB")) {
+        *function = (PFN_xrVoidFunction)fb_hide_update_swapchain;
+        return XR_SUCCESS;
+    }
     HOOK(xrGetSystemProperties)
     HOOK(xrApplyHapticFeedback)
     HOOK(xrCreateReferenceSpace)

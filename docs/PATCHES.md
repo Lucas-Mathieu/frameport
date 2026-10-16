@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 177 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 178 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -12,7 +12,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 
 - [Patches from OVRPort](#group-overport) (25)
 - [Steam Frame patches](#group-frame) (61)
-- [Game settings](#group-adapter) (70)
+- [Game settings](#group-adapter) (71)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
 
@@ -137,6 +137,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Flat panel diagnostics (log)](#adapter-gl_mv_debug) | `adapter.gl_mv_debug` | Game settings |  |
 | [Fix freezes when controllers vibrate](#adapter-haptic_fix) | `adapter.haptic_fix` | Game settings | 94 |
 | [Vibration strength](#adapter-haptic_scale) | `adapter.haptic_scale` | Game settings |  |
+| [Turn off Quest Vulkan foveation](#adapter-hide_fb_foveation) | `adapter.hide_fb_foveation` | Game settings |  |
 | [Turn off space warp](#adapter-hide_space_warp) | `adapter.hide_space_warp` | Game settings | 5 |
 | [Controller input diagnostics (log)](#adapter-input_diag) | `adapter.input_diag` | Game settings |  |
 | [Extra diagnostics (log)](#adapter-layer_debug) | `adapter.layer_debug` | Game settings |  |
@@ -1768,6 +1769,22 @@ Turn it down if controller vibrations are too strong.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > Scales every controller vibration the game asks for (0-1): plain vibrations, Meta's amplitude envelopes and PCM buffers. For games whose vibrations feel much stronger than on a Quest.
+
+### <a id="adapter-hide_fb_foveation"></a>Turn off Quest Vulkan foveation
+
+Diagnostic for Vulkan games that fail on their first frames with missing Quest foveation images.
+
+- `adapter.hide_fb_foveation`
+- **Changes:** Game setting: stored in the build and on the Frame (settings.conf); can be changed without a rebuild.
+- **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
+- **Options:**
+  - Value: int, default `0`.
+  - Game settings → Troubleshooting → "Turn off Quest Vulkan foveation" (advanced).
+- **Suggested by launch-test signatures:**
+  - `quest-foveation-image-missing` (info): OVRPlugin enabled Quest Vulkan foveation but received no density image.
+- **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
+
+> Hides Quest FB foveation extensions from the game and OVRPort, removes Vulkan foveation image/create chains, and refuses foveation profile updates. Diagnostic for first-frame failures with missing density images (for example Transformers Beyond Reality: Redux). Device verification pending; does not disable Valve foveation.
 
 ### <a id="adapter-hide_space_warp"></a>Turn off space warp
 

@@ -22,6 +22,8 @@
 #include <math.h>
 #include <stddef.h>
 #include <string.h>
+#include <stdlib.h>
+#include "../adapter/hide_fb_foveation.h"
 
 #define TAG "FrameBridge"
 #define EXPORT __attribute__((visibility("default")))
@@ -45,12 +47,40 @@ static void resolve_overport(void) {
 static PFN_xrVoidFunction adapter_proc(const char *name) {
     static PFN_extension_proc fn;
     if (!fn) {
-        // Loaded by overport's dispatcher once an instance exists; NOLOAD so the shim never loads it by itself.
+        // Normally loaded by OVRPort; only the global settings query may load it early.
         void *h = dlopen("libopenxr_loader_generic.so", RTLD_NOW | RTLD_NOLOAD);
+        // Global enumeration can be answered entirely by the dispatcher. Load the
+        // adapter for its settings query even before an OpenXR instance exists.
+        if (!h && !strcmp(name, "framebridge_hide_fb_foveation"))
+            h = dlopen("libopenxr_loader_generic.so", RTLD_NOW | RTLD_LOCAL);
         if (h) fn = (PFN_extension_proc)dlsym(h, "framebridge_extension_proc");
         if (!fn) return NULL;
     }
     return fn(name);
+}
+
+// OVRPort advertises FB extensions itself, above the runtime adapter. Filter the
+// synthetic list too, including when the dispatcher never enumerates the runtime.
+static int hide_fb_enabled(void) {
+    typedef int (*Query)(void);
+    Query query = (Query)adapter_proc("framebridge_hide_fb_foveation");
+    return query && query();
+}
+static PFN_xrEnumerateInstanceExtensionProperties dispatcher_enumerate;
+static PFN_xrCreateInstance dispatcher_create;
+static XrResult XRAPI_CALL enumerate_extensions(const char *layer, uint32_t capacity,
+        uint32_t *count, XrExtensionProperties *properties) {
+    uint32_t ignored = 0;
+    XrResult r = dispatcher_enumerate(layer, 0, &ignored, NULL);
+    if (XR_FAILED(r)) return r;
+    if (!hide_fb_enabled()) return dispatcher_enumerate(layer, capacity, count, properties);
+    __android_log_print(ANDROID_LOG_INFO, TAG, "hide_fb_foveation: filtering dispatcher extensions");
+    return fb_hide_enumerate(dispatcher_enumerate, layer, capacity, count, properties);
+}
+static XrResult XRAPI_CALL create_instance(const XrInstanceCreateInfo *info, XrInstance *instance) {
+    if (!hide_fb_enabled() || !fb_instance_uses_vulkan(info)) return dispatcher_create(info, instance);
+    __android_log_print(ANDROID_LOG_INFO, TAG, "hide_fb_foveation: filtering dispatcher instance extensions");
+    return fb_hide_create_instance(dispatcher_create, info, instance);
 }
 
 static PFN_xrApplyHapticFeedback overport_haptics;
@@ -96,6 +126,20 @@ static XRAPI_ATTR XrResult XRAPI_CALL apply_haptic_feedback(XrSession session, c
 EXPORT XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance instance, const char *name,
                                                             PFN_xrVoidFunction *function) {
     pthread_once(&once, resolve_overport);
+    if (name && function && overport_gipa &&
+        (!strcmp(name, "xrEnumerateInstanceExtensionProperties") || !strcmp(name, "xrCreateInstance"))) {
+        PFN_xrVoidFunction real = NULL;
+        XrResult r = overport_gipa(instance, name, &real);
+        if (XR_FAILED(r) || !real) return r;
+        if (!strcmp(name, "xrCreateInstance")) {
+            dispatcher_create = (PFN_xrCreateInstance)real;
+            *function = (PFN_xrVoidFunction)create_instance;
+        } else {
+            dispatcher_enumerate = (PFN_xrEnumerateInstanceExtensionProperties)real;
+            *function = (PFN_xrVoidFunction)enumerate_extensions;
+        }
+        return XR_SUCCESS;
+    }
     if (name && function && instance != XR_NULL_HANDLE && overport_gipa && !strcmp(name, "xrApplyHapticFeedback")) {
         PFN_xrVoidFunction real = NULL;
         XrResult r = overport_gipa(instance, name, &real);

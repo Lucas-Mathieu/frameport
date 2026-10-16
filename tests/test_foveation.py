@@ -39,7 +39,7 @@ def test_injection_keeps_swapchains_ordinary():
     for mode in ("", "off"):
         assert "foveation_storage_fix" not in adapter_settings({"device.foveation": {"mode": mode}})
     src = (Path(__file__).resolve().parents[1] / "native/adapter/frame_adapter.c").read_text()
-    assert "if (foveation_storage_fix) {" in src  # not only when foveation_fix is off
+    assert "if (!hide_fb_foveation_vulkan && foveation_storage_fix) {" in src  # not only when foveation_fix is off
 
 
 def test_custom_size_and_fixed_mode_and_reset():

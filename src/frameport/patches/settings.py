@@ -38,6 +38,10 @@ SETTINGS = [
      "scale_bias, for example Batman: Arkham Shadow's loading screens) can show the level loading instead of black on "
      "the Frame. FrameBridge then draws the fade itself: a black quad in front of the eyes whose opacity follows the "
      "game's dimming. 2 also removes the game's own dimming (if both show, the fade is doubled)."),
+    ("hide_fb_foveation", "int", 0, "Turn off Quest Vulkan foveation",
+     "Hides Quest FB foveation extensions from the game and OVRPort, removes Vulkan foveation image/create chains, "
+     "and refuses foveation profile updates. Diagnostic for first-frame failures with missing density images "
+     "(for example Transformers Beyond Reality: Redux). Device verification pending; does not disable Valve foveation."),
     ("hide_space_warp", "int", 0, "Turn off space warp",
      "Hides XR_FB_space_warp, so the game renders every frame itself instead of half of them plus motion vectors "
      "(Application SpaceWarp). For games whose picture flickers or smears on the Frame (for example Unreal Engine 5 "
@@ -394,6 +398,9 @@ UI: dict[str, dict] = {
     "foveation_fix": dict(group="troubleshooting", level="advanced", label="Hide Quest foveation",
                 help="Hides a Quest-only way of saving GPU power that the Frame lacks. Leave it on.",
                 control=("switch",)),
+    "hide_fb_foveation": dict(group="troubleshooting", level="advanced", label="Turn off Quest Vulkan foveation",
+                help="Diagnostic for Vulkan games that fail on their first frames with missing Quest foveation images.",
+                control=("switch",)),
     "hide_space_warp": dict(group="troubleshooting", level="advanced", label="Turn off space warp",
                 help="For games whose picture flickers or smears (for example Into The Radius 2).",
                 control=("switch",)),
@@ -474,7 +481,7 @@ UI: dict[str, dict] = {
 # settings that need the xrshim (frame/adapter.py: OVRPlugin's own arm64 OpenXR lookups routed to the adapter), so
 # they don't work for 32-bit games on the bridge. surface_native: Batman's native video renderer hooks Vulkan
 # functions OVRPort's dispatcher doesn't know
-XRSHIM_SETTINGS = ("controller_models", "haptic_fix", "surface_native")
+XRSHIM_SETTINGS = ("hide_fb_foveation", "controller_models", "haptic_fix", "surface_native")
 
 
 class AdapterSetting(Patch):
@@ -558,6 +565,7 @@ class AdapterSetting(Patch):
                                            or "com.oculus.feature.PASSTHROUGH" in (a.extra.get("features") or {})),
             "alpha_blend_emul": lambda a: (a.extra.get("mr_only")
                                            or "com.oculus.feature.PASSTHROUGH" in (a.extra.get("features") or {})),
+            "hide_fb_foveation": ap.is_vulkan,
             "flip_emul": ap.is_vulkan,
             "flip_quads": ap.is_vulkan,
             "mutable_fix": ap.is_vulkan,
