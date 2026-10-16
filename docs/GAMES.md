@@ -65,6 +65,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | H.U.N.T | Quest | ✅ Works |  |
 | I Am Cat | Quest | ✅ Works |  |
 | I Am Monkey | Quest | ✅ Works |  |
+| I Expect You To Die 2 | Quest | ✅ Works |  |
 | IEYTD3 | Quest | ✅ Works |  |
 | In Death: Unchained | Quest | ✅ Works |  |
 | Into The Radius 2 | Quest | ✅ Works |  |
@@ -176,6 +177,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Phantom: Covert Ops | Quest | ⚠️ Works with issues | DLC/store button crashes (no Meta store). |
 | Pinball FX VR | Quest | ⚠️ Works with issues | Plays; mixed reality mode not working yet. |
 | Plezy | Quest | ⚠️ Works with issues | Some videos play with strong artifacts and wrong colours; the cause is unknown, possibly hardware video decoding. |
+| Puzzling Places | Quest | ⚠️ Works with issues | Works fine, but pointers dont show well on main menu, easy to work around. |
 | Quantum Void | Quest | ⚠️ Works with issues | no hands |
 | Ragnarock | Quest | ⚠️ Works with issues |  |
 | Real VR Fishing | Quest | ⚠️ Works with issues | Seems to be almost 100% functional with meta permissions enabled. |

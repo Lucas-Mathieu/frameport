@@ -1,0 +1,25 @@
+package: com.RealitiesIO.puzzlingPlaces
+title: Puzzling Places
+status: issues
+notes: Works fine, but pointers dont show well on main menu, easy to work around.
+tested_version: '2.14'
+engine: Unreal
+xr: OpenXR
+overport_extra:
+- patch_disable_space_warp
+alt_overport:
+- patch_remove_unreal_force_quit
+frame:
+- frame.unreal_skip_obb_check
+- frame.unreal_ovrp_entrypoints
+- frame.hw_video_decode
+adapter:
+  equirect_emul: 1
+  haptic_fix: 1
+verified:
+  date: '2026-10-16'
+  known_good_sha256: 8d9bb64b0af4c34269fffb64c5ef7515d6ba4715f5234f95517975b8e2b56c00
+  app: 1.2.0
+  overport_cli: 1.2.5
+  issue: 359
+source_hint: Puzzling Places

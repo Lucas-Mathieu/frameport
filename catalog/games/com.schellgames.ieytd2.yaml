@@ -1,0 +1,27 @@
+package: com.schellgames.ieytd2
+title: I Expect You To Die 2
+status: works
+notes: loaded up and played 5 minutes looks fine.
+tested_version: 1.0.1.171177 (ReleaseCandidate_1.0.1_QuestStore)
+engine: Unity
+xr: VrApi
+frame:
+- frame.unity_no_msaa
+- frame.unity_oculus_check
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.unity_gl_shim
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+  scale: 2.0
+verified:
+  date: '2026-10-16'
+  known_good_sha256: fc626ec62e49e19210a188d90f94c370e956d0de729cbd04cbe8866430d77730
+  app: 1.2.0
+  overport_cli: 1.2.5
+  frame_build: '20261015.6141207'
+  agent: 91
+  issue: 358
+source_hint: Expect
