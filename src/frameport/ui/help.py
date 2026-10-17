@@ -70,6 +70,9 @@ HELP: dict[str, str] = _Translated({
     "last_session": "After you play a game on the Frame, FramePort reads that session's log: crashes, frame rate and "
                     "moments the game lost focus. Game settings apply at the next start; other patches reinstall the "
                     "game. Your saves stay.",
+    "game_updates": "Game recipes are tested settings shared on GitHub; games that use one get its improvements, "
+                    "then show Update on Frame. Games installed from an install link get a new version when the "
+                    "link's site publishes one: FramePort asks before it downloads anything.",
     "install_links": "Some websites have \"Install with FramePort\" buttons (frameport.app links). FramePort opens "
                      "these links, shows what they offer and installs it when you agree. On macOS, use Add games → "
                      "Add from a link… instead.",

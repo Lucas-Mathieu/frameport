@@ -124,8 +124,9 @@ Detailed device findings per game/issue: docs/DEVICE_NOTES.md (read before debug
     `ft.AnimatedSwitcher` (`app._show_view`): a new route gets a new wrapper (150 ms fade), a same-route redraw swaps
     the wrapper's content (no animation; persistent views just remount); the wordmark's portal (`wordmark().data`)
     pulses once when frame_state turns "connected"; both off with setting `ui.reduce_motion` (Settings → Appearance
-    "Reduce motion", `app.reduce_motion`). Settings has a fixed index column (`settings.SECTIONS` order, Appearance
-    first, Remove FramePort last): entries scroll the section column via `scroll_to(scroll_key=…)` (sections wrapped
+    "Reduce motion", `app.reduce_motion`). Settings has a fixed index column (`settings.SECTIONS` order: most users'
+    needs first (Updates, which also holds game recipe + install-link updates, Installing, Library folders,
+    Appearance), niche ones later (Install links, Tools, This PC), Remove FramePort last): entries scroll the section column via `scroll_to(scroll_key=…)` (sections wrapped
     in Containers with `ft.ScrollKey`), the header stays; `app.settings_view.show_section(key)` (ui_smoke
     `settings-index`).
     Help hints: wording for non-obvious terms lives in `ui/help.py` (`HELP`); show it with `C.help_icon(key)` or the

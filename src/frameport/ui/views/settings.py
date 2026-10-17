@@ -21,9 +21,10 @@ if TYPE_CHECKING:
 TOOL_TITLES = {"java": tr("Java runtime"), "overport": "OVRPort", "apksigner": "apksigner", "revive": tr("Revive")}
 TOOL_WHY = {"java": tr("Runs OVRPort and apksigner"), "overport": tr("Converts Quest games to OpenXR"),
             "apksigner": tr("Signs rebuilt games"), "revive": tr("Runs Oculus PC games on SteamVR")}
-# the page's sections in order (the index on the left lists them): Appearance near the top (it's the most used),
-# "Uninstall FramePort" last
-SECTIONS = ("appearance", "updates", "links", "folders", "installing", "tools", "pc", "data", "feedback", "about",
+# the page's sections in order (the index on the left lists them): what most users need first (updates of the app and
+# their games, installing, where games come from, looks), then what only some need (link handlers, tools FramePort
+# manages itself, PC VR on this PC), "Uninstall FramePort" last
+SECTIONS = ("updates", "installing", "folders", "appearance", "data", "feedback", "links", "tools", "pc", "about",
             "remove")
 
 
@@ -129,9 +130,10 @@ class SettingsView:
         parallel = C.dropdown(label=tr("Parallel uploads"), value=str(upload_threads()), width=T.px(240),
                               options=[ft.DropdownOption(str(n), str(n)) for n in range(1, 9)],
                               on_select=threads_changed)
-        return ft.Column([launch, keep, video, parallel,
+        return ft.Column([launch, parallel,
                           C.meta(tr("Large files upload together using OpenSSH when available. "
                                     "Default: 3. Lower this on a busy network.")),
+                          video, keep,
                           C.ghost(tr("Remove converted copies now"), ft.Icons.CLEANING_SERVICES_OUTLINED, clean,
                                   tooltip=tr("Your own game files aren't touched.")),
                           ft.Container(height=T.S2), self.ssh_keys()],
@@ -298,14 +300,20 @@ class SettingsView:
                     C.secondary(tr("Check for updates"), ft.Icons.REFRESH_ROUNDED, lambda e: app.updater.check_now())],
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
             status,
-            ft.Row([C.meta(tr("What changed in this version and the ones before it."), expand=True),
-                    C.ghost(tr("What's new…"), ft.Icons.NEW_RELEASES_OUTLINED, lambda e: app.updater.show_history())],
-                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
             C.switch(tr("Check for new versions automatically"), value=bool(library.setting("update.auto_check", True)),
                       on_change=auto_check),
             C.switch(tr("Install updates automatically when FramePort starts"),
                      value=bool(library.setting("update.auto_install", False)),
                       on_change=auto_install),
+            ft.Row([C.meta(tr("What changed in this version and the ones before it."), expand=True),
+                    C.ghost(tr("What's new…"), ft.Icons.NEW_RELEASES_OUTLINED, lambda e: app.updater.show_history())],
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Divider(height=1, color=T.BORDER),
+            ft.Row([C.body(tr("Games"), T.TEXT, weight=ft.FontWeight.W_500), C.help_icon("game_updates")],
+                   spacing=T.px(4), vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            self.catalog_updates(),
+            self.link_updates(),
+            ft.Divider(height=1, color=T.BORDER),
             ft.Row([C.meta(tr("Asked to test something? Dev builds come before the next release."), expand=True),
                     C.ghost(tr("Install the latest dev build…"), G.TEST,
                             lambda e: app.updater.install_dev())],
@@ -336,6 +344,32 @@ class SettingsView:
             C.switch(tr("Update game recipes from GitHub automatically"),
                      value=bool(library.setting("catalog.auto_update", True)),
                      on_change=toggle),
+        ], spacing=T.S2)
+
+    def link_updates(self) -> ft.Control:
+        """Settings → Updates → Games: newer versions of games installed from install links whose manifest names a
+        version (pipeline.check_link_updates; setting links.check_updates)."""
+        import time
+
+        from ...core import library
+
+        app = self.app
+        last = library.setting("links.last_update_check")
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(last)) if last else tr("never")
+        n = sum(1 for g in library.games() if g.get("link_update"))
+        line = tr("Games from install links: last checked {when}").format(when=when)
+        if n:
+            line += " · " + tr_n("{n} update available", "{n} updates available", n)
+
+        def toggle(e):
+            library.set_setting("links.check_updates", bool(e.control.value))
+        return ft.Column([
+            ft.Row([C.meta(line, expand=True),
+                    C.ghost(tr("Check now"), ft.Icons.SYNC_ROUNDED,
+                            lambda e: app.run_bg(lambda: app._check_link_updates(force=True)))],
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            C.switch(tr("Check games from install links for new versions"),
+                     value=bool(library.setting("links.check_updates", True)), on_change=toggle),
         ], spacing=T.S2)
 
     def links_card(self) -> ft.Control:
@@ -513,7 +547,7 @@ class SettingsView:
                           value=self.app.reduce_motion, on_change=lambda e: self.app.set_reduce_motion(e.control.value))
         controls = [self.theme_picker(), ft.Container(height=T.S2), dd, note, ft.Container(height=T.S2), live_card,
                     live_note, motion]
-        languages = i18n.available()
+        languages = i18n.available()  # first: whoever needs it needs it before anything else
         if len(languages) > 1:  # only once a translation exists
             def language_changed(e):
                 library.set_setting("ui.language", e.control.value)
@@ -521,7 +555,7 @@ class SettingsView:
             lang = C.dropdown(label=tr("Language"), value=i18n.language(), width=T.px(260), on_select=language_changed,
                                options=[ft.dropdown.Option(code, i18n.language_name(code)) for code in languages])
             lang_note = C.meta(tr("Changes apply the next time FramePort starts."))
-            controls += [lang, lang_note]
+            controls = [lang, lang_note, ft.Container(height=T.S2), *controls]
         return ft.Column(controls, spacing=T.S2)
 
     def agent_text(self) -> str:
@@ -600,7 +634,6 @@ class SettingsView:
                                                        lambda e: app.copy(data))]), "data_folder"),
                 C.kv(tr("Catalog"), tr("{len} tested recipes (built in, online and yours)")
                      .format(len=len(catalog.load())), "catalog"),
-                self.catalog_updates(),
                 self.save_backups(),
             ], spacing=T.S2))),
             # text above, buttons below (side by side, the buttons squeezed the text in a narrow window)
@@ -632,7 +665,7 @@ class SettingsView:
                                   + [ft.Container(height=T.px(240))],
                                   spacing=T.S5, scroll=ft.ScrollMode.AUTO, expand=True)
         return ft.Column([
-            app.top_bar(tr("Settings"), tr("Updates, tools, this PC and where FramePort keeps its data")),
+            app.top_bar(tr("Settings"), tr("Updates, installing, appearance and where FramePort keeps its data")),
             ft.Row([self.index_column(), self.page_col], expand=True, spacing=0,
                    vertical_alignment=ft.CrossAxisAlignment.START),
         ], spacing=T.S5, expand=True)

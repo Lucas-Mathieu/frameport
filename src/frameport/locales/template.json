@@ -256,6 +256,7 @@
  "Check for new versions automatically": "",
  "Check for updates": "",
  "Check game files": "",
+ "Check games from install links for new versions": "",
  "Check install links for updates": "",
  "Check now": "",
  "Check program": "",
@@ -648,6 +649,7 @@
  "Game launch capacity": "",
  "Game not found": "",
  "Game page": "",
+ "Game recipes are tested settings shared on GitHub; games that use one get its improvements, then show Update on Frame. Games installed from an install link get a new version when the link's site publishes one: FramePort asks before it downloads anything.": "",
  "Game recipes are up to date": "",
  "Game recipes from GitHub: last checked {when}": "",
  "Game settings": "",
@@ -659,6 +661,9 @@
  "game window opened": "",
  "Game's choice": "",
  "Game: the running game's processes plus the busiest others. Steam and SteamVR: Steam, SteamVR and the desktop. All: every program. A lock marks programs that would close Steam or SteamVR.": "",
+ "Games": "",
+ "Games from install links are up to date": "",
+ "Games from install links: last checked {when}": "",
  "Games see this folder as {value}": "",
  "Games that ask the headset for its controller models (Meta's runtime controller models, XR_FB_render_model) get the Steam Frame controllers instead of Quest Touch controllers. The models come from the Frame's own SteamVR and are converted on the Frame at install time. Games that ship their own controller meshes aren't affected. Turning it on needs a rebuild (it adds a small library in front of OVRPort's loader).": "",
  "Games that fade to black by dimming their picture with a layer color scale (XR_KHR_composition_layer_color_scale_bias, for example Batman: Arkham Shadow's loading screens) can show the level loading instead of black on the Frame. FrameBridge then draws the fade itself: a black quad in front of the eyes whose opacity follows the game's dimming. 2 also removes the game's own dimming (if both show, the fade is doubled).": "",
@@ -1802,7 +1807,7 @@
  "Updates every game marked \"Update ready\", one after another.": "",
  "Updates the game, frame rate and battery every 5 seconds. Turn off to save the Frame's power.": "",
  "Updates this source checkout (git pull + uv sync), then restarts FramePort.": "",
- "Updates, tools, this PC and where FramePort keeps its data": "",
+ "Updates, installing, appearance and where FramePort keeps its data": "",
  "Updating works in the desktop app": "",
  "Upload": "",
  "Upload files…": "",
@@ -2053,6 +2058,14 @@
  ],
  "{n} selected": "",
  "{n} setting changed from the default": [
+  "",
+  ""
+ ],
+ "{n} update available": [
+  "",
+  ""
+ ],
+ "{n} update is waiting in the Library": [
   "",
   ""
  ],

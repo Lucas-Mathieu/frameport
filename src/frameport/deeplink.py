@@ -182,7 +182,7 @@ def demo_manifest() -> Manifest:
     return Manifest(DEMO_NAME, [ManifestFile("https://frameport.app/demo/cool-game-arm64.apk")], DEMO_MANIFEST,
                     description="A placeholder game for the example \"Install with FramePort\" button. FramePort "
                     "recognises this link and shows a demo: nothing is downloaded or installed.",
-                    demo=True)
+                    version="1.0.0", demo=True)
 
 
 def parse(text: str) -> InstallRequest:

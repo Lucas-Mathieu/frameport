@@ -2398,6 +2398,12 @@ class FramePortApp:
         if new:
             self.toast(tr_n("An update is available for {name}", "Updates are available for {n} games",
                             len(new), name=self._title(new[0])))
+        elif force:  # Settings → Check now
+            self.toast(tr("Games from install links are up to date") if not found else
+                       tr_n("{n} update is waiting in the Library", "{n} updates are waiting in the Library",
+                            len(found)))
+        if force and self.route[0] == "settings":
+            self.render()  # the "last checked" line
         return found
 
     def frame_power(self, action: str, force: bool = False) -> None:

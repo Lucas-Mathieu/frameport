@@ -110,6 +110,19 @@ def test_update_keeps_the_users_own_name(monkeypatch, tmp_path):
     assert _add(monkeypatch, tmp_path, "1.2", name="Tool 2")["title"] == "Tool 2"
 
 
+def test_demo_link_is_never_checked_for_updates(monkeypatch):
+    """The homepage's example button stays a demo: its manifest names a version, but nothing about it is fetched."""
+    from pathlib import Path
+
+    site = json.loads((Path(__file__).parents[1] / "site/public/demo/cool-game.json").read_text())
+    assert deeplink.manifest_from_data(site, deeplink.DEMO_MANIFEST).version == deeplink.demo_manifest().version
+    assert deeplink.parse(deeplink.make_link(deeplink.DEMO_MANIFEST)).demo
+    assert not deeplink.can_check_updates({"source": deeplink.DEMO_MANIFEST, "version": "0.1"})
+    library.upsert_game("demo.like", link={"source": deeplink.DEMO_MANIFEST, "version": "0.1"})
+    monkeypatch.setattr(deeplink, "fetch_manifest", lambda req: pytest.fail("the demo was fetched"))
+    assert pipeline.check_link_updates(force=True) == []
+
+
 def test_local_server_round_trip(tmp_path):
     """check_update fetches the remembered manifest over HTTP (loopback is allowed for testing)."""
     import threading

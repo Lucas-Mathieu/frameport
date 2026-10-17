@@ -48,10 +48,12 @@ def test_checklist_builds_rows_with_fix_and_extra():
 
 def test_settings_sections_order():
     s = settings.SECTIONS
-    assert s[0] == "appearance" and s[-1] == "remove"
+    assert s[0] == "updates" and s[-1] == "remove"
+    # what most users need before what only some need
+    assert s.index("installing") < s.index("appearance") < s.index("links") < s.index("tools")
     assert len(set(s)) == len(s)
     assert set(settings.section_titles()) == set(s)
-    assert s.index("tools") < s.index("pc") < s.index("data") < s.index("about")
+    assert s.index("data") < s.index("tools") < s.index("pc") < s.index("about")
 
 
 def test_reduce_motion_default_off():
