@@ -72,7 +72,7 @@ def test_apply_through_the_workspace(tmp_path, quest_manifest):
         z.writestr("classes.dex", _dex(vivox=False))
     a = detect.analyze(path, deep=False)
     assert a.extra["photon_voice_api31"] is True and a.extra["vivox_api31"] is False
-    assert a.extra["analysis_version"] == detect.ANALYSIS_VERSION >= 20
+    assert a.extra["analysis_version"] == detect.ANALYSIS_VERSION >= 21
     patch = base.get("frame.photon_voice_audio_route")
     assert patch.applies(a) and patch.detect(a).recommended and not patch.needs_vr
     assert not base.get("frame.vivox_audio_route").applies(a)

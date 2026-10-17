@@ -46,7 +46,13 @@ IL2CPP_METADATA = "assets/bin/Data/Managed/Metadata/global-metadata.dat"
 # 19: unreal_obb_delivery also for obfuscated DownloaderActivity predicates (GitHub #159) (2026-10)
 # 20: google_vr (Google Daydream / Cardboard builds: GVR or Cardboard SDK, no path to the Frame's headset,
 #     GitHub #335) (2026-10)
-ANALYSIS_VERSION = 20
+# 21: photon_voice_api31 (Photon Voice's AudioInAEC calls Android 12 AudioManager methods:
+#     frame.photon_voice_audio_route, GitHub #362/#325); cortopia_org_id (Cortopia's Meta start-up waits for
+#     Users.GetOrgScopedID: frame.cortopia_org_id, GitHub #360); unity_appui_vibrator (Unity App UI's activity uses
+#     Android 12's VibratorManager: frame.unity_appui_vibrator, GitHub #297); gms_folded_sdk_checks (Play services'
+#     Android 12 checks folded to true by R8: frame.gms_platform_version, GitHub #310); usb_midi_watcher (kshoji's
+#     USB MIDI driver polls the missing USB service: frame.usb_midi_watcher, GitHub #297) (2026-10)
+ANALYSIS_VERSION = 21
 
 
 # Android versions by API level (for messages); the Frame's Lepton container runs Android 11 (API 30)
