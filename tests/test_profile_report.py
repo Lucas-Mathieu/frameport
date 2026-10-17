@@ -172,7 +172,8 @@ int main(void) {
     printf("%d\n", detached_strip_action(&info, &copy, kept) == &info);
 
     XrActionSuggestedBinding b[3] = {{(XrAction)(uintptr_t)7, P("/user/hand/left/input/thumbstick")},
-                                     {(XrAction)(uintptr_t)7, P("/user/detached_controller_meta/left/input/thumbstick")},
+                                     {(XrAction)(uintptr_t)7,
+                                      P("/user/detached_controller_meta/left/input/thumbstick")},
                                      {(XrAction)(uintptr_t)8, P("/user/hand/right/input/a/click")}}, kb[3];
     XrInteractionProfileSuggestedBinding s = {XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING, NULL,
                                               P("/interaction_profiles/oculus/touch_controller"), 3, b}, scopy;
@@ -192,7 +193,8 @@ int main(void) {
            detached_current_profile(sub[2], &st, XR_ERROR_PATH_UNSUPPORTED));
     runtime_has_detached_controllers = 0;
     profile_remap = 0;  // off: nothing changes
-    printf("%d %d\n", detached_strip_action(&info, &copy, kept) == &info, detached_strip_bindings(&s, &scopy, kb) == &s);
+    printf("%d %d\n", detached_strip_action(&info, &copy, kept) == &info,
+           detached_strip_bindings(&s, &scopy, kb) == &s);
     return 0;
 }
 """

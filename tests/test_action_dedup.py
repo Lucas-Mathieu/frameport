@@ -30,4 +30,5 @@ def test_action_dedup_is_on_by_default():
     assert UI["action_dedup"]["control"] == ("switch",)
     src = (ROOT / "native/adapter/frame_adapter.c").read_text()
     assert 'sscanf(line, "action_dedup=%f"' in src
-    assert "if (action_dedup || proximity_emul || profile_remap || input_diag) HOOK_AS(xrCreateAction, hook_xrCreateAction)" in src
+    assert ("if (action_dedup || proximity_emul || profile_remap || input_diag) "
+            "HOOK_AS(xrCreateAction, hook_xrCreateAction)") in src

@@ -1035,8 +1035,8 @@ def test_ovr_stable_user_suggested_for_platform_games():
 
 
 def test_hide_fb_foveation_setting():
-    from frameport.patches.settings import UI, XRSHIM_SETTINGS
     from frameport.patches.frame.adapter import needs_xrshim
+    from frameport.patches.settings import UI, XRSHIM_SETTINGS
 
     patch = base.get("adapter.hide_fb_foveation")
     assert patch.applies(_analysis())

@@ -141,7 +141,8 @@ def test_poisoned_cache_is_run_again(tools):
     cache = il2cpp._cache_file(b"lib", b"meta")
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps({"unity_version": "2021.3.45f2", "missing": list(WANTED), "classes": {}}))
-    assert il2cpp.find_methods(b"lib", b"meta", "2021.3.45f2", WANTED) == {"Assembly-CSharp/X.cs": {"Run": (0x1000, 0x20)}}
+    assert il2cpp.find_methods(b"lib", b"meta", "2021.3.45f2", WANTED) == {
+        "Assembly-CSharp/X.cs": {"Run": (0x1000, 0x20)}}
     assert runs == [release, nightly]
     # a genuine result (some classes found) is kept
     assert il2cpp.find_methods(b"lib", b"meta", "2021.3.45f2", WANTED) and runs == [release, nightly]
@@ -161,13 +162,17 @@ def test_cpp2il_crash_after_making_folders_is_unreadable(monkeypatch, tmp_path):
     unreadable game (-> the development build), not "none of the classes are in it"."""
     monkeypatch.setattr(il2cpp, "cache_dir", lambda: tmp_path / "cache")
     monkeypatch.delenv("FRAMEPORT_CPP2IL", raising=False)
-    crash = _fake_cpp2il(tmp_path / "release", """out=""; while [ $# -gt 0 ]; do [ "$1" = --output-to ] && out=$2; shift; done
+    crash = _fake_cpp2il(
+        tmp_path / "release",
+        """out=""; while [ $# -gt 0 ]; do [ "$1" = --output-to ] && out=$2; shift; done
 mkdir -p "$out/DiffableCs/Assembly-CSharp"
 echo "Unhandled exception. System.IndexOutOfRangeException: Index was outside the bounds of the array." >&2
 echo "   at Cpp2IL.Core.Utils.CsFileUtils.GetTypeName(...) in CsFileUtils.cs:line 282" >&2
 exit 134
 """)
-    good = _fake_cpp2il(tmp_path / "nightly", """out=""; while [ $# -gt 0 ]; do [ "$1" = --output-to ] && out=$2; shift; done
+    good = _fake_cpp2il(
+        tmp_path / "nightly",
+        """out=""; while [ $# -gt 0 ]; do [ "$1" = --output-to ] && out=$2; shift; done
 mkdir -p "$out/DiffableCs/Assembly-CSharp"
 cat > "$out/DiffableCs/Assembly-CSharp/X.cs" <<'CS'
 \t[Address(RVA = "0x5000", Offset = "0x1000", Length = "0x20")]
@@ -178,6 +183,7 @@ CS
     monkeypatch.setattr(cpp2il, "ensure_nightly", lambda progress=None: good)
     with pytest.raises(il2cpp._Unreadable, match=r"IndexOutOfRangeException.*\(exit code 134\)"):
         il2cpp._run(crash, b"lib", b"meta", "2021.3.45f2", WANTED, 60)
-    assert il2cpp.find_methods(b"lib", b"meta", "2021.3.45f2", WANTED) == {"Assembly-CSharp/X.cs": {"Run": (0x1000, 0x20)}}
+    assert il2cpp.find_methods(b"lib", b"meta", "2021.3.45f2", WANTED) == {
+        "Assembly-CSharp/X.cs": {"Run": (0x1000, 0x20)}}
     cached = json.loads(il2cpp._cache_file(b"lib", b"meta").read_text())
     assert cached["nightly"] is True and cached["classes"]

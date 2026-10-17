@@ -41,7 +41,8 @@ SETTINGS = [
     ("hide_fb_foveation", "int", 0, "Turn off Quest Vulkan foveation",
      "Hides Quest FB foveation extensions from the game and OVRPort, removes Vulkan foveation image/create chains, "
      "and refuses foveation profile updates. Diagnostic for first-frame failures with missing density images "
-     "(for example Transformers Beyond Reality: Redux). Device verification pending; does not disable Valve foveation."),
+     "(for example Transformers Beyond Reality: Redux). Device verification pending; "
+     "does not disable Valve foveation."),
     ("hide_space_warp", "int", 0, "Turn off space warp",
      "Hides XR_FB_space_warp, so the game renders every frame itself instead of half of them plus motion vectors "
      "(Application SpaceWarp). For games whose picture flickers or smears on the Frame (for example Unreal Engine 5 "

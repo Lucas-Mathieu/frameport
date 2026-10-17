@@ -293,7 +293,8 @@ def analyze(path: Path, deep: bool = True, data_bytes: int | None = None) -> Ana
         unity_appui_vibrator = any(b"Lcom/unity3d/player/appui/" in d and b"Landroid/os/VibratorManager;" in d
                                    and b"vibrator_manager" in d for d in dexes)
         # kshoji's USB MIDI driver polls Android's USB service, which Lepton lacks (frame.usb_midi_watcher)
-        usb_midi_watcher = any(b"Ljp/kshoji/driver/midi/device/MidiDeviceConnectionWatcher$MidiDeviceConnectionWatchThread;"
+        usb_midi_watcher = any(b"Ljp/kshoji/driver/midi/device/MidiDeviceConnectionWatcher"
+                               b"$MidiDeviceConnectionWatchThread;"
                                in d for d in dexes)
         # Play services' PlatformVersion.isAtLeastS() & co. folded to `return true` (minSdk 31+ builds): crash on
         # Android 11 (frame.gms_platform_version)
