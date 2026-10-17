@@ -21,6 +21,27 @@ signatures:
       which the Frame doesn't have; games that depend on it (often online games) quit or stay offline. FramePort
       doesn't get around such checks.
     suggest: []
+  - id: meta-request-failed
+    # Unity's Oculus.Platform wrapper logs this when a Meta platform call gets no usable answer: OVRPort's platform
+    # library answers some calls without Meta's services (request id 0), so the game's callback never runs and it
+    # can wait forever (e.g. Thief Simulator, Eleven, Spectre; GitHub #346, #360, #368).
+    pattern: 'An unknown error occurred\. Request failed\.[\s\S]{0,400}?Oculus\.Platform\.Request'
+    severity: warning
+    diagnosis: A Meta platform request made by the game failed (it needs Meta's online services, which the Frame
+      doesn't have). If the game then stays on a loading screen or doesn't go on, it is waiting for that answer;
+      some games have a per-game fix that skips the call. A problem report with diagnostics shows which call it is.
+    suggest: []
+    report: true
+  - id: meta-system-activities
+    # The game ships its own (renamed) copy of Meta's platform loader instead of going through OVRPort's, which
+    # tries to open Meta's system activities (Horizon OS) and aborts when Android can't start them (Breachers, #357).
+    pattern: 'DisplayErrorAndExit: Failed to launch SystemActivities'
+    severity: fatal
+    diagnosis: The game's own Meta platform library tried to open Meta's system screens (Horizon OS), which the
+      Frame doesn't have, and quit on purpose. Games built this way are usually online games that depend on Meta's
+      services; FramePort can't provide those.
+    suggest: []
+    supersedes: [native-crash]
   - id: lua-lightuserdata-pointer
     pattern: 'bad light userdata pointer'
     severity: fatal

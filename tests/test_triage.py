@@ -539,3 +539,33 @@ def test_meta_entitlement_quest():
                "I Unity   : ovr_Entitlement_GetIsViewerEntitled", "I Unity   : User is entitled"):
         assert "meta-entitlement" not in {x.id for x in triage(ok + "\n" + LOG_OK, "RUNNING").findings}
     assert triage("E Unity   : Entitlement check failed\n" + LOG_OK, "RUNNING").verdict == "pass"
+
+
+LOG_META_REQUEST = """
+E Unity   : An unknown error occurred. Request failed.
+E Unity   : LogHandler:LogFormat(LogType, Object, String, Object[])
+E Unity   : Oculus.Platform.Request`1:OnComplete(Callback)
+E Unity   : Port3R.Logistics.<Init>d__18:MoveNext()
+"""
+
+
+def test_meta_request_failed():
+    r = triage(LOG_META_REQUEST + LOG_OK, "RUNNING", "com.rrrgames.ThiefSimVRQuest")
+    f = next(f for f in r.findings if f.id == "meta-request-failed")
+    assert f.severity == "warning" and f.suggest == [] and f.report
+    assert r.verdict == "pass"  # the game keeps running: a hint, not a failure
+    # the same words from something other than Meta's platform wrapper don't match
+    other = "E Unity   : An unknown error occurred. Request failed.\nE Unity   : UnityWebRequest:SendWebRequest()\n"
+    assert "meta-request-failed" not in {x.id for x in triage(other + LOG_OK, "RUNNING").findings}
+
+
+def test_meta_system_activities():
+    log = ("W System.err: \tat android.content.ContextWrapper.startActivity(ContextWrapper.java:403)\n"
+           "F OVRPlatform-Loader: DisplayErrorAndExit: Failed to launch SystemActivities\n"
+           "F libc    : Fatal signal 6 (SIGABRT), code -1 (SI_QUEUE) in tid 1335 (UnityMain), pid 1221\n"
+           "F DEBUG   : Abort message: 'DisplayErrorAndExit: Failed to launch SystemActivities'\n")
+    r = triage(log, "EXITED", "com.TriangleFactory.Breachers")
+    ids = {x.id for x in r.findings}
+    assert "meta-system-activities" in ids and "native-crash" not in ids
+    assert next(f for f in r.findings if f.id == "meta-system-activities").severity == "fatal"
+    assert r.verdict == "fail"
