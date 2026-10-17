@@ -92,7 +92,7 @@ def _entry(spec: dict, tech: dict, now: float) -> dict:
     rdict = library.recipe_to_dict(recipe)
     fields = dict(title=title, name=title, data_bytes=tech.get("data_bytes") or 0, analysis=a.to_dict(),
                   recipe=rdict, suggested=rdict, status=recipe.status, added=now - DAY * spec.get("added", 30),
-                  build={"sha256": fake_sha(pkg), "ok": True, "recipe_fp": recipe_fingerprint(rdict),
+                  build={"sha256": fake_sha(pkg), "ok": True, "recipe_fp": recipe_fingerprint(rdict, pkg),
                          "applied": sorted(p for p in rdict.get("patches") or {} if "." in p)})
     if rift:
         folder = f"D:/Games/PC VR/{title}"
