@@ -51,6 +51,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | Drunkn Bar Fight 2 - Early Access | Quest | ✅ Works |  |
 | Eleven Table Tennis | Quest | ✅ Works |  |
 | Eleven: Table Tennis VR | PC VR | ✅ Works |  |
+| EndoparasiticVR | Quest | ✅ Works |  |
 | Espire 2 | Quest | ✅ Works |  |
 | Eye of the Temple | Quest | ✅ Works |  |
 | FrenzyVR | Quest | ✅ Works |  |
@@ -97,6 +98,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | NOPE CHALLENGE | Quest | ✅ Works |  |
 | Ocean Rift | Quest | ✅ Works |  |
 | Operation Wolf Returns: First Mission VR | Quest | ✅ Works |  |
+| OrbusVR | Quest | ✅ Works |  |
 | palazzo_santacruz | Quest | ✅ Works |  |
 | Path of the Warrior | Quest | ✅ Works |  |
 | Pistol Whip | Quest | ✅ Works |  |
@@ -140,6 +142,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | The Last Clockwinder | Quest | ✅ Works |  |
 | The Room VR | Quest | ✅ Works |  |
 | The Tale of Onogoro | Quest | ✅ Works |  |
+| The Walking Dead: Saints & Sinners | Quest | ✅ Works |  |
 | Time Crisis II VR (Test) | Quest | ✅ Works |  |
 | Time Crisis VR (Experimental) | Quest | ✅ Works |  |
 | Totally Baseball | Quest | ✅ Works |  |
@@ -168,6 +171,7 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | End Space | Quest | ⚠️ Works with issues | Controls stop responding after the first mission loads. |
 | Exploding Kittens VR | Quest | ⚠️ Works with issues | Requires online for most modes. |
 | ExploreVR | Quest | ⚠️ Works with issues | The 3D world warps and shifts with head movement (wrong perspective). |
+| FGO VR | Quest | ⚠️ Works with issues | Audio stuttering and popping sounds |
 | Fisherman | Quest | ⚠️ Works with issues | Loading screens have corruption, but everything works otherwise. |
 | Homeworld: Vast Reaches | Quest | ⚠️ Works with issues | The game starts but after selecting to start a new game it seems to crash. |
 | Lawn Mowing Simulator VR | Quest | ⚠️ Works with issues | Left eye textures flicker only when mowing in specific areas. |
@@ -185,9 +189,11 @@ Generated from [catalog/games](../catalog/games) by `scripts/compat_list.py`.
 | SmartTube | Quest | ⚠️ Works with issues | Android's home screen shows for a few seconds while the app starts (normal for flat Android apps; longest on the first start after an install). |
 | Spunky Dungeon | Quest | ⚠️ Works with issues | Gear VR / Oculus Go game (32-bit only), runs through FramePort's 32-bit bridge (experimental). |
 | Swarm 2 | Quest | ⚠️ Works with issues | MSAA creates visible seams around edge geometry and also the skybox edge |
+| The 7th Guest VR | Quest | ⚠️ Works with issues | Runs and is playable. |
 | The Light Brigade | Quest | ⚠️ Works with issues | Judder in weapons |
 | The Thrill Of The Fight | Quest | ⚠️ Works with issues | Right eye doesn't draw the opponent or the referee. |
 | Time Stall | Quest | ⚠️ Works with issues | Both eyes distort during movement (unresolved). |
+| Vampire: The Masquerade - Justice | Quest | ⚠️ Works with issues | Game runs fine and playable, on loading there's a random sphere in the middle of the sceen. |
 | WiiCompiled VR | Quest | ⚠️ Works with issues | To add a game: in FramePort's Files tab, upload your .wcgame file to this game's storage, folder Android/data/org.wiicompiled.quest/files/WiiCompiledOpenXRVR… |
 | Deadly Delivery | Quest | ❌ Doesn't run | Quits after Meta's entitlement check fails: it needs Meta's online services. |
 | Espire 1: VR Operative (Quest Edition) | Quest | ❌ Doesn't run | Mesa GL driver crash during texture upload. |

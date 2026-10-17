@@ -1,0 +1,16 @@
+package: com.fgovr.quest
+title: FGO VR
+status: issues
+notes: Audio stuttering and popping sounds
+tested_version: 0.2.0-fgo-resolution
+engine: Other
+xr: OpenXR
+adapter:
+  scale: 1.2
+verified:
+  date: '2026-10-17'
+  known_good_sha256: e26a0755297961e5131fe4bd404cbd956e18aef01bed71a79114805f6d805032
+  app: 1.2.1.dev433
+  overport_cli: 1.2.5
+  issue: 364
+source_hint: com.fgovr.quest

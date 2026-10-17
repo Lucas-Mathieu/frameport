@@ -1,0 +1,26 @@
+package: com.orbusvr.OrbusVRCommunity
+title: OrbusVR
+status: works
+tested_version: '31.01'
+engine: Unity
+xr: VrApi
+frame:
+- frame.unity_oculus_check
+- frame.unity_text_input
+- frame.unity_runtime_msaa_off
+- frame.hw_video_decode
+- frame.unity_gl_shim
+device:
+- device.text_input_window
+adapter:
+  haptic_fix: 1
+  pose_time_fix: 1
+verified:
+  date: '2026-10-16'
+  known_good_sha256: fe569ffe52ca73f2384162ce80769f05f7cf177edbf26d8e429ca0e9b4aa27e8
+  app: 1.2.0
+  overport_cli: 1.2.5
+  frame_build: '20261015.6141207'
+  agent: 91
+  issue: 378
+source_hint: OrbusVR

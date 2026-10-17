@@ -1,0 +1,26 @@
+package: com.fasttravelgames.lollipop
+title: 'Vampire: The Masquerade - Justice'
+status: issues
+notes: Game runs fine and playable, on loading there's a random sphere in the middle of the sceen. Also control
+  input images are missing so you get text like press <img>wmr.Rstick...
+tested_version: 1.00.1653
+engine: Unreal
+xr: OpenXR
+alt_overport:
+- patch_remove_unreal_force_quit
+frame:
+- frame.bhaptics_permission
+- frame.hw_video_decode
+adapter:
+  haptic_fix: 1
+  scale: 2.0
+foveation: tracked
+verified:
+  date: '2026-10-17'
+  known_good_sha256: 5669f8e9c52e4fa00a3bbce79d323c7f521e098b08dacaf330db0083c7993dee
+  app: 1.2.0
+  overport_cli: 1.2.5
+  frame_build: '20261007.6125817'
+  agent: 91
+  issue: 377
+source_hint: vampire
