@@ -2,7 +2,7 @@
 
 # Patches
 
-Every patch and game setting FramePort knows: 170 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
+Every patch and game setting FramePort knows: 174 entries in 5 groups. A game's recipe is its chosen patches and settings; tested games get theirs from the catalog ([GAMES.md](GAMES.md)), and other games get the patches FramePort suggests from its analysis. You change them on the game page under Customize.
 
 Each entry says what the patch does, whether it changes the APK or only the install, when FramePort suggests it, its options, the catalog games whose recipe names it and the launch-test signatures that suggest it. Patches that are on by default are on for every game, so the catalog rarely names them.
 
@@ -11,7 +11,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 ## Groups
 
 - [Patches from OVRPort](#group-overport) (25)
-- [Steam Frame patches](#group-frame) (56)
+- [Steam Frame patches](#group-frame) (60)
 - [Game settings](#group-adapter) (68)
 - [Files and settings on the Frame](#group-device) (8)
 - [PC VR (Proton and Revive)](#group-pcvr) (13)
@@ -56,6 +56,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Epic Online Services: stop the keychain retry loop](#frame-eos_keychain_loop) | `frame.eos_keychain_loop` | Steam Frame patches |  |
 | [OpenGL ES: multiview shaders on flat panels (HUD, menus)](#frame-gl_multiview_fbo) | `frame.gl_multiview_fbo` | Steam Frame patches | 1 |
 | [GL shim (Mesa GLSL compatibility)](#frame-gl_shim) | `frame.gl_shim` | Steam Frame patches | 2 |
+| [Play services: Android 11 version checks](#frame-gms_platform_version) | `frame.gms_platform_version` | Steam Frame patches |  |
 | [Godot apps: start without a clipboard service](#frame-godot_clipboard) | `frame.godot_clipboard` | Steam Frame patches | 1 |
 | [Hardware video decoding (H.264, HEVC, VP9)](#frame-hw_video_decode) | `frame.hw_video_decode` | Steam Frame patches | 28 |
 | [Language packs from the game's files](#frame-langpacks) | `frame.langpacks` | Steam Frame patches |  |
@@ -78,6 +79,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Start straight in VR (skip the 2D launcher)](#frame-start_activity) | `frame.start_activity` | Steam Frame patches |  |
 | [Allow swapchains larger than 4096 px](#frame-swapchain_limit) | `frame.swapchain_limit` | Steam Frame patches | default |
 | [Team Beef ports: treat the Frame as a Meta headset](#frame-tbxr_vendor) | `frame.tbxr_vendor` | Steam Frame patches | 1 |
+| [Unity App UI: no Android 12 vibrator](#frame-unity_appui_vibrator) | `frame.unity_appui_vibrator` | Steam Frame patches |  |
 | [GL shim for Unity (no multisampled render-to-texture)](#frame-unity_gl_shim) | `frame.unity_gl_shim` | Steam Frame patches | 25 |
 | [Unity: render each eye separately (no multiview)](#frame-unity_multipass) | `frame.unity_multipass` | Steam Frame patches | 1 |
 | [Unity: disable MSAA](#frame-unity_no_msaa) | `frame.unity_no_msaa` | Steam Frame patches | 10 |
@@ -96,6 +98,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Unreal: skip the OBB delivery check](#frame-unreal_skip_obb_delivery) | `frame.unreal_skip_obb_delivery` | Steam Frame patches | 1 |
 | [Unreal: bypass the stalled loading splash](#frame-unreal_splash_bypass) | `frame.unreal_splash_bypass` | Steam Frame patches | 1 |
 | [Unreal: thumb follows the capacitive touches](#frame-unreal_thumb_touch) | `frame.unreal_thumb_touch` | Steam Frame patches | 7 |
+| [USB MIDI: don't poll for USB devices](#frame-usb_midi_watcher) | `frame.usb_midi_watcher` | Steam Frame patches |  |
 | [Vermillion: paint canvases in the scene](#frame-vermillion_scene_canvas) | `frame.vermillion_scene_canvas` | Steam Frame patches | 1 |
 | [Vivox voice chat: skip Android 12 audio routing](#frame-vivox_audio_route) | `frame.vivox_audio_route` | Steam Frame patches | 2 |
 | [Vulkan: drop invalid render-pass pointers](#frame-vk_sanitize) | `frame.vk_sanitize` | Steam Frame patches | default · 1 |
@@ -641,6 +644,19 @@ Corrects graphics code the Frame's drivers reject (black screen with sound).
 
 > Loads libglshim.so ahead of libEGL in every engine library that fetches GL through eglGetProcAddress. Fixes Quest-only leniency that Mesa/Zink rejects: #pragma before #extension, implicit int/float conversions (enables GL_EXT_shader_implicit_conversions), and multiview shaders used on single-view framebuffers (hides GL_OVR_multiview; gl_hide_multiview=0 turns that off). Logs every failed shader with its source lines (logcat tag GLShim). Symptom: black screen with working audio in a GLES game.
 
+### <a id="frame-gms_platform_version"></a>Play services: Android 11 version checks
+
+Lets games with Google Play services code start on the Frame (they'd crash at start on an Android 12 call).
+
+- `frame.gms_platform_version` · also for 2D apps
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested (on):** Google Play services' Android 12 checks were built in as 'always true'; on Lepton (Android 11) the game would crash at start.
+- **Suggested by launch-test signatures:**
+  - `gms-android12-call` (fatal): Google Play services' code in the game called an Android 12 method (the game was built for Android 12 and newer, so its version checks were built in as "always true") and Lepton runs Android 11; the game crashes on its GoogleApiHandler thread at start (for example Titan Isles).
+- **Source:** [patches/frame/gms_platform_version.py](../src/frameport/patches/frame/gms_platform_version.py)
+
+> Google Play services' libraries in games built for Android 12+ only (for example Titan Isles) had their Android 12 checks folded into 'always true' when the game was built; on Lepton's Android 11 they then call an Android 12 method and the game crashes at start (FATAL EXCEPTION: GoogleApiHandler). Those checks answer 'no' again (an in-place edit of classes.dex).
+
 ### <a id="frame-godot_clipboard"></a>Godot apps: start without a clipboard service
 
 Lets Godot games start on the Frame (they'd crash looking for a clipboard).
@@ -928,6 +944,19 @@ Lets Team Beef ports (for example Lambda1VR) start on the Frame.
 
 > Team Beef's ports (for example Lambda1VR, RTCWQuest) load an OpenXR library named after the headset maker and pick their VR setup by maker; for "valve" they stop at start (libopenxr_loader_valve.so not found) or take the Pico path. Adds that library and lets them take the Meta path. Keeps GL4ES in charge of its desktop OpenGL draw calls so animated models don't turn into stretched triangles.
 
+### <a id="frame-unity_appui_vibrator"></a>Unity App UI: no Android 12 vibrator
+
+Lets games built with Unity's App UI start on the Frame (they'd quit at once on an Android 12 vibrator call).
+
+- `frame.unity_appui_vibrator` · also for 2D apps
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested (on):** Unity App UI's activity uses Android 12's VibratorManager at start, which Lepton (Android 11) lacks: the game would quit at once.
+- **Suggested by launch-test signatures:**
+  - `unity-appui-vibrator` (fatal): The game's start activity uses Android 12's VibratorManager (Unity's App UI package, for example PianoVision) and Lepton runs Android 11, so it quits before the game starts.
+- **Source:** [patches/frame/unity_appui_vibrator.py](../src/frameport/patches/frame/unity_appui_vibrator.py)
+
+> The activity of Unity's App UI package (for example PianoVision) gets the vibrator through Android 12's VibratorManager without checking the Android version; on Lepton's Android 11 the game quits at start with a NoClassDefFoundError. The activity then starts without a vibrator and its UI haptic feedback does nothing (an in-place edit of classes.dex).
+
 ### <a id="frame-unity_gl_shim"></a>GL shim for Unity (no multisampled render-to-texture)
 
 Stops a gray or frozen screen in Unity games that turn on anti-aliasing while running (for example The Room VR).
@@ -1169,6 +1198,19 @@ Makes the hands' thumbs follow what your thumb touches (they always pointed up: 
 - **Source:** [patches/frame/unreal_thumb_touch.py](../src/frameport/patches/frame/unreal_thumb_touch.py)
 
 > Unreal 4's Oculus input sets the ThumbUp axis (games animate the hand's thumb with it) from Meta's near-touch sensing, which the Frame never reports: the thumb always points up. Uses the touches instead (left X/Y/stick/thumb rest, right A/B/stick/thumb rest). Changes three instructions in OculusInput::SendControllerEvents, only where the code matches exactly (UE4 Oculus games of one engine generation, for example Vader Immortal, Robo Recall). Found by Klownicle (GitHub #49).
+
+### <a id="frame-usb_midi_watcher"></a>USB MIDI: don't poll for USB devices
+
+Lets apps with a USB MIDI driver start on the Frame (they'd crash looking for USB devices); USB MIDI devices aren't available there.
+
+- `frame.usb_midi_watcher` · also for 2D apps
+- **Changes:** Changes the APK (a rebuild and reinstall apply it).
+- **Suggested (on):** kshoji's USB MIDI driver polls Android's USB service, which the Frame's Android lacks: the app would crash a few seconds after start.
+- **Suggested by launch-test signatures:**
+  - `usb-midi-watcher` (fatal): The app's USB MIDI driver (kshoji's, used by Unity MIDI plugins, for example PianoVision) asked Android's USB service for MIDI devices; the Frame's Android has no USB service, so the app crashed.
+- **Source:** [patches/frame/usb_midi_watcher.py](../src/frameport/patches/frame/usb_midi_watcher.py)
+
+> kshoji's USB MIDI driver (Unity MIDI plugins, for example PianoVision) polls Android's USB service for MIDI devices; the Frame's Android has no USB service, so the app crashes a few seconds after start (NullPointerException on MidiDeviceConnectionWatchThread). The poll returns at once instead, so no USB MIDI device is ever found (an in-place edit of classes.dex).
 
 ### <a id="frame-vermillion_scene_canvas"></a>Vermillion: paint canvases in the scene
 
