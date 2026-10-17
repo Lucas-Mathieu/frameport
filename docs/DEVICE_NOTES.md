@@ -625,4 +625,11 @@ Demo link: the homepage's example button = `deeplink.DEMO_MANIFEST` (https://fra
 from site/public/demo/); every form (https button page, frameport://, framedrop://, pasted) → `InstallRequest.demo`,
 no network (fetch_manifest returns `demo_manifest()`, download refuses), `link_dialog.show_demo` (Install =
 `easter.demo_install`: Cool Game's cover out of the portal; eggs off → "Nice, it works!"), CLI just says so.
+Link updates (2026-10-17): manifest `version` (top level, or `frameport.version`, which wins; ≤64 chars) is stored in
+the entry's `link` record (+ `direct`); `pipeline.check_link_updates` (GUI start via `app._check_link_updates`, every
+6 h: setting `links.last_update_check`, off with `links.check_updates`) re-fetches web manifests that named a version
+(`deeplink.can_check_updates`: not bare file links, local manifests or the demo) and sets/clears `link_update`
+{version, checked}; versions compare with `deeplink.compare_versions` (numbers, then release > suffix). UI: Library
+`link_bar` + game page callout → `link_dialog.update_from_link` (fetch again, one confirmation, `download_and_install`
+per game; add_from_link clears the offer and keeps a name the user gave). CLI `frameport link-updates [--install]`.
 

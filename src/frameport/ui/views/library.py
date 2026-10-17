@@ -282,6 +282,7 @@ class LibraryView:
         self.select_mode = False
         self.sel_bar = ft.Container(visible=False)
         self.resume_bar = ft.Container(visible=False)
+        self.link_bar = ft.Container(visible=False)  # games from install links with a newer version
         self.update_bar = ft.Container(visible=False)  # "FramePort x.y is available" (ui/updater.py)
         self.games: list[dict] = []
         self.tw: set[str] = set()
@@ -355,7 +356,8 @@ class LibraryView:
                                         alignment=ft.MainAxisAlignment.END,
                                         vertical_alignment=ft.CrossAxisAlignment.CENTER), expand=3)],
                    vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=T.S3),
-            self.update_bar, self.resume_bar, self.hint, self.filters, self._drop_area(self.body), self.sel_bar,
+            self.update_bar, self.resume_bar, self.link_bar, self.hint, self.filters, self._drop_area(self.body),
+            self.sel_bar,
         ], expand=True, spacing=T.S4)
         # skeleton cards until the first batch arrives
         n = min(len(library.games()), 15)
@@ -382,6 +384,7 @@ class LibraryView:
         self._update_hint()
         self.update_resume_bar()
         self.update_update_bar()
+        self.update_link_bar()
         self._update_sel_bar()
         return self.root
 
@@ -401,6 +404,7 @@ class LibraryView:
             self._update_header(games, pc)
             self.update_update_bar()
             self.update_resume_bar()  # also after Dismiss / Resume and when installs finish or fail
+            self.update_link_bar()
             if not games:
                 self.body.content = C.empty_state(
                     ft.Icons.LIBRARY_ADD_OUTLINED, tr("Add your games"),
@@ -517,6 +521,24 @@ class LibraryView:
         self.update_bar.visible = bar is not None
         self.update_bar.content = bar
         C.update(self.update_bar)
+
+    def update_link_bar(self) -> None:
+        """Games installed from an install link whose manifest now names a newer version (pipeline.
+        check_link_updates): update them from here."""
+        from .link_dialog import update_from_link
+
+        app = self.app
+        pkgs = [g["package"] for g in library.games() if g.get("link_update")]
+        self.link_bar.visible = bool(pkgs)
+        if pkgs:
+            names = ", ".join(app._title(p) for p in pkgs[:3]) + ("…" if len(pkgs) > 3 else "")
+            self.link_bar.content = C.callout(ft.Row([
+                C.body(tr_n("A newer version is available from an install link: {names}.",
+                            "Newer versions are available from install links: {names}.",
+                            len(pkgs), names=names), T.TEXT, expand=True),
+                C.primary(tr("Update"), ft.Icons.SYSTEM_UPDATE_ROUNDED, lambda e: update_from_link(app, pkgs)),
+            ], spacing=T.S3), "info", ft.Icons.SYSTEM_UPDATE_ROUNDED)
+        C.update(self.link_bar)
 
     def update_resume_bar(self) -> None:
         """Installs that didn't finish (cancelled, failed, or the app closed): resume them from here."""

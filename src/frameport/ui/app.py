@@ -208,6 +208,7 @@ class FramePortApp:
         self.updater.start()
         self.announcer.start()
         self.run_bg(self._refresh_catalog)  # confirmed game configs from GitHub main (no release needed)
+        self.run_bg(self._check_link_updates)  # newer versions of games installed from install links
         _link_state["owner"] = self
         if _link_state["thread"] is None:
             import atexit
@@ -2385,6 +2386,19 @@ class FramePortApp:
         elif force:
             self.toast(tr("Game recipes are up to date"))
         return n
+
+    def _check_link_updates(self, force: bool = False) -> list[str]:
+        """Games installed from an install link whose manifest names a newer version now (pipeline.
+        check_link_updates; at most every 6 h): the Library bar and the game page offer the update."""
+        before = {g["package"] for g in library.games() if g.get("link_update")}
+        found = pipeline.check_link_updates(force=force)
+        new = [p for p in found if p not in before]
+        if set(found) != before:
+            self.refresh_view()
+        if new:
+            self.toast(tr_n("An update is available for {name}", "Updates are available for {n} games",
+                            len(new), name=self._title(new[0])))
+        return found
 
     def frame_power(self, action: str, force: bool = False) -> None:
         """Sleep / restart / shut down the Frame (agent `power`, run a few seconds later so the answer arrives)."""

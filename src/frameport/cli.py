@@ -22,6 +22,7 @@ Errors are one line on stderr; FRAMEPORT_DEBUG=1 shows the traceback.
     frameport diag report <pkg>                  # zip + prefilled GitHub problem report
     frameport share-recipe <pkg> --status works  # prefilled GitHub issue submitting a working recipe
     frameport open-link "<install link>"         # FrameDrop button / frameport:// link: download, add, install
+    frameport link-updates [--install]           # newer versions of games installed from install links
     frameport saves backup <pkg>|--all           # Quest games' saves from the Frame to this PC (list, restore, undo)
 """
 from __future__ import annotations
@@ -314,6 +315,39 @@ def catalog_update():
     typer.echo(f"{n} recipe(s) downloaded; {st['entries']} on GitHub main")
     for pkg, why in sorted(st["skipped"].items()):
         typer.echo(f"  skipped {pkg}: {why}")
+
+
+@app.command("link-updates")
+def link_updates(install: bool = typer.Option(False, "--install", help="download the updates and install them on "
+                                                                      "the Frame (asks first unless --yes)"),
+                 yes: bool = typer.Option(False, "--yes", "-y", help="don't ask before downloading"),
+                 frame: Optional[str] = typer.Option(None, help=FRAME_HELP)):
+    """Check games installed from install links for newer versions (manifests that name a `version`; the GUI checks
+    at start, every 6 h)."""
+    from . import deeplink
+
+    pkgs = pipeline.check_link_updates(force=True, reporter=printing_reporter())
+    if not pkgs:
+        typer.echo("all games from install links are up to date")
+        return
+    for pkg in pkgs:
+        g = library.game(pkg)
+        typer.echo(f"{pkg}: {(g.get('link') or {}).get('version') or '?'} -> {g['link_update']['version']}"
+                   f"  ({g['link']['source']})")
+    if not install or not (yes or typer.confirm(f"Download and install {len(pkgs)} update(s)?")):
+        return
+    target = _target(frame)
+    for pkg in pkgs:
+        m = deeplink.check_update(library.game(pkg)["link"])
+        if not m:
+            continue
+        rep = printing_reporter(verbose=False)
+        g = pipeline.add_from_link(m, deeplink.download(m, rep), rep, icon=deeplink.fetch_icon(m))
+        if not pipeline.build_game(g["package"], rep)["ok"]:
+            typer.echo(f"{pkg}: the game didn't pass its checks", err=True)
+            continue
+        pipeline.install_game(g["package"], target, rep)
+        typer.echo(f"updated {pkg} to {m.version} on {target.label}")
 
 
 @app.command("add-linux")

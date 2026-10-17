@@ -606,6 +606,8 @@ layers, depth, pacing ruled out. Sniper Elite VR (DEVICE LOST), Espire 1 (Mesa G
 crash): use PC versions.
 
 **Install links / FrameDrop button protocol:** `deeplink.py` parses framedrop://, frameport:// and https install links (strict URL rules, manifest ≤256 KiB, downloads into `<data>/downloads/`), `pipeline.add_from_link`, `views/link_dialog.py`, CLI `frameport open-link`; `urlhandler.py` registers a script (bundles can't take URL arguments), `<data>/links/*.link` + `gui.alive` heartbeat; Settings → Install links (`links.framedrop`/`links.frameport`); `ui/dropped.py`, `pipeline.add_windows_exe`, `device.display_mode`; demo link `deeplink.DEMO_MANIFEST`. → docs/DEVICE_NOTES.md#install-links--framedrop-button-protocol
+**Install link updates:** manifest `version` → library `link.version`; `pipeline.check_link_updates` (GUI start, 6 h, setting `links.check_updates` = Settings → Updates → Games) marks `link_update` → Library bar / game page → `link_dialog.update_from_link`; CLI `frameport link-updates`; the demo link is never checked. → docs/DEVICE_NOTES.md#install-links--framedrop-button-protocol
+
 ## Releases, CI, GitHub
 Maintainer-only notes (accounts, credentials, key locations) live in the git-ignored `CLAUDE.local.md`.
 Public repo `github.com/spoopyghosty0/frameport` (branch `main`). Push a `v*` tag → CI (`.github/workflows/build.yml`)

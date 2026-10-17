@@ -326,6 +326,14 @@ def main() -> int:
                  ("links-settings", lambda a: (a.page.pop_dialog(), a.go("settings")))]
         if game:
             steps.append(("links-display-mode", lambda a: a.open_game(game, advanced=True)))
+            # a newer version offered by the game's install link: the Library bar, the game page, the question
+            library.upsert_game(game, link={"source": fake.source, "name": "Example Game", "version": "1.3.0"},
+                                link_update={"version": "1.4.0", "checked": time.time()})
+            newer = deeplink.Manifest("Example Game", fake.files, fake.source, version="1.4.0")
+            steps += [("links-update-library", lambda a: a.navigate(0)),
+                      ("links-update-game", lambda a: a.open_game(game)),
+                      ("links-update-confirm", lambda a: link_dialog._confirm_updates(
+                          a, [(game, "1.3.0", newer, None)], []))]
         def add_menu_open(page):
             page.mouse.click(1194, 94)  # Add games (1280-wide viewport)
             time.sleep(2)

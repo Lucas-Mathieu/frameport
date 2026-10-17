@@ -729,8 +729,11 @@ def add_from_link(manifest, path: Path, reporter: Reporter | None = None, icon: 
     else:
         raise ValueError(f"FramePort can't install {path.name}")
     pkg = entry["package"]
-    fields = {"link": {"source": manifest.source, "name": manifest.name, "time": time.time()}}
-    if not manifest.direct:  # a manifest (not a bare file link) names it
+    fields = {"link": {"source": manifest.source, "name": manifest.name, "time": time.time(),
+                       "version": manifest.version, "direct": manifest.direct}}
+    old_link = entry.get("link") or {}
+    renamed = entry.get("title_locked") and old_link.get("name") and entry.get("title") != old_link.get("name")
+    if not manifest.direct and not renamed:  # a manifest (not a bare file link) names it, unless the user renamed it
         fields.update(title=manifest.name, title_locked=True)
         if not entry.get("title_locked"):  # what Rename… → reset brings back
             fields["auto_title"] = entry.get("title") or pkg
@@ -740,6 +743,8 @@ def add_from_link(manifest, path: Path, reporter: Reporter | None = None, icon: 
         details.update(description=manifest.description, sources=[*(details.get("sources") or []), "link"])
         fields["details"] = details
     library.upsert_game(pkg, **fields)
+    with library.edit() as data:  # this download is the version the manifest offered
+        data["games"].get(pkg, {}).pop("link_update", None)
     if icon:
         from .artwork import fetch, sources
 
@@ -750,6 +755,44 @@ def add_from_link(manifest, path: Path, reporter: Reporter | None = None, icon: 
             if reporter:
                 reporter.log(f"icon from the link not used: {exc}")
     return library.game(pkg)
+
+
+LINK_CHECK_HOURS = 6
+
+
+def check_link_updates(force: bool = False, reporter: Reporter | None = None) -> list[str]:
+    """Fetch the manifest of every game installed from an install link whose manifest named a version again, and mark
+    the ones with a newer version (`link_update` = {"version", "checked"}; cleared when the manifest no longer offers
+    one). Runs at most every LINK_CHECK_HOURS unless `force`; off with setting `links.check_updates`. Returns the
+    packages that have an update now. A manifest that can't be fetched leaves the game as it was."""
+    from . import deeplink
+
+    if not force and (not library.setting("links.check_updates", True)
+                      or time.time() - float(library.setting("links.last_update_check", 0) or 0)
+                      < LINK_CHECK_HOURS * 3600):
+        return [g["package"] for g in library.games() if g.get("link_update")]
+    library.set_setting("links.last_update_check", time.time())
+    found = {}
+    for g in library.games():
+        link = g.get("link")
+        if not deeplink.can_check_updates(link):
+            continue
+        try:
+            m = deeplink.check_update(link)
+        except Exception as exc:  # noqa: BLE001 - offline, moved manifest…: try again next time
+            if reporter:
+                reporter.log(f"{g['package']}: update check failed: {exc}")
+            continue
+        found[g["package"]] = {"version": m.version, "checked": time.time()} if m else None
+    with library.edit() as data:
+        for pkg, offer in found.items():
+            if pkg not in data["games"]:
+                continue
+            if offer:
+                data["games"][pkg]["link_update"] = offer
+            else:
+                data["games"][pkg].pop("link_update", None)
+    return [g["package"] for g in library.games() if g.get("link_update")]
 
 
 def is_overlay_app(entry: dict) -> bool:

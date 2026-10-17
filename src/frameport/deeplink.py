@@ -9,6 +9,11 @@ pasted into "Install from link…"), follows the same
 rules (https only, http only on this PC, no credentials, no LAN addresses, a URL that ends in a file name) and
 always asks before it downloads anything a web page sent. `urlhandler.py` registers the schemes.
 
+Updates: a manifest may name the build's `version` (top level, or `"frameport": {"version": …}`). FramePort stores it
+with the game (library entry `link`) and, at start, fetches each remembered manifest URL again (pipeline.
+check_link_updates, at most every LINK_CHECK_HOURS): a newer `version` marks the game `link_update` and the GUI
+offers to download and install it.
+
 The homepage's example button points at one fixed demo manifest (DEMO_MANIFEST, also published on the site): every
 form of that link becomes a request flagged `demo`, which never touches the network (fetch_manifest answers with
 demo_manifest(), download refuses it) and the GUI answers with a placeholder dialog (ui/views/link_dialog.py).
@@ -34,6 +39,7 @@ MAX_MANIFEST = 256 << 10
 MAX_FILES = 16
 MAX_DESCRIPTION = 2000
 MAX_ICON = 2 << 20
+MAX_VERSION = 64
 LOOPBACK = ("localhost", "127.0.0.1", "[::1]", "::1")
 APK, LINUX, EXE, OBB = "apk", "linux", "exe", "obb"
 DEMO_MANIFEST = "https://frameport.app/demo/cool-game.json"  # the homepage's example button
@@ -80,6 +86,7 @@ class Manifest:
     # FramePort-only extension (FrameDrop ignores it): "frameport": {"description": "…", "icon": "https://….png"}
     description: str = ""
     icon: str | None = None
+    version: str = ""  # the build's version ("1.4.2"), "" = not given: then updates can't be detected
     demo: bool = False  # demo_manifest(): never downloaded
 
     @property
@@ -224,6 +231,63 @@ def make_link(manifest_url: str | None = None, file_url: str | None = None, sche
     return f"{scheme}://install?{key}={quote(value or '', safe='')}"
 
 
+# ------------------------------------------------------------------------------------------------- versions
+def _version_text(value) -> str:
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return ""
+    text = " ".join(str(value).split())
+    return text if len(text) <= MAX_VERSION else ""
+
+
+def _version_key(text: str) -> tuple:
+    """Sort key for free-form build versions: the dotted numbers ("v1.10.2" → 1, 10, 2; missing parts are 0), then a
+    release above anything after it ("1.2.0-beta3" < "1.2.0"), suffixes compared number-aware ("rc2" < "rc10")."""
+    m = re.match(r"\s*[vV]?(\d+(?:\.\d+)*)(.*)$", text or "")
+    if not m:
+        return ((), 0, (("s", (text or "").lower()),))
+    nums = [int(n) for n in m.group(1).split(".")]
+    while len(nums) > 1 and nums[-1] == 0:
+        nums.pop()
+    rest = m.group(2).strip(" .-_+")
+    parts = tuple(("n", int(p)) if p.isdigit() else ("s", p.lower()) for p in re.findall(r"\d+|[A-Za-z]+", rest))
+    return (tuple(nums), 0 if parts else 1, parts)
+
+
+def compare_versions(a: str, b: str) -> int:
+    """-1, 0 or 1: how version a compares to version b (see _version_key)."""
+    ka, kb = _version_key(a), _version_key(b)
+    try:
+        return (ka > kb) - (ka < kb)
+    except TypeError:  # a number against a word at the same place: compare as text
+        return (str(ka) > str(kb)) - (str(ka) < str(kb))
+
+
+def is_newer_version(candidate: str, current: str) -> bool:
+    """Whether a manifest's version is newer than the installed one (False when either is unknown)."""
+    return bool(candidate and current) and compare_versions(candidate, current) > 0
+
+
+def can_check_updates(link: dict | None) -> bool:
+    """Whether a library entry's `link` record can be checked for updates: a manifest fetched from the web (not a bare
+    file link, a dropped local file or the demo) that named a version."""
+    if not isinstance(link, dict) or not link.get("version") or link.get("direct"):
+        return False
+    source = link.get("source") or ""
+    if not source.lower().startswith(("https://", "http://")) or is_demo(source):
+        return False
+    try:
+        return classify(filename_of(source)) is None and bool(check_url(source))  # a file URL isn't a manifest
+    except LinkError:
+        return False
+
+
+def check_update(link: dict) -> Manifest | None:
+    """The remembered manifest fetched again: returned when it names a newer version than the one installed, else
+    None. Raises LinkError/network errors like fetch_manifest."""
+    m = fetch_manifest(InstallRequest(manifest_url=link["source"]))
+    return m if is_newer_version(m.version, link.get("version") or "") else None
+
+
 # ------------------------------------------------------------------------------------------------- manifest
 def title_from_filename(filename: str) -> str:
     """A readable guess from a file name: "net.sourceforge.opencamera_96.apk" → "Opencamera",
@@ -263,7 +327,9 @@ def manifest_from_data(data, source: str = "") -> Manifest:
     m = Manifest(" ".join(name.split())[:120], out, source)
     m.main  # noqa: B018 - raises when nothing installable is listed
     extra = data.get("frameport")  # FramePort-only fields; anything wrong in them is ignored (they're optional)
+    m.version = _version_text(data.get("version"))
     if isinstance(extra, dict):
+        m.version = _version_text(extra.get("version")) or m.version
         desc = extra.get("description")
         if isinstance(desc, str):
             m.description = desc.strip()[:MAX_DESCRIPTION]

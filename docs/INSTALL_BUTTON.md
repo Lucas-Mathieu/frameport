@@ -45,6 +45,7 @@ The manifest:
 {
   "schema": "framedrop.install/v1",
   "name": "My Game",
+  "version": "1.4.2",
   "files": [{ "url": "https://example.com/my-game.apk", "sha256": "<64 hex digits>" }],
   "frameport": { "description": "One sentence about the game.", "icon": "https://example.com/icon.png" }
 }
@@ -53,6 +54,13 @@ The manifest:
 `name` becomes the game's title in Steam. `sha256` is optional but recommended: FramePort checks the download
 against it. The `frameport` object is optional; its icon and description are shown in the
 install question. Only public `https://` addresses are accepted.
+
+`version` is optional (it can also go inside the `frameport` object) and makes updates possible: FramePort remembers
+the manifest's address and version, fetches the manifest again at start (at most every 6 hours) and, when its
+`version` is newer, offers to download and install the update (Library bar and the game's page; CLI
+`frameport link-updates [--install]`). Keep the manifest at the same address and raise `version` with every build.
+Versions compare number by number (`1.10` > `1.9`), and a suffix sorts before the plain release (`1.2.0-beta2` <
+`1.2.0`). Bare file links (`?url=…`) and manifests without a version are never checked.
 
 To build a link from Python: `frameport.deeplink.make_link(manifest_url="https://…/my-game.json")`.
 

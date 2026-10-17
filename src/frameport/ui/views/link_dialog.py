@@ -128,7 +128,7 @@ def _confirm(app: FramePortApp, m: deeplink.Manifest, sizes: dict, pasted: bool,
               extra=ft.Column([*rows, *notes], spacing=T.S2, tight=True))
 
 
-def download_and_install(app: FramePortApp, m: deeplink.Manifest, icon=None) -> Job:
+def download_and_install(app: FramePortApp, m: deeplink.Manifest, icon=None, open_page: bool = True) -> Job:
     def run(job: Job):
         rep = job.reporter
         path = deeplink.download(m, rep)
@@ -142,10 +142,78 @@ def download_and_install(app: FramePortApp, m: deeplink.Manifest, icon=None) -> 
         except Exception:  # noqa: BLE001 - artwork is optional
             pass
         library.set_setting("ui.welcome_done", True)
-        app.open_game(pkg)
+        if open_page:
+            app.open_game(pkg)
         app.page.run_thread(lambda: app.install(pkg, "frame"))  # asks the usual install questions, then queues it
         return tr("Downloaded {name}").format(name=g.get("title") or m.name)
     return app.submit(tr("Download {name}").format(name=m.name), run, None, "task")
+
+
+def update_from_link(app: FramePortApp, pkgs: list[str]) -> None:
+    """Game page / Library bar: games installed from an install link whose manifest offers a newer version (pipeline.
+    check_link_updates). Fetches each manifest again in a job, asks once, then downloads and installs every update
+    like a first install (download_and_install)."""
+    def run(job: Job):
+        job.reporter.stage(tr("Reading the install link"))
+        offers, failed = [], []
+        for pkg in pkgs:
+            link = (library.game(pkg) or {}).get("link")
+            if not deeplink.can_check_updates(link):
+                continue
+            try:
+                m = deeplink.check_update(link)
+            except Exception as exc:  # noqa: BLE001 - one manifest that can't be read doesn't stop the others
+                failed.append(pkg)
+                job.reporter.log(f"{pkg}: {exc}")
+                continue
+            if m:
+                offers.append((pkg, link.get("version") or "", m, deeplink.fetch_icon(m)))
+            else:  # the offer was withdrawn meanwhile
+                with library.edit() as data:
+                    data["games"].get(pkg, {}).pop("link_update", None)
+        app.page.run_thread(lambda: _confirm_updates(app, offers, failed))
+        return tr("Install link updates: waiting for your answer") if offers else tr("No updates")
+    app.submit(tr("Check install links for updates"), run, pkgs[0] if len(pkgs) == 1 else None, "task")
+
+
+def _confirm_updates(app: FramePortApp, offers: list, failed: list[str]) -> None:
+    if not offers:
+        app.refresh_view()
+        if failed:
+            app.toast(tr("Couldn't read the install link of {name}").format(name=app._title(failed[0])), error=True)
+        else:
+            app.toast(tr("Already up to date"))
+        return
+    rows = [ft.Column([
+        C.body(app._title(pkg), T.TEXT, weight=ft.FontWeight.W_500, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+        C.meta(tr("{old} → {new} · from {host}").format(old=old or "?", new=m.version, host=m.host or _host(m.source))),
+    ], spacing=T.px(2), tight=True) for pkg, old, m, _icon in offers]
+    notes = [C.callout(tr("FramePort downloads the new version from the same site and installs it on your Frame. "
+                          "Saves are kept."), "info")]
+    if failed:
+        notes.append(C.meta(tr("Couldn't read: {names}").format(names=", ".join(app._title(p) for p in failed))))
+    if len(offers) == 1:
+        pkg, _old, m, _icon = offers[0]
+        heading = tr("Update {name} to {version}?").format(name=app._title(pkg), version=m.version)
+        text = tr("A newer version is available from its install link.")
+    else:
+        heading = tr("Update {n} games?").format(n=len(offers))
+        text = tr("Newer versions are available from their install links.")
+
+    def go():
+        for _pkg, _old, m, icon in offers:
+            download_and_install(app, m, icon, open_page=len(offers) == 1)
+    C.confirm(app.page, heading, text, tr("Download and update"), go,
+              extra=ft.Column([*rows, *notes], spacing=T.S2, tight=True))
+
+
+def link_update_text(g: dict) -> str | None:
+    """The game page's line for a newer version from the game's install link (None: no update known)."""
+    offer, link = g.get("link_update"), g.get("link") or {}
+    if not offer:
+        return None
+    return tr("Version {version} is available from its install link (you have {current}).").format(
+        version=offer.get("version"), current=link.get("version") or "?")
 
 
 DEMO_COVER = "demo-cool-game"  # ui/icons/demo-cool-game.svg (also the site's site/public/demo/cool-game.svg)
