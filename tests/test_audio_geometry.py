@@ -2,6 +2,7 @@
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,8 @@ def test_audio_geometry_native(tmp_path, fixture):
     cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
     if not cc or os.name == "nt":
         pytest.skip("Native ownership regression requires a POSIX C compiler with pthreads")
+    if fixture == "audio_geometry_target_test.c" and sys.platform != "linux":
+        pytest.skip("Installer regression models Linux ELF loading")
     root = Path(__file__).resolve().parents[1]
     binary = tmp_path / "audio-geometry-test"
     subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
