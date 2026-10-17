@@ -521,6 +521,7 @@ FramePort's layer between the game and the Steam Frame: fills in what the Frame 
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested (on):** Required for every OpenXR/overport build on the Frame.
 - **Suggested by launch-test signatures:**
+  - `batman-audio-geometry-allocation` (fatal): Batman's Meta XR Audio geometry loader requested tens of gigabytes while loading a scene.
   - `cube-swapchain-refused` (fatal): The game asked for a cube-map swapchain (for example an OVROverlay skybox or loading cube), which the Frame's runtime doesn't have.
   - `cylinder-menu-layers-rejected` (info): The runtime rejected a frame's layers once (XR_ERROR_LAYER_INVALID).
   - `graphics-requirements-missing` (fatal): The game can't start VR on the Frame; rebuild it with the current FramePort.

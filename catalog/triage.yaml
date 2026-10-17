@@ -511,6 +511,12 @@ signatures:
     diagnosis: The game crashed while leaving VR, inside Valve's foveation layer when it destroys a swapchain (for example Lambda1VR). This can happen after manually quitting; it is not a startup crash and does not explain distorted geometry seen before quitting.
     suggest: []
     supersedes: [native-crash]
+  - id: batman-audio-geometry-allocation
+    pattern: '(?s)\A(?=.*com\.camouflaj\.manta)(?=.*Trying to allocate: [1-9][0-9]{10,}B)(?=.*MetaXRAudioUnityMemoryAllocator\.cpp)'
+    severity: fatal
+    diagnosis: "Batman's Meta XR Audio geometry loader requested tens of gigabytes while loading a scene. Its background task can outlive the UnityWebRequest that owns the input buffer. Update Batman on Frame with the current FramePort: the adapter retains a private copy until parsing finishes, for the verified Batman build. This is a game allocation crash, not evidence of a headset thermal shutdown."
+    suggest: [frame.adapter]
+    supersedes: [native-crash]
   - id: native-crash
     pattern: 'Fatal signal (\d+) \(SIG[A-Z]+\)'
     severity: fatal

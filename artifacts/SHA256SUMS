@@ -13,7 +13,7 @@ d6337034fb0bdcca7ef9b7063d85b7586b8508b63b435959e8fffaba0691091c  ./arm64-v8a/li
 4a13a33e112c9e4e3c5ff4337ed6e988a9e5b3602f48d654df148ef5fafbf426  ./arm64-v8a/libfpglmv.so
 36400eae4ba3807bcfcd54463daa217347032b07218792faa448d8cbbd086a0e  ./arm64-v8a/libframe_xrshim.so
 19ba5ed3c4b780f5ae46251f6958f552acfc5f13c8bb39f995579593fa8990c6  ./arm64-v8a/libglshim.so
-b1ec76d3c93862ef2e5dcffab44b4b45cdbd791df3c6870350a04be44a0e0137  ./arm64-v8a/libopenxr_loader_generic.so
+8d85d97caebeb78bd6b6d0868dda4c5c7ab38cd2d91201bd6e0eb1be768672f5  ./arm64-v8a/libopenxr_loader_generic.so
 1feaeafad467c4cafdf2b018a4d84b0bee200c3f711697b4ce97e66a3ba256ca  ./arm64-v8a/libovrplatformcompat.so
 a4ed80ae45ca90758239f152ea5a2e8c127d491e1e697ea5680db6fd7f72db07  ./arm64-v8a/libvrapi.so
 a4ed80ae45ca90758239f152ea5a2e8c127d491e1e697ea5680db6fd7f72db07  ./arm64-v8a/libvrapi_foveation.so

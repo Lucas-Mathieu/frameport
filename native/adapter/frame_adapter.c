@@ -77,6 +77,7 @@ static void fb_log(const char *fmt, ...) {
 }
 #define LOG(...) fb_log(__VA_ARGS__)
 #include "audio_metadata.h"
+#include "batman_audio_geometry.h"
 #include "surface_views.h"
 
 static void *loader;
@@ -457,11 +458,11 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo *info
     }
     no_equirect = !has_equirect; no_equirect2 = !has_equirect2; no_cylinder = !has_cylinder; no_cube = !has_cube;
     free(available);
-    mx_audio_initialize();
+    mx_audio_initialize(); mx_batman_geometry_initialize();
     XrResult result = fn(&fixed, instance);
     free(names);
     LOG("xrCreateInstance result=%d", result);
-    if (XR_SUCCEEDED(result)) { active_instance = *instance; mx_audio_initialize(); }
+    if (XR_SUCCEEDED(result)) { active_instance = *instance; mx_audio_initialize(); mx_batman_geometry_initialize(); }
     return result;
 }
 
@@ -1372,7 +1373,7 @@ static XrSession focused_session = XR_NULL_HANDLE;
 static int kicks_pending = -1;  // -1: not yet armed
 
 XRAPI_ATTR XrResult XRAPI_CALL xrPollEvent(XrInstance instance, XrEventDataBuffer *event) {
-    mx_audio_initialize();
+    mx_audio_initialize(); mx_batman_geometry_initialize();
     PFN_xrPollEvent fn = (PFN_xrPollEvent)lookup(instance, "xrPollEvent");
     if (!fn) return XR_ERROR_FUNCTION_UNSUPPORTED;
     if (emulate_scene && event) {
