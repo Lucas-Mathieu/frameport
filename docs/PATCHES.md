@@ -99,7 +99,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Vulkan: drop invalid render-pass pointers](#frame-vk_sanitize) | `frame.vk_sanitize` | Steam Frame patches | default · 1 |
 | [VrApi → OpenXR bridge](#frame-vrapi_bridge) | `frame.vrapi_bridge` | Steam Frame patches | 4 |
 | [Quiet Meta's VrApi loader (OpenXR games)](#frame-vrapi_stub) | `frame.vrapi_stub` | Steam Frame patches | 2 |
-| [OpenGL ES: shader fixes (Vulkan layer under Zink)](#frame-zink_shader_fix) | `frame.zink_shader_fix` | Steam Frame patches | 1 |
+| [OpenGL ES: shader fixes (Vulkan layer under Zink)](#frame-zink_shader_fix) | `frame.zink_shader_fix` | Steam Frame patches | 2 |
 | [Pointer start](#adapter-aim_forward) | `adapter.aim_forward` | Game settings |  |
 | [Pointer angle](#adapter-aim_pitch) | `adapter.aim_pitch` | Game settings |  |
 | [Pointer turn](#adapter-aim_yaw) | `adapter.aim_yaw` | Game settings |  |
@@ -167,7 +167,7 @@ Link to an entry with its id, dots replaced by dashes: `PATCHES.md#frame-unity_t
 | [Fix depth flicker (Unreal Vulkan)](#adapter-vk_spec_fixes) | `adapter.vk_spec_fixes` | Game settings | 2 |
 | [Vulkan error checks (log)](#adapter-vk_validation) | `adapter.vk_validation` | Game settings |  |
 | [OpenGL ES shader dump (diagnostics)](#adapter-zink_shader_dump) | `adapter.zink_shader_dump` | Game settings |  |
-| [OpenGL ES shader fixes](#adapter-zink_shader_fix) | `adapter.zink_shader_fix` | Game settings | 1 |
+| [OpenGL ES shader fixes](#adapter-zink_shader_fix) | `adapter.zink_shader_fix` | Game settings | 2 |
 | [Keep the game's saved resolution in step](#device-config_sync) | `device.config_sync` | Files and settings on the Frame | 1 |
 | [Show as VR or as a flat window](#device-display_mode) | `device.display_mode` | Files and settings on the Frame |  |
 | [Settings files for the game](#device-files) | `device.files` | Files and settings on the Frame | 3 |
@@ -1221,7 +1221,7 @@ Repairs shaders that hang the graphics chip at certain effects, from the game's 
 - `frame.zink_shader_fix`
 - **Changes:** Changes the APK (a rebuild and reinstall apply it).
 - **Suggested:** not automatically; set on the game page (Customize), by a recipe or after a launch test.
-- **Catalog games (1):** Vader Immortal: Episode I.
+- **Catalog games (2):** Star Wars: Tales from the Galaxy's Edge, Vader Immortal: Episode I.
 - **Source:** [patches/frame/zink_shader_fix.py](../src/frameport/patches/frame/zink_shader_fix.py)
 
 > Loads FramePort's shader-fix Vulkan layer into an OpenGL ES game. On the Frame, OpenGL ES runs on Zink (Mesa's GL on Vulkan); the layer sits between Zink and the driver and inserts the words of the adapter setting zink_shader_fix into the SPIR-V modules whose size and SHA-256 match (every other module is untouched), for example stores that set loop counters and accumulators a shader reads before writing, which hang the GPU (Vader Immortal's lightspeed jump; found by Klownicle, GitHub #49). Does nothing without zink_shader_fix (or zink_shader_dump) in the recipe. The layer adds itself to Android's Vulkan debug layer list for the game's process only.
@@ -2232,7 +2232,7 @@ Repairs OpenGL ES shaders that hang the graphics chip, from the game's recipe.
 - **Options:**
   - Value: str, default empty.
   - Not in the Game settings dialog (set by a recipe or the CLI).
-- **Catalog games (1):** Vader Immortal: Episode I.
+- **Catalog games (2):** Star Wars: Tales from the Galaxy's Edge, Vader Immortal: Episode I.
 - **Source:** [patches/settings.py](../src/frameport/patches/settings.py)
 
 > Shader-fix Vulkan layer (frame.zink_shader_fix) for OpenGL ES games, whose GLSL the Frame's GL driver (Zink) turns into SPIR-V: modules matching size + SHA-256 get words inserted at a byte offset, for example stores that set loop counters and accumulators a shader reads before writing (Vader Immortal's lightspeed jump hung the GPU; found by Klownicle, GitHub #49). Same format as vk_shader_fix. Comes from a game's recipe; the driver's output can change with a Frame update, then the fix no longer matches (logged).

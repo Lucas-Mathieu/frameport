@@ -4,6 +4,8 @@ status: works
 notes: >-
   Headset tested for GitHub issue 61: full view, loading into gameplay, both eyes, controller input and sound
   work with the splash bypass and multiview depth-size fix. Keep the main OBB and all three content/sound-bank PAKs.
+  GitHub issue 369 (headset, Lepton 3.0.5): the GPU hang at a later loading screen is fixed by zink_shader_fix;
+  played ~28 min at 72 fps.
 details: Unreal Engine 4 (GLES) by ILMxLAB, like Vader Immortal, but a different engine build - it has none of Vader's
   Quest-only branches (no GetQuestShaderPrecompilePercent or RPOC key map; it precompiles shaders through Unreal's
   own pipeline cache), so frame.unreal_quest_precompile/_keymap don't apply. Its seasons and Wwise banks are Meta
@@ -17,6 +19,10 @@ details: Unreal Engine 4 (GLES) by ILMxLAB, like Vader Immortal, but a different
   frame.unreal_multiview_depth refreshes both cached dimensions from the current eye render size; multiview and
   multisampling remain enabled. The two engine fixes check exported symbols, function sizes and instruction bytes
   before changing one instruction each; unrecognized engine builds are left unchanged.
+  A fragment shader (module 16800_8dbab031..., as Zink compiles it) reads 12 int loop counters/accumulators before
+  setting them and hangs the GPU (kernel hangcheck) at a loading screen, the same bug as Vader Immortal's lightspeed
+  shaders; the Vulkan layer under Zink inserts stores of 0 (frame.zink_shader_fix, zink_shader_fix). Captured with
+  Lepton 3.0.5, so a Frame update that changes Zink's output stops it matching (the layer logs that).
 tested_version: 1.1.9+734762.cl.439699
 engine: Unreal
 xr: VrApi
@@ -27,10 +33,12 @@ frame:
 - frame.unreal_thumb_touch
 - frame.unreal_splash_bypass
 - frame.unreal_multiview_depth
+- frame.zink_shader_fix
 adapter:
   pose_time_fix: 1
+  zink_shader_fix: 16800:8dbab031be7975e23452e333fe63afe44d5c8f4fd2b096aa21ed300426747757:4008:0x0003003e,219,102,0x0003003e,229,102,0x0003003e,235,102,0x0003003e,241,102,0x0003003e,302,102,0x0003003e,312,102,0x0003003e,318,102,0x0003003e,324,102,0x0003003e,369,102,0x0003003e,379,102,0x0003003e,385,102,0x0003003e,391,102
 verified:
-  issue: 61
-updated: '2026-10-12'
+  issue: 369
+updated: '2026-10-17'
 min_app: 1.0.4
 source_hint: Star Wars- Tales from the Galaxys Edge
